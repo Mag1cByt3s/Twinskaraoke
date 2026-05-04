@@ -66,7 +66,7 @@ You **do not** need to pay for the $99/year Apple Developer program to install t
 
 * **If you already have an Apple ID:** You can just use the same Apple ID you use on your iPhone. 
 * **If you don't have an Apple ID, or want to make a separate one:**
-  1. Go to[appleid.apple.com](https://appleid.apple.com/).
+  1. Go to [appleid.apple.com](https://appleid.apple.com/).
   2. Click **Create Your Apple ID** in the top right corner.
   3. Fill out the required information and verify your email/phone number. 
 
