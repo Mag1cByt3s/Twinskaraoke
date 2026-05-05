@@ -14,7 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Removed the strict "Set Xcode version" step so GitHub uses the newest compiler!
+      - name: Force Latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
 
       - name: Archive iPhone
         run: |
