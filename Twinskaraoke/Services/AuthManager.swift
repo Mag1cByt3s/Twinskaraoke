@@ -232,6 +232,20 @@ final class AuthManager: NSObject, ObservableObject, ASWebAuthenticationPresenta
     guard !id.isEmpty, !name.isEmpty else { return nil }
     return (id, name, av)
   }
+  func approveQRSession(sessionId: String) async throws {
+    guard let token = authToken, isLoggedIn else { throw AuthError.notSignedIn }
+    var req = URLRequest(url: URL(string: "\(StorageHost.api)/api/auth/approve-qr")!)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    req.httpBody = try JSONSerialization.data(withJSONObject: ["sessionId": sessionId])
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+      throw AuthError.http(
+        (resp as? HTTPURLResponse)?.statusCode ?? 0,
+        String(data: data, encoding: .utf8) ?? "")
+    }
+  }
   func logout() {
     [K.token, K.userId, K.username, K.avatar].forEach { defaults.removeObject(forKey: $0) }
     authToken = nil
@@ -262,6 +276,7 @@ final class AuthManager: NSObject, ObservableObject, ASWebAuthenticationPresenta
       case .parse: return "Unexpected server response"
       case .invalidCallback: return "Authentication failed — try again"
       case .cancelled: return ""
+      case .notSignedIn: return "You need to sign in first"
       }
     }
     return error.localizedDescription
@@ -275,6 +290,6 @@ final class AuthManager: NSObject, ObservableObject, ASWebAuthenticationPresenta
 
   enum AuthError: Error {
     case http(Int, String)
-    case parse, invalidCallback, cancelled
+    case parse, invalidCallback, cancelled, notSignedIn
   }
 }

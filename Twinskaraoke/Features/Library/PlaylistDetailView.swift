@@ -5,6 +5,7 @@ struct PlaylistDetailView: View {
   let playlist: Playlist
   @EnvironmentObject var audioManager: AudioPlayerManager
   @StateObject private var loader = PlaylistDetailViewModel()
+  @ObservedObject private var favorites = FavoritesManager.shared
   @State private var scrollOffset: CGFloat = 0
   var body: some View {
     let songs: [Song] = loader.songs ?? playlist.songListDTOs ?? []
@@ -65,6 +66,10 @@ struct PlaylistDetailView: View {
     .onAppear {
       loader.load(playlistID: playlist.id, fallback: playlist.songListDTOs)
       RecentlyPlayedStore.shared.record(playlist)
+    }
+    .onChange(of: favorites.favoriteIDs) { _ in
+      guard playlist.isFavorites else { return }
+      loader.reload(playlistID: playlist.id)
     }
   }
   @ViewBuilder
@@ -199,6 +204,10 @@ class PlaylistDetailViewModel: ObservableObject {
   @Published var songs: [Song]?
   @Published var isLoading = false
   private var loadedID: String?
+  func reload(playlistID: String) {
+    loadedID = nil
+    load(playlistID: playlistID, fallback: nil)
+  }
   func load(playlistID: String, fallback: [Song]?) {
     let alreadyFullyLoaded = (loadedID == playlistID) && (songs?.isEmpty == false)
     if alreadyFullyLoaded { return }
@@ -214,10 +223,10 @@ class PlaylistDetailViewModel: ObservableObject {
     guard let url = URL(string: urlString) else { return }
     isLoading = true
     var r = URLRequest(url: url)
-    r.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
     if isFavorites, let token = UserDefaults.standard.string(forKey: "nk.token") {
       r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
+    GuestIdentity.applyIfNeeded(to: &r)
     URLSession.shared.dataTask(with: r) { [weak self] data, _, _ in
       guard let self = self else { return }
       let list = Self.decodeSongs(from: data)

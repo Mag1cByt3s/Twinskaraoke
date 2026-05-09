@@ -11,7 +11,7 @@ class RandomSongsViewModel: ObservableObject {
     let token = fetchToken
     isLoading = true
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       let decoded = data.flatMap { try? JSONDecoder().decode([Song].self, from: $0) }
       DispatchQueue.main.async {

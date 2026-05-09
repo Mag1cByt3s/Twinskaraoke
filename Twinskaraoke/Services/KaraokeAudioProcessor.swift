@@ -13,7 +13,6 @@ enum VocalRemovalLevel: Int, CaseIterable {
   case medium = 2
   case strong = 3
   case maximum = 4
-
   var centerAttenuation: Float {
     switch self {
     case .off: return 0
@@ -23,7 +22,6 @@ enum VocalRemovalLevel: Int, CaseIterable {
     case .maximum: return 1.0
     }
   }
-
   var label: String {
     switch self {
     case .off: return "Off"
@@ -91,18 +89,15 @@ private struct Biquad {
   var a1: Float = 0, a2: Float = 0
   var x1: Float = 0, x2: Float = 0
   var y1: Float = 0, y2: Float = 0
-
   mutating func process(_ x0: Float) -> Float {
     let y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
     x2 = x1; x1 = x0
     y2 = y1; y1 = y0
     return y0
   }
-
   mutating func reset() {
     x1 = 0; x2 = 0; y1 = 0; y2 = 0
   }
-
   static func highpass(freq: Double, q: Double, sampleRate: Double) -> Biquad {
     let w0 = 2.0 * Double.pi * freq / sampleRate
     let alpha = sin(w0) / (2.0 * q)
@@ -116,7 +111,6 @@ private struct Biquad {
     bq.a2 = Float(1.0 - alpha) / a0
     return bq
   }
-
   static func lowpass(freq: Double, q: Double, sampleRate: Double) -> Biquad {
     let w0 = 2.0 * Double.pi * freq / sampleRate
     let alpha = sin(w0) / (2.0 * q)
@@ -184,9 +178,7 @@ private let vocalRemovalTapProcess: MTAudioProcessingTapProcessCallback = {
   guard frames > 0 else { return }
   let fmt = tapFormat
   guard fmt.channels >= 2, fmt.isFloat else { return }
-
   let att = level.centerAttenuation
-
   if fmt.isInterleaved {
     guard let buf = abl[0].mData?.assumingMemoryBound(to: Float.self) else { return }
     let stride = fmt.channels
@@ -299,22 +291,17 @@ private let combinedTapProcess: MTAudioProcessingTapProcessCallback = {
   guard frames > 0 else { return }
   let fmt = tapFormat
   guard fmt.channels >= 2, fmt.isFloat else { return }
-
   let level = KaraokeAudioProcessor.vocalRemovalLevel
   let vocalAtt = level.centerAttenuation
-
   let bassAtt = KaraokeAudioProcessor.vocalAttenuation
   let bassShaped = bassAtt * bassAtt * (3 - 2 * bassAtt)
   let bassKeep: Float = 1.0 - bassShaped
   let makeupGain: Float = 1.0 + bassShaped
-
   let dt = 1.0 / fmt.sampleRate
   let alphaBassLow = Float(dt / (1.0 / (2.0 * .pi * bassCutoffHz) + dt))
   let alphaBassHigh = Float(dt / (1.0 / (2.0 * .pi * trebleCutoffHz) + dt))
-
   var bLowState = combinedBassLowState
   var bHighState = combinedBassHighState
-
   if fmt.isInterleaved {
     guard let buf = abl[0].mData?.assumingMemoryBound(to: Float.self) else { return }
     let stride = fmt.channels
@@ -323,14 +310,12 @@ private let combinedTapProcess: MTAudioProcessingTapProcessCallback = {
       let ri = li + 1
       var l = buf[li]
       var r = buf[ri]
-
       if level != .off {
         let mid = (l + r) * 0.5
         let midHP = cvrHPMid2.process(cvrHPMid1.process(mid))
         l = l - midHP * vocalAtt
         r = r - midHP * vocalAtt
       }
-
       if bassAtt > 0.001 {
         let mid = (l + r) * 0.5
         let side = (l - r) * 0.5
@@ -343,7 +328,6 @@ private let combinedTapProcess: MTAudioProcessingTapProcessCallback = {
         l = tanhf((processedMid + side) * makeupGain)
         r = tanhf((processedMid - side) * makeupGain)
       }
-
       buf[li] = l
       buf[ri] = r
     }
@@ -355,14 +339,12 @@ private let combinedTapProcess: MTAudioProcessingTapProcessCallback = {
     for i in 0..<frames {
       var l = lBuf[i]
       var r = rBuf[i]
-
       if level != .off {
         let mid = (l + r) * 0.5
         let midHP = cvrHPMid2.process(cvrHPMid1.process(mid))
         l = l - midHP * vocalAtt
         r = r - midHP * vocalAtt
       }
-
       if bassAtt > 0.001 {
         let mid = (l + r) * 0.5
         let side = (l - r) * 0.5
@@ -375,7 +357,6 @@ private let combinedTapProcess: MTAudioProcessingTapProcessCallback = {
         l = tanhf((processedMid + side) * makeupGain)
         r = tanhf((processedMid - side) * makeupGain)
       }
-
       lBuf[i] = l
       rBuf[i] = r
     }

@@ -3,7 +3,11 @@ import SwiftUI
 struct LyricsView: View {
   let lyrics: [LyricLine]
   let currentTime: TimeInterval
+  var isLoading: Bool = false
+  var didFail: Bool = false
+  var hasNoLyrics: Bool = false
   let onSeek: (TimeInterval) -> Void
+  var onRetry: (() -> Void)? = nil
   private var currentIndex: Int {
     guard !lyrics.isEmpty else { return -1 }
     var idx = -1
@@ -18,13 +22,8 @@ struct LyricsView: View {
   }
   var body: some View {
     if lyrics.isEmpty {
-      VStack(spacing: 14) {
-        LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
-        Text("Loading lyrics")
-          .font(.system(size: 14))
-          .foregroundColor(.primary.opacity(0.6))
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      emptyState
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
       ScrollViewReader { proxy in
         ScrollView(showsIndicators: false) {
@@ -236,6 +235,56 @@ private struct LyricLineRow: View {
     if isCurrent { return 1.0 }
     if distance <= 2 { return 1.0 }
     return max(0.5, 1.0 - Double(distance - 2) * 0.1)
+  }
+}
+
+extension LyricsView {
+  @ViewBuilder
+  fileprivate var emptyState: some View {
+    if didFail {
+      VStack(spacing: 14) {
+        Image(systemName: "exclamationmark.bubble")
+          .font(.system(size: 34, weight: .regular))
+          .foregroundColor(.primary.opacity(0.6))
+        Text("Couldn't load lyrics")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.primary.opacity(0.85))
+        Text("Check your connection and try again.")
+          .font(.system(size: 13))
+          .foregroundColor(.primary.opacity(0.55))
+          .multilineTextAlignment(.center)
+        if let onRetry {
+          Button(action: onRetry) {
+            Text("Retry")
+              .font(.system(size: 14, weight: .semibold))
+              .foregroundColor(.primary)
+              .padding(.horizontal, 22)
+              .padding(.vertical, 9)
+              .background(
+                Capsule().fill(.primary.opacity(0.12)))
+          }
+          .buttonStyle(.plain)
+          .padding(.top, 4)
+        }
+      }
+      .padding(.horizontal, 28)
+    } else if hasNoLyrics {
+      VStack(spacing: 12) {
+        Image(systemName: "music.quarternote.3")
+          .font(.system(size: 34, weight: .regular))
+          .foregroundColor(.primary.opacity(0.55))
+        Text("No lyrics for this song")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.primary.opacity(0.75))
+      }
+    } else {
+      VStack(spacing: 14) {
+        LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
+        Text("Loading lyrics")
+          .font(.system(size: 14))
+          .foregroundColor(.primary.opacity(0.6))
+      }
+    }
   }
 }
 

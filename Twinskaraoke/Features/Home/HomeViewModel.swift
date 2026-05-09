@@ -84,7 +84,10 @@ class HomeViewModel: ObservableObject {
     }
     guard let url = URL(string: "\(StorageHost.api)/api/playlist/\(playlist.id)") else { return }
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    if let token = UserDefaults.standard.string(forKey: "nk.token") {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let data,
         let decoded = try? JSONDecoder().decode(Playlist.self, from: data),
@@ -102,7 +105,10 @@ class HomeViewModel: ObservableObject {
       return
     }
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    if let token = UserDefaults.standard.string(forKey: "nk.token") {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { data, _, _ in
       if let data, let decoded = try? JSONDecoder().decode(T.self, from: data) {
         completion(decoded)

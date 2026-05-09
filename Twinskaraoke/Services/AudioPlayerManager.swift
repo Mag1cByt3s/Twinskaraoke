@@ -24,6 +24,7 @@ enum RepeatMode {
     }
   }
 }
+
 private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
   private let songID: String
   private let cacheURL: URL
@@ -976,7 +977,7 @@ class AudioPlayerManager: ObservableObject {
     guard let url = URL(string: "\(StorageHost.api)/api/explore/trendings?days=7&take=50")
     else { return }
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { data, _, _ in
       if let data = data, let songs = try? JSONDecoder().decode([Song].self, from: data),
         let random = songs.randomElement()
@@ -991,9 +992,8 @@ class AudioPlayerManager: ObservableObject {
     request.httpMethod = "PUT"
     if let token = UserDefaults.standard.string(forKey: "nk.token"), !token.isEmpty {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    } else {
-      request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
     }
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
   }
 }

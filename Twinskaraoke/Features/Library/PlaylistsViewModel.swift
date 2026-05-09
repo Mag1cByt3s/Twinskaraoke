@@ -37,7 +37,7 @@ class PlaylistsViewModel: ObservableObject {
     else { return }
     isLoading = true
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       if let data, let decoded = try? JSONDecoder().decode([Playlist].self, from: data) {
         DispatchQueue.main.async {
@@ -58,7 +58,7 @@ class PlaylistsViewModel: ObservableObject {
     if let token = UserDefaults.standard.string(forKey: "nk.token") {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let data else { return }
       if let decoded = try? JSONDecoder().decode([Song].self, from: data) {

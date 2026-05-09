@@ -5,6 +5,7 @@ struct GenreSummary: Decodable, Identifiable {
   let id: String
   let name: String
   let songCount: Int
+
   enum CodingKeys: String, CodingKey { case id, name, songCount, count }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -42,7 +43,7 @@ class TopChartViewModel: ObservableObject {
   private func fetch(url: String, keyPath: ReferenceWritableKeyPath<TopChartViewModel, [Song]>) {
     guard let u = URL(string: url) else { return }
     var request = URLRequest(url: u)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let data, let list = try? JSONDecoder().decode([Song].self, from: data) else {
         return
@@ -82,7 +83,7 @@ class GenresViewModel: ObservableObject {
     else { return }
     isLoadingMore = !replace
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       let decoded = data.flatMap { try? JSONDecoder().decode([GenreSummary].self, from: $0) }
       Task { @MainActor in
@@ -112,7 +113,7 @@ class GenresViewModel: ObservableObject {
       return
     }
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let data,
         let detail = try? JSONDecoder().decode(GenreDetail.self, from: data)
@@ -155,7 +156,7 @@ class SearchViewModel: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     request.httpBody = try? JSONSerialization.data(withJSONObject: [
       "page": 1, "pageSize": 30, "search": query,
     ])

@@ -80,7 +80,7 @@ class VideoGalleryViewModel: ObservableObject {
     guard let url = URL(string: urlString) else { return }
     isLoading = true
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let self = self else { return }
       if let data, let decoded = try? JSONDecoder().decode(VideosResponse.self, from: data) {
@@ -241,7 +241,7 @@ class SimilarVideosViewModel: ObservableObject {
     guard let url = URL(string: urlString) else { return }
     isLoading = true
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let self = self else { return }
       if let data, let decoded = try? JSONDecoder().decode(VideosResponse.self, from: data) {

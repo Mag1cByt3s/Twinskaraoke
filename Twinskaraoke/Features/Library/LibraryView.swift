@@ -2,8 +2,12 @@ import SwiftUI
 
 struct LibraryView: View {
   @StateObject var viewModel = PlaylistsViewModel()
+  @ObservedObject private var savedStore = SavedPlaylistsStore.shared
+  @ObservedObject private var addedTracker = RecentlyAddedTracker.shared
+  @ObservedObject private var favorites = FavoritesManager.shared
   let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
   var body: some View {
+    let recents = viewModel.recentlyAddedPlaylists(saved: savedStore.playlists)
     NavigationStack {
       List {
         Section {
@@ -28,11 +32,6 @@ struct LibraryView: View {
             LibraryRow(icon: "music.note", color: .appAccent, title: "Songs")
           }
           NavigationLink {
-            LibraryPlaceholderView(title: "Made For You", systemImage: "sparkles")
-          } label: {
-            LibraryRow(icon: "sparkles", color: .appAccent, title: "Made For You")
-          }
-          NavigationLink {
             VideoGalleryView()
           } label: {
             LibraryRow(icon: "play.rectangle", color: .appAccent, title: "Video Gallery")
@@ -41,11 +40,6 @@ struct LibraryView: View {
             ArtGalleryView()
           } label: {
             LibraryRow(icon: "paintpalette", color: .appAccent, title: "Art Gallery")
-          }
-          NavigationLink {
-            LibraryPlaceholderView(title: "Genres", systemImage: "guitars")
-          } label: {
-            LibraryRow(icon: "guitars", color: .appAccent, title: "Genres")
           }
           NavigationLink {
             LibraryPlaceholderView(title: "Composers", systemImage: "music.quarternote.3")
@@ -60,7 +54,7 @@ struct LibraryView: View {
           NavigationLink {
             DownloadedSongsView()
           } label: {
-            LibraryRow(icon: "arrow.down.circle.fill", color: .appAccent, title: "Downloaded")
+            LibraryRow(icon: "arrow.down.circle", color: .appAccent, title: "Downloaded")
           }
           NavigationLink {
             RandomSongsView()
@@ -68,13 +62,15 @@ struct LibraryView: View {
             LibraryRow(icon: "shuffle", color: .appAccent, title: "Random Songs")
           }
         }
-        Section {
-          RecentlyAddedCarousel(viewModel: viewModel)
-            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+        if !recents.isEmpty {
+          Section {
+            RecentlyAddedSection(playlists: recents)
+              .listRowInsets(EdgeInsets())
+              .listRowBackground(Color.clear)
+              .listRowSeparator(.hidden)
+          }
+          .listSectionSpacing(.compact)
         }
-        .listSectionSpacing(.compact)
       }
       .listStyle(.insetGrouped)
       .navigationTitle("Library")
@@ -82,47 +78,8 @@ struct LibraryView: View {
         viewModel.fetchPlaylists()
         viewModel.fetchFavoriteSongs()
       }
-    }
-  }
-}
-
-private struct RecentlyAddedCarousel: View {
-  @ObservedObject var viewModel: PlaylistsViewModel
-  @ObservedObject var savedStore: SavedPlaylistsStore = .shared
-  @ObservedObject var addedTracker: RecentlyAddedTracker = .shared
-  private let rows = [
-    GridItem(.fixed(220), spacing: AM.Spacing.l),
-    GridItem(.fixed(220), spacing: AM.Spacing.l),
-  ]
-  var body: some View {
-    let recents = viewModel.recentlyAddedPlaylists(saved: savedStore.playlists)
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader("Recently Added")
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHGrid(rows: rows, spacing: AM.Spacing.l) {
-          ForEach(recents) { playlist in
-            NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-              VStack(alignment: .leading, spacing: AM.Spacing.s) {
-                PlaylistArtwork(playlist: playlist, cornerRadius: AM.Radius.card)
-                  .frame(width: AM.Spacing.shelfTile, height: AM.Spacing.shelfTile)
-                  .clipShape(
-                    RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
-                  .amShadow(AM.Shadow.card)
-                Text(playlist.name)
-                  .font(AM.Font.tileTitle)
-                  .foregroundColor(.primary)
-                  .lineLimit(1)
-                Text("\(playlist.songCount) songs")
-                  .font(AM.Font.tileCaption)
-                  .foregroundColor(.secondary)
-                  .lineLimit(1)
-              }
-              .frame(width: AM.Spacing.shelfTile)
-            }
-            .buttonStyle(PressableButtonStyle())
-          }
-        }
-        .padding(.horizontal, AM.Spacing.screenMargin)
+      .onChange(of: favorites.favoriteIDs) { _ in
+        viewModel.fetchFavoriteSongs()
       }
     }
   }
@@ -221,6 +178,58 @@ struct PlaylistGridCell: View {
       Text("\(playlist.songCount) songs")
         .font(.system(size: 12))
         .foregroundColor(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+struct RecentlyAddedSection: View {
+  let playlists: [Playlist]
+  private let cols = [
+    GridItem(.flexible(), spacing: 14),
+    GridItem(.flexible(), spacing: 14),
+  ]
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("Recently Added")
+        .font(.system(size: 22, weight: .bold))
+        .foregroundColor(.primary)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+      LazyVGrid(columns: cols, spacing: 22) {
+        ForEach(playlists) { playlist in
+          NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
+            RecentlyAddedTile(playlist: playlist)
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .padding(.horizontal, 16)
+      .padding(.bottom, 16)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+struct RecentlyAddedTile: View {
+  let playlist: Playlist
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      PlaylistArtwork(playlist: playlist, cornerRadius: 6)
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(playlist.name)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.primary)
+          .lineLimit(1)
+        Text("Playlist")
+          .font(.system(size: 14))
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }

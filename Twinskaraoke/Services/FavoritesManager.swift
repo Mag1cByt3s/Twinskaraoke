@@ -26,7 +26,6 @@ final class FavoritesManager: ObservableObject {
     loaded = false
   }
   func toggle(songID: String) {
-    guard let token else { return }
     guard !inFlight.contains(songID) else { return }
     let wasFavorite = favoriteIDs.contains(songID)
     if wasFavorite {
@@ -35,6 +34,7 @@ final class FavoritesManager: ObservableObject {
       favoriteIDs.insert(songID)
     }
     inFlight.insert(songID)
+    let token = self.token
     Task {
       let ok = await send(songID: songID, add: !wasFavorite, token: token)
       await MainActor.run {
@@ -60,12 +60,16 @@ final class FavoritesManager: ObservableObject {
     let ids = Self.parseIDs(from: data)
     await MainActor.run { self.favoriteIDs = Set(ids) }
   }
-  private func send(songID: String, add: Bool, token: String) async -> Bool {
-    guard let url = URL(string: "\(Self.base)/\(songID)") else { return false }
+  private func send(songID: String, add: Bool, token: String?) async -> Bool {
+    let encoded =
+      songID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? songID
+    guard let url = URL(string: "\(Self.base)/\(encoded)") else { return false }
     var req = URLRequest(url: url)
-    req.httpMethod = add ? "PUT" : "DELETE"
-    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    req.setValue("0", forHTTPHeaderField: "Content-Length")
+    req.httpMethod = "PUT"
+    if let token, !token.isEmpty {
+      req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    GuestIdentity.applyIfNeeded(to: &req)
     guard let (_, resp) = try? await URLSession.shared.data(for: req),
       let http = resp as? HTTPURLResponse
     else { return false }

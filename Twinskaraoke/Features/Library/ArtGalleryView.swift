@@ -39,7 +39,7 @@ class ArtGalleryViewModel: ObservableObject {
     else { return }
     isLoading = true
     var request = URLRequest(url: url)
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
+    GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
       guard let self = self else { return }
       if let data, let decoded = try? JSONDecoder().decode([GalleryArtist].self, from: data) {
@@ -357,7 +357,6 @@ private struct ArtThumbnail: View {
 struct ArtDetailView: View {
   let art: GalleryArt
   let artist: GalleryArtist
-
   @State private var showFullScreen = false
   @State private var saveStatus: SaveStatus = .idle
   enum SaveStatus { case idle, saving, success, failed(String) }

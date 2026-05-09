@@ -14,6 +14,7 @@ struct AccountView: View {
   @StateObject private var auth = AuthManager()
   @EnvironmentObject var audioManager: AudioPlayerManager
   @State private var showLoginSheet = false
+  @State private var showQRApprove = false
   @State private var profile: Profile?
   var body: some View {
     NavigationStack {
@@ -26,6 +27,9 @@ struct AccountView: View {
       .navigationTitle("Account")
       .sheet(isPresented: $showLoginSheet) {
         LoginSheet(auth: auth)
+      }
+      .sheet(isPresented: $showQRApprove) {
+        QRApproveView(auth: auth)
       }
       .task(id: auth.isLoggedIn) {
         if auth.isLoggedIn {
@@ -80,6 +84,14 @@ struct AccountView: View {
   }
   private var generalSection: some View {
     Section {
+      if auth.isLoggedIn {
+        Button {
+          showQRApprove = true
+        } label: {
+          Label("Sign in on web", systemImage: "qrcode.viewfinder")
+            .foregroundStyle(.primary)
+        }
+      }
       NavigationLink {
         Text("Notifications").navigationTitle("Notifications")
       } label: {

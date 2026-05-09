@@ -5,7 +5,7 @@ import SwiftUI
 
 struct FullScreenPlayerView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
-  @StateObject private var favorites = FavoritesManager.shared
+  @ObservedObject private var favorites = FavoritesManager.shared
   @Environment(\.dismiss) private var dismiss
   @State private var showingQueue = false
   @State private var showLyrics = false
@@ -84,10 +84,14 @@ struct FullScreenPlayerView: View {
             LyricsView(
               lyrics: lyricsViewModel.lyrics,
               currentTime: audioManager.progress * Double(song.duration),
+              isLoading: lyricsViewModel.isLoading,
+              didFail: lyricsViewModel.didFail,
+              hasNoLyrics: lyricsViewModel.hasNoLyrics,
               onSeek: { time in
                 guard song.duration > 0 else { return }
                 audioManager.seek(to: (time + 0.1) / Double(song.duration))
-              }
+              },
+              onRetry: { lyricsViewModel.retry() }
             )
           }
           .overlay(alignment: .bottomTrailing) {
