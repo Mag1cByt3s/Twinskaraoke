@@ -3,7 +3,7 @@ import AudioKit
 import Combine
 import Foundation
 
-enum AudioKitPlaybackMode { case single, aiMix }
+enum AudioKitPlaybackMode { case single, aiStems }
 
 enum AudioKitPlaybackRampStyle {
   case equalPower  // cos/sin curve — constant perceived loudness
@@ -17,20 +17,21 @@ final class AudioKitPlayback {
 
   let engine = AudioEngine()
   let mainPlayer = AudioPlayer()
-  let auxPlayer = AudioPlayer()
   let crossfadePlayer = AudioPlayer()
+  let stemVocals = AudioPlayer()
+  let stemDrums = AudioPlayer()
+  let stemBass = AudioPlayer()
+  let stemOther = AudioPlayer()
   private let mixer: Mixer
   let userEQ = AVAudioUnitEQ(numberOfBands: 10)
   let bassEQ = AVAudioUnitEQ(numberOfBands: 1)
 
   private(set) var mode: Mode = .single
   private(set) var currentURL: URL?
-  private(set) var auxURL: URL?
-  private(set) var aiVocalsStrength: Float = 1.0
   private(set) var aiStartOffset: TimeInterval = 0
-  private(set) var aiHasAuxTrack = false
 
   private var suppressionToken: UInt64 = 0
+  private var _paused: Bool = false
 
   private(set) var isCrossfading = false
 
@@ -53,9 +54,12 @@ final class AudioKitPlayback {
   ]
 
   init() {
-    mixer = Mixer(mainPlayer, auxPlayer, crossfadePlayer)
-    auxPlayer.volume = 0
+    mixer = Mixer(mainPlayer, crossfadePlayer, stemVocals, stemDrums, stemBass, stemOther)
     crossfadePlayer.volume = 0
+    stemVocals.volume = 0
+    stemDrums.volume = 0
+    stemBass.volume = 0
+    stemOther.volume = 0
 
     for i in 0..<10 {
       let band = userEQ.bands[i]
@@ -85,6 +89,14 @@ final class AudioKitPlayback {
       DispatchQueue.main.async {
         guard self.suppressionToken == token else { return }
         self.onPlaybackEnded?()
+      }
+    }
+    stemDrums.completionHandler = { [weak self] in
+      guard let self else { return }
+      let token = self.suppressionToken
+      DispatchQueue.main.async {
+        guard self.suppressionToken == token else { return }
+        if self.mode == .aiStems { self.onPlaybackEnded?() }
       }
     }
 
@@ -272,24 +284,27 @@ final class AudioKitPlayback {
     crossfadeDuration = 0
     crossfadeElapsed = 0
     crossfadeStartMainVol = 1.0
-    crossfadeStartAuxVol = 0.0
+    crossfadeStartVocalsVol = 0
+    crossfadeStartDrumsVol = 0
+    crossfadeStartBassVol = 0
+    crossfadeStartOtherVol = 0
     crossfadePlayer.stop()
     crossfadePlayer.volume = 0
   }
 
+  // MARK: - Single-track playback
+
   func play(url: URL, startAt: TimeInterval = 0) {
     do {
+      _paused = false
       suppressionToken &+= 1
       resetCrossfadePlayback()
+      stopAllStems()
       mainPlayer.stop()
       try loadIntoPlayer(mainPlayer, url: url)
       currentURL = url
       mode = .single
-      auxURL = nil
       aiStartOffset = 0
-      aiHasAuxTrack = false
-      auxPlayer.stop()
-      auxPlayer.volume = 0
       mainPlayer.volume = 1
       resetBassEQ()
       startEngineIfNeeded()
@@ -300,109 +315,131 @@ final class AudioKitPlayback {
     }
   }
 
-  func playAI(
-    instrumental: URL, vocals: URL, vocalsStrength: Float,
-    startOffset: TimeInterval = 0, startAt: TimeInterval = 0
+  // MARK: - AI stems playback
+
+  func switchToStems(
+    vocalsURL: URL, drumsURL: URL, bassURL: URL, otherURL: URL,
+    startOffset: TimeInterval
   ) {
     do {
+      _paused = false
       suppressionToken &+= 1
       resetCrossfadePlayback()
-      mainPlayer.stop()
-      auxPlayer.stop()
-      try loadIntoPlayer(mainPlayer, url: instrumental)
-      try loadIntoPlayer(auxPlayer, url: vocals)
-      currentURL = instrumental
-      auxURL = vocals
-      aiVocalsStrength = max(0, min(1, vocalsStrength))
+      let pos = mainPlayer.currentTime
+      let stemPos = max(0, pos - startOffset)
+      stopAllStems()
+      try loadIntoPlayer(stemVocals, url: vocalsURL)
+      try loadIntoPlayer(stemDrums, url: drumsURL)
+      try loadIntoPlayer(stemBass, url: bassURL)
+      try loadIntoPlayer(stemOther, url: otherURL)
       aiStartOffset = max(0, startOffset)
-      aiHasAuxTrack = true
-      mode = .aiMix
-      mainPlayer.volume = 1.0
-      auxPlayer.volume = AUValue(max(0, min(1, 1 - aiVocalsStrength)))
+      mode = .aiStems
       startEngineIfNeeded()
-      let from = safeStart(startAt, durations: mainPlayer.duration, auxPlayer.duration)
-      mainPlayer.play(from: from)
-      auxPlayer.play(from: from)
-      auxPlayer.volume = AUValue(max(0, min(1, 1 - aiVocalsStrength)))
+      let from = safeStart(stemPos, durations: stemDrums.duration)
+      stemVocals.volume = 1
+      stemDrums.volume = 1
+      stemBass.volume = 1
+      stemOther.volume = 1
+      stemVocals.play(from: from)
+      stemDrums.play(from: from)
+      stemBass.play(from: from)
+      stemOther.play(from: from)
+      mainPlayer.stop()
+      mainPlayer.volume = 0
     } catch {
       onPlaybackError?(error)
     }
   }
 
-  func playAIBuffers(
-    instrumental: AVAudioPCMBuffer, vocals: AVAudioPCMBuffer?,
-    startOffset: TimeInterval = 0, startAt: TimeInterval = 0,
-    mainVolume: Float = 1.0, auxVolume: Float = 1.0
-  ) {
+  func revertToMain() {
+    guard mode == .aiStems else { return }
+    _paused = false
+    let pos = stemDrums.currentTime + aiStartOffset
     suppressionToken &+= 1
     resetCrossfadePlayback()
-    mainPlayer.stop()
-    auxPlayer.stop()
-    let stereoInstr = AudioKitPlayback.ensureStereo(instrumental) ?? instrumental
-    mainPlayer.load(buffer: stereoInstr)
-    if let vocals {
-      let stereoVocals = AudioKitPlayback.ensureStereo(vocals) ?? vocals
-      auxPlayer.load(buffer: stereoVocals)
-    }
-    currentURL = nil
-    auxURL = nil
-    aiStartOffset = max(0, startOffset)
-    aiHasAuxTrack = (vocals != nil)
-    mode = .aiMix
-    mainPlayer.volume = AUValue(max(0, min(2, mainVolume)))
-    auxPlayer.volume = vocals == nil ? 0 : AUValue(max(0, min(2, auxVolume)))
+    let from = safeStart(pos, durations: mainPlayer.duration)
+    mainPlayer.volume = 1
+    resetBassEQ()
     startEngineIfNeeded()
-    let from =
-      aiHasAuxTrack
-      ? safeStart(startAt, durations: mainPlayer.duration, auxPlayer.duration)
-      : safeStart(startAt, durations: mainPlayer.duration)
     mainPlayer.play(from: from)
-    if aiHasAuxTrack { auxPlayer.play(from: from) }
+    stopAllStems()
+    mode = .single
+    aiStartOffset = 0
   }
 
-  func setAIVocalStrength(_ s: Float) {
-    aiVocalsStrength = max(0, min(1, s))
-    if mode == .aiMix, aiHasAuxTrack {
-      auxPlayer.volume = AUValue(max(0, min(1, 1 - aiVocalsStrength)))
-    }
+  private func stopAllStems() {
+    stemVocals.stop()
+    stemDrums.stop()
+    stemBass.stop()
+    stemOther.stop()
+    stemVocals.volume = 0
+    stemDrums.volume = 0
+    stemBass.volume = 0
+    stemOther.volume = 0
   }
+
+  func setStemVolumes(vocals: Float, drums: Float, bass: Float, other: Float) {
+    stemVocals.volume = AUValue(max(0, min(2, vocals)))
+    stemDrums.volume = AUValue(max(0, min(2, drums)))
+    stemBass.volume = AUValue(max(0, min(2, bass)))
+    stemOther.volume = AUValue(max(0, min(2, other)))
+  }
+
+  // MARK: - Playback state
 
   var currentTime: TimeInterval {
-    if mode == .aiMix {
-      return aiStartOffset + mainPlayer.currentTime
+    if mode == .aiStems {
+      return aiStartOffset + stemDrums.currentTime
     }
     return mainPlayer.currentTime
   }
 
   var duration: TimeInterval {
-    if mode == .aiMix, mainPlayer.duration.isFinite, mainPlayer.duration > 0 {
-      return aiStartOffset + mainPlayer.duration
+    if mode == .aiStems, stemDrums.duration.isFinite, stemDrums.duration > 0 {
+      return aiStartOffset + stemDrums.duration
     }
     return mainPlayer.duration
   }
 
-  var isPlaying: Bool { mainPlayer.isPlaying }
+  var isPlaying: Bool {
+    if _paused { return false }
+    if mode == .aiStems { return stemDrums.isPlaying }
+    return mainPlayer.isPlaying
+  }
 
   func pause() {
-    mainPlayer.pause()
-    if mode == .aiMix, aiHasAuxTrack { auxPlayer.pause() }
+    _paused = true
+    if mode == .aiStems {
+      stemVocals.pause()
+      stemDrums.pause()
+      stemBass.pause()
+      stemOther.pause()
+    } else {
+      mainPlayer.pause()
+    }
   }
 
   func resume() {
+    _paused = false
     startEngineIfNeeded()
-    mainPlayer.play()
-    if mode == .aiMix, aiHasAuxTrack { auxPlayer.play() }
+    if mode == .aiStems {
+      stemVocals.play()
+      stemDrums.play()
+      stemBass.play()
+      stemOther.play()
+    } else {
+      mainPlayer.play()
+    }
   }
 
   func stop() {
+    _paused = false
     suppressionToken &+= 1
     resetCrossfadePlayback()
     mainPlayer.stop()
-    auxPlayer.stop()
+    stopAllStems()
     currentURL = nil
-    auxURL = nil
     aiStartOffset = 0
-    aiHasAuxTrack = false
     mode = .single
     resetBassEQ()
   }
@@ -410,20 +447,21 @@ final class AudioKitPlayback {
   @discardableResult
   func seek(to seconds: TimeInterval) -> Bool {
     guard seconds.isFinite else { return true }
-    if mode == .aiMix {
-      let aiTarget = seconds - aiStartOffset
-      if aiTarget < 0 { return false }
-      let dur = mainPlayer.duration
+    if mode == .aiStems {
+      let stemTarget = seconds - aiStartOffset
+      if stemTarget < 0 { return false }
+      let dur = stemDrums.duration
       guard dur.isFinite, dur > 0 else { return true }
       let upper = dur - 0.5
       guard upper > 0 else { return true }
-      let target = max(0, min(aiTarget, upper))
+      let target = max(0, min(stemTarget, upper))
       suppressionToken &+= 1
-      let delta = target - mainPlayer.currentTime
-      if abs(delta) > 0.01 { mainPlayer.seek(time: delta) }
-      if aiHasAuxTrack {
-        let auxDelta = target - auxPlayer.currentTime
-        if abs(auxDelta) > 0.01 { auxPlayer.seek(time: auxDelta) }
+      let delta = target - stemDrums.currentTime
+      if abs(delta) > 0.01 {
+        stemVocals.seek(time: delta)
+        stemDrums.seek(time: delta)
+        stemBass.seek(time: delta)
+        stemOther.seek(time: delta)
       }
       return true
     }
@@ -458,17 +496,11 @@ final class AudioKitPlayback {
     setBassEQGain(dB: 0)
   }
 
-  func setMainPlayerVolume(_ v: Float) {
-    mainPlayer.volume = AUValue(max(0, min(2, v)))
-  }
-
-  func setAuxPlayerVolume(_ v: Float) {
-    auxPlayer.volume = AUValue(max(0, min(2, v)))
-  }
-
   func setMasterVolume(_ v: Float) {
     mixer.volume = AUValue(max(0, min(1, v)))
   }
+
+  // MARK: - Crossfade
 
   func preloadCrossfade(url: URL) {
     guard !isCrossfading else { return }
@@ -493,8 +525,14 @@ final class AudioKitPlayback {
         crossfadePlayer.stop()
         crossfadePlayer.volume = 0
       }
-      if mode != .aiMix {
+      if mode == .single {
         mainPlayer.volume = 1.0
+      } else if mode == .aiStems {
+        setStemVolumes(
+          vocals: crossfadeStartVocalsVol,
+          drums: crossfadeStartDrumsVol,
+          bass: crossfadeStartBassVol,
+          other: crossfadeStartOtherVol)
       }
     }
 
@@ -513,7 +551,10 @@ final class AudioKitPlayback {
     pendingCrossfadeURL = url
 
     crossfadeStartMainVol = Float(mainPlayer.volume)
-    crossfadeStartAuxVol = Float(auxPlayer.volume)
+    crossfadeStartVocalsVol = Float(stemVocals.volume)
+    crossfadeStartDrumsVol = Float(stemDrums.volume)
+    crossfadeStartBassVol = Float(stemBass.volume)
+    crossfadeStartOtherVol = Float(stemOther.volume)
 
     crossfadePlayer.volume = 0
     startEngineIfNeeded()
@@ -540,9 +581,11 @@ final class AudioKitPlayback {
         inVol = t
       }
 
-      if self.mode == .aiMix {
-        self.mainPlayer.volume = AUValue(max(0, self.crossfadeStartMainVol * outVol))
-        self.auxPlayer.volume = AUValue(max(0, self.crossfadeStartAuxVol * outVol))
+      if self.mode == .aiStems {
+        self.stemVocals.volume = AUValue(max(0, self.crossfadeStartVocalsVol * outVol))
+        self.stemDrums.volume = AUValue(max(0, self.crossfadeStartDrumsVol * outVol))
+        self.stemBass.volume = AUValue(max(0, self.crossfadeStartBassVol * outVol))
+        self.stemOther.volume = AUValue(max(0, self.crossfadeStartOtherVol * outVol))
       } else {
         self.mainPlayer.volume = AUValue(max(0, outVol))
       }
@@ -566,7 +609,12 @@ final class AudioKitPlayback {
     isCrossfading = false
     crossfadePlayer.stop()
     crossfadePlayer.volume = 0
-    if mode == .aiMix {
+    if mode == .aiStems {
+      setStemVolumes(
+        vocals: crossfadeStartVocalsVol,
+        drums: crossfadeStartDrumsVol,
+        bass: crossfadeStartBassVol,
+        other: crossfadeStartOtherVol)
     } else {
       mainPlayer.volume = 1.0
     }
@@ -579,8 +627,8 @@ final class AudioKitPlayback {
 
     suppressionToken &+= 1
     mainPlayer.stop()
-    if mode == .aiMix {
-      auxPlayer.stop()
+    if mode == .aiStems {
+      stopAllStems()
     }
 
     crossfadePlayer.volume = 1.0
@@ -590,10 +638,8 @@ final class AudioKitPlayback {
         let resumeTime = crossfadePlayer.currentTime
         try loadIntoPlayer(mainPlayer, url: url)
         mode = .single
-        auxURL = nil
         aiStartOffset = 0
-        auxPlayer.stop()
-        auxPlayer.volume = 0
+        stopAllStems()
         mainPlayer.volume = 1.0
         resetBassEQ()
         let from = safeStart(resumeTime, durations: mainPlayer.duration)
@@ -620,7 +666,10 @@ final class AudioKitPlayback {
   private var preloadedCrossfadeURL: URL?
 
   private var crossfadeStartMainVol: Float = 1.0
-  private var crossfadeStartAuxVol: Float = 0.0
+  private var crossfadeStartVocalsVol: Float = 0
+  private var crossfadeStartDrumsVol: Float = 0
+  private var crossfadeStartBassVol: Float = 0
+  private var crossfadeStartOtherVol: Float = 0
 }
 
 final class AVAudioUnitWrapperNode: Node {

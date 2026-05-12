@@ -282,9 +282,7 @@ class AudioPlayerManager: ObservableObject {
   private var downloadSession: AudioDownloadSession?
   private var currentPlaybackURL: URL?
   private var instrumentalTask: Task<Void, Never>?
-  private var aiRemixTask: Task<Void, Never>?
-  private var stemLoadTask: Task<Void, Never>?
-  private var playingInstrumentalForSongID: String?
+  private var separationGeneration: UInt64 = 0
 
   #if canImport(UIKit)
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -323,6 +321,7 @@ class AudioPlayerManager: ObservableObject {
 
     audioKit.onPlaybackEnded = { [weak self] in
       guard let self, !self.isRadioMode else { return }
+      guard self.isPlaying else { return }
       guard !self.audioKit.isCrossfading else { return }
       self.playNextOrRandom()
     }
@@ -365,13 +364,8 @@ class AudioPlayerManager: ObservableObject {
       NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
         .sink { [weak self] _ in
           AudioPlayerManager.artworkCache.removeAllObjects()
-          guard let self else { return }
-          if self.playingInstrumentalForSongID == nil {
-            self.stemLoadTask?.cancel()
-            self.stemLoadTask = nil
-            self.instrumentalTask?.cancel()
-            self.instrumentalTask = nil
-          }
+          self?.instrumentalTask?.cancel()
+          self?.instrumentalTask = nil
         }
         .store(in: &cancellables)
     #endif
@@ -379,8 +373,6 @@ class AudioPlayerManager: ObservableObject {
 
   deinit {
     pollTimer?.invalidate()
-    aiRemixTask?.cancel()
-    stemLoadTask?.cancel()
     instrumentalTask?.cancel()
     if let existing = radioTimeObserver {
       existing.player.removeTimeObserver(existing.token)
@@ -399,8 +391,6 @@ class AudioPlayerManager: ObservableObject {
     _suppressModeSwitch = false
   }
 
-  private var aiEffectWhenSwapped: AudioEffect?
-
   private var currentActiveEffect: AudioEffect? {
     if karaokeMode { return .karaoke }
     if bassEnhanceMode { return .bassEnhance }
@@ -410,25 +400,18 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private func applyAIMixVolumes() {
-    guard playingInstrumentalForSongID != nil,
-      audioKit.mode == .aiMix
-    else { return }
+    guard audioKit.mode == .aiStems else { return }
     audioKit.resetBassEQ()
     if karaokeMode {
-      audioKit.setMainPlayerVolume(1.0)
-      audioKit.setAuxPlayerVolume(max(0, 1.0 - aiVocalStrength))
+      audioKit.setStemVolumes(vocals: max(0, 1.0 - aiVocalStrength), drums: 1, bass: 1, other: 1)
     } else if bassEnhanceMode {
-      audioKit.setMainPlayerVolume(1.0)
-      audioKit.setAuxPlayerVolume(1.0 + 0.5 * bassEnhanceStrength)
+      audioKit.setStemVolumes(vocals: 1, drums: 1, bass: 1 + 0.5 * bassEnhanceStrength, other: 1)
     } else if vocalEnhanceMode {
-      audioKit.setMainPlayerVolume(1.0)
-      audioKit.setAuxPlayerVolume(1.0 + 0.5 * vocalEnhanceStrength)
+      audioKit.setStemVolumes(vocals: 1 + 0.5 * vocalEnhanceStrength, drums: 1, bass: 1, other: 1)
     } else if backgroundEnhanceMode {
-      audioKit.setMainPlayerVolume(1.0 + 0.5 * backgroundEnhanceStrength)
-      audioKit.setAuxPlayerVolume(1.0)
+      audioKit.setStemVolumes(vocals: 1, drums: 1 + 0.5 * backgroundEnhanceStrength, bass: 1 + 0.5 * backgroundEnhanceStrength, other: 1 + 0.5 * backgroundEnhanceStrength)
     } else {
-      audioKit.setMainPlayerVolume(1.0)
-      audioKit.setAuxPlayerVolume(1.0)
+      audioKit.setStemVolumes(vocals: 1, drums: 1, bass: 1, other: 1)
     }
   }
 
@@ -530,13 +513,9 @@ class AudioPlayerManager: ObservableObject {
   private func startPlayingFile(_ url: URL) {
     instrumentalTask?.cancel()
     instrumentalTask = nil
-    aiRemixTask?.cancel()
-    aiRemixTask = nil
-    stemLoadTask?.cancel()
-    stemLoadTask = nil
+    separationGeneration &+= 1
+    VocalSeparator.shared.cancel()
     currentPlaybackURL = url
-    playingInstrumentalForSongID = nil
-    aiEffectWhenSwapped = nil
     configureAudioSessionCategory()
     activateAudioSession()
     NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
@@ -597,10 +576,7 @@ class AudioPlayerManager: ObservableObject {
     }
     let target = min(totalDur * fraction, totalDur - 1.5)
     guard target >= 0 else { return }
-    if !audioKit.seek(to: target) {
-      revertFromInstrumentalIfActive()
-      audioKit.seek(to: target)
-    }
+    audioKit.seek(to: target)
     updateNowPlayingInfo(reloadArtwork: false)
   }
 
@@ -705,12 +681,8 @@ class AudioPlayerManager: ObservableObject {
       return
     }
     audioKit.stop()
-    aiRemixTask?.cancel()
-    aiRemixTask = nil
-    stemLoadTask?.cancel()
-    stemLoadTask = nil
-    playingInstrumentalForSongID = nil
-    aiEffectWhenSwapped = nil
+    instrumentalTask?.cancel()
+    instrumentalTask = nil
     downloadSession?.cancel()
     downloadSession = nil
     isRadioMode = true
@@ -768,12 +740,8 @@ class AudioPlayerManager: ObservableObject {
   func clearCache() {
     downloadSession?.cancel()
     downloadSession = nil
-    stemLoadTask?.cancel()
-    stemLoadTask = nil
     instrumentalTask?.cancel()
     instrumentalTask = nil
-    aiRemixTask?.cancel()
-    aiRemixTask = nil
     let fm = FileManager.default
     if let entries = try? fm.contentsOfDirectory(
       at: AudioPlayerManager.audioCacheDir, includingPropertiesForKeys: nil)
@@ -801,29 +769,28 @@ class AudioPlayerManager: ObservableObject {
   private func applyMLSeparationIfNeeded() {
     instrumentalTask?.cancel()
     instrumentalTask = nil
+    separationGeneration &+= 1
+    let gen = separationGeneration
     guard anyAIEffectActive, !isRadioMode, let song = currentSong else {
-      aiRemixTask?.cancel()
-      aiRemixTask = nil
       VocalSeparator.shared.cancel()
-      revertFromInstrumentalIfActive()
+      if audioKit.mode == .aiStems { audioKit.revertToMain() }
       return
     }
     guard VocalSeparator.shared.isAvailable else {
-      revertFromInstrumentalIfActive()
+      if audioKit.mode == .aiStems { audioKit.revertToMain() }
       return
     }
-    if playingInstrumentalForSongID == song.id {
-      if aiEffectWhenSwapped == currentActiveEffect {
-        applyAIMixVolumes()
-        return
-      }
-      if let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) {
-        swapToAITrack(songID: song.id, stems: stems)
-        return
-      }
+    if audioKit.mode == .aiStems {
+      applyAIMixVolumes()
+      return
     }
     if let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) {
-      swapToAITrack(songID: song.id, stems: stems)
+      audioKit.switchToStems(
+        vocalsURL: stems.vocals, drumsURL: stems.drums,
+        bassURL: stems.bass, otherURL: stems.other,
+        startOffset: stems.startOffset)
+      applyAIMixVolumes()
+      isPlaying = true
       return
     }
     VocalSeparator.shared.cancel()
@@ -834,7 +801,8 @@ class AudioPlayerManager: ObservableObject {
       let deadline = Date().addingTimeInterval(30)
       while sourceURL == nil, Date() < deadline {
         if Task.isCancelled { return }
-        guard let self, self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+        guard let self, self.separationGeneration == gen,
+          self.currentSong?.id == songID, self.anyAIEffectActive else { return }
         let downloaded = DownloadManager.shared.localURL(for: songID)
         let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
         if FileManager.default.fileExists(atPath: downloaded.path) {
@@ -847,15 +815,22 @@ class AudioPlayerManager: ObservableObject {
       }
       guard let sourceURL else { return }
       if Task.isCancelled { return }
-      guard let self, self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+      guard let self, self.separationGeneration == gen,
+        self.currentSong?.id == songID, self.anyAIEffectActive else { return }
 
       do {
         let stems = try await VocalSeparator.shared.separate(
           forSongID: songID, sourceURL: sourceURL, startTime: trimStart
         )
         if Task.isCancelled { return }
-        guard self.currentSong?.id == songID, self.anyAIEffectActive else { return }
-        self.swapToAITrack(songID: songID, stems: stems)
+        guard self.separationGeneration == gen,
+          self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+        self.audioKit.switchToStems(
+          vocalsURL: stems.vocals, drumsURL: stems.drums,
+          bassURL: stems.bass, otherURL: stems.other,
+          startOffset: stems.startOffset)
+        self.applyAIMixVolumes()
+        self.isPlaying = true
       } catch is CancellationError {
         return
       } catch VocalSeparatorError.cancelled {
@@ -866,173 +841,6 @@ class AudioPlayerManager: ObservableObject {
         print("[Karaoke] AI separation failed for \(songID): \(error)")
         return
       }
-    }
-  }
-
-  private func swapToAITrack(songID: String, stems: CachedStems) {
-    let effect = currentActiveEffect
-    let originalTimelineNow = audioKit.currentTime
-    aiRemixTask?.cancel()
-    aiRemixTask = nil
-    stemLoadTask?.cancel()
-    stemLoadTask = nil
-    playingInstrumentalForSongID = songID
-    aiEffectWhenSwapped = effect
-    let startOffset = stems.startOffset
-    let aiTrackResume = max(0, originalTimelineNow - startOffset)
-    stemLoadTask = Task.detached { [weak self] in
-      guard !Task.isCancelled else { return }
-      let result: (main: AVAudioPCMBuffer, aux: AVAudioPCMBuffer?)? = autoreleasepool {
-        var vocalsBuf = AudioPlayerManager.readURLToBuffer(stems.vocals)
-        var drumsBuf = AudioPlayerManager.readURLToBuffer(stems.drums)
-        var bassBuf = AudioPlayerManager.readURLToBuffer(stems.bass)
-        var otherBuf = AudioPlayerManager.readURLToBuffer(stems.other)
-
-        if Task.isCancelled {
-          return nil as (main: AVAudioPCMBuffer, aux: AVAudioPCMBuffer?)?
-        }
-
-        if vocalsBuf == nil || drumsBuf == nil || bassBuf == nil || otherBuf == nil {
-          print(
-            "[Karaoke] Failed to read one or more stem buffers: vocals=\(vocalsBuf != nil), drums=\(drumsBuf != nil), bass=\(bassBuf != nil), other=\(otherBuf != nil)"
-          )
-        }
-
-        let mainBuf: AVAudioPCMBuffer?
-        let auxBuf: AVAudioPCMBuffer?
-
-        switch effect {
-        case .karaoke, .vocalEnhance, .backgroundEnhance:
-          mainBuf = AudioPlayerManager.mixBuffers([drumsBuf, bassBuf, otherBuf])
-          auxBuf = vocalsBuf
-        case .bassEnhance:
-          mainBuf = AudioPlayerManager.mixBuffers([vocalsBuf, drumsBuf, otherBuf])
-          auxBuf = bassBuf
-        case nil:
-          mainBuf = AudioPlayerManager.mixBuffers([vocalsBuf, drumsBuf, bassBuf, otherBuf])
-          auxBuf = nil
-        }
-
-        vocalsBuf = nil
-        drumsBuf = nil
-        bassBuf = nil
-        otherBuf = nil
-
-        if mainBuf == nil {
-          print("[Karaoke] mixBuffers returned nil for effect \(String(describing: effect))")
-        }
-        guard let mainBuf else { return nil }
-        return (main: mainBuf, aux: auxBuf)
-      }
-
-      guard !Task.isCancelled else { return }
-      guard let result else {
-        await MainActor.run { [weak self] in
-          self?.playingInstrumentalForSongID = nil
-          self?.aiEffectWhenSwapped = nil
-        }
-        return
-      }
-      await MainActor.run { [weak self] in
-        guard let self, self.playingInstrumentalForSongID == songID else { return }
-        self.stemLoadTask = nil
-        self.audioKit.playAIBuffers(
-          instrumental: result.main, vocals: result.aux,
-          startOffset: startOffset, startAt: aiTrackResume)
-        self.isPlaying = true
-        self.applyAIMixVolumes()
-      }
-    }
-  }
-
-  nonisolated private static func mixBuffers(_ buffers: [AVAudioPCMBuffer?]) -> AVAudioPCMBuffer? {
-    let validBuffers = buffers.compactMap { $0 }
-    guard !validBuffers.isEmpty else { return nil }
-    let stereoBuffers: [AVAudioPCMBuffer] = validBuffers.map { buf in
-      AudioKitPlayback.ensureStereo(buf) ?? buf
-    }
-    guard let first = stereoBuffers.first else { return nil }
-    let sampleRate = first.format.sampleRate
-    let frameCount = stereoBuffers.map(\.frameLength).max() ?? 0
-    guard frameCount > 0 else { return nil }
-    guard
-      let stereoFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
-        channels: 2, interleaved: false)
-    else { return nil }
-    guard let output = AVAudioPCMBuffer(pcmFormat: stereoFormat, frameCapacity: frameCount)
-    else { return nil }
-    output.frameLength = frameCount
-    guard let dstData = output.floatChannelData else { return nil }
-    for ch in 0..<2 {
-      memset(dstData[ch], 0, Int(frameCount) * MemoryLayout<Float>.size)
-    }
-    for buf in stereoBuffers {
-      guard let srcData = buf.floatChannelData else { continue }
-      let frames = min(buf.frameLength, frameCount)
-      let channels = min(Int(buf.format.channelCount), 2)
-      for ch in 0..<channels {
-        let src = srcData[ch]
-        let dst = dstData[ch]
-        for i in 0..<Int(frames) {
-          dst[i] += src[i]
-        }
-      }
-    }
-    return output
-  }
-
-  nonisolated private static func readURLToBuffer(_ url: URL) -> AVAudioPCMBuffer? {
-    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-    if AudioKitPlayback.hasValidAudioHeader(at: url) {
-      if let file = try? AVAudioFile(forReading: url) {
-        let frameCount = AVAudioFrameCount(file.length)
-        if frameCount > 0,
-          let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frameCount)
-        {
-          do {
-            try file.read(into: buf)
-            return buf
-          } catch {}
-        }
-      }
-    }
-    return AudioKitPlayback.decodeFileToBuffer(url: url)
-  }
-
-  private func revertFromInstrumentalIfActive() {
-    guard let songID = playingInstrumentalForSongID,
-      let song = currentSong, song.id == songID
-    else {
-      aiRemixTask?.cancel()
-      aiRemixTask = nil
-      stemLoadTask?.cancel()
-      stemLoadTask = nil
-      playingInstrumentalForSongID = nil
-      aiEffectWhenSwapped = nil
-      return
-    }
-    let downloaded = DownloadManager.shared.localURL(for: song.id)
-    let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(song.id).mp3")
-    let originalURL: URL?
-    if FileManager.default.fileExists(atPath: downloaded.path) {
-      originalURL = downloaded
-    } else if FileManager.default.fileExists(atPath: cached.path) {
-      originalURL = cached
-    } else {
-      originalURL = nil
-    }
-    let resumeAt = audioKit.currentTime
-    aiRemixTask?.cancel()
-    aiRemixTask = nil
-    stemLoadTask?.cancel()
-    stemLoadTask = nil
-    playingInstrumentalForSongID = nil
-    aiEffectWhenSwapped = nil
-    audioKit.resetBassEQ()
-    if let originalURL {
-      audioKit.play(url: originalURL, startAt: resumeAt)
-      isPlaying = true
     }
   }
 
