@@ -16,6 +16,9 @@ final class DownloadManager: ObservableObject {
       .appendingPathComponent("Downloads")
     try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     refreshExistingDownloads()
+    DebugLogger.log(
+      "DownloadManager init — \(downloadedIDs.count) existing downloads",
+      category: .network)
   }
   func localURL(for songID: String) -> URL {
     cacheDir.appendingPathComponent("\(songID).mp3")
@@ -29,6 +32,7 @@ final class DownloadManager: ObservableObject {
   func download(song: Song) {
     guard !isDownloaded(song.id), !isDownloading(song.id) else { return }
     guard let remote = song.audioURL else { return }
+    DebugLogger.log("Starting download: \(song.id)", category: .network)
     inProgress.insert(song.id)
     progress[song.id] = 0
     let dest = localURL(for: song.id)
@@ -49,6 +53,9 @@ final class DownloadManager: ObservableObject {
         self.progress.removeValue(forKey: songID)
         if moved {
           self.downloadedIDs.insert(songID)
+          DebugLogger.log("Download completed: \(songID)", category: .network)
+        } else {
+          DebugLogger.log("Download failed: \(songID)", category: .network)
         }
       }
     }
@@ -65,6 +72,7 @@ final class DownloadManager: ObservableObject {
     let url = localURL(for: songID)
     try? FileManager.default.removeItem(at: url)
     downloadedIDs.remove(songID)
+    DebugLogger.log("Download removed: \(songID)", category: .network)
   }
   func removeAll() {
     let fm = FileManager.default
@@ -72,6 +80,7 @@ final class DownloadManager: ObservableObject {
       for f in files { try? fm.removeItem(at: f) }
     }
     downloadedIDs = []
+    DebugLogger.log("All downloads removed", category: .network)
   }
   private func refreshExistingDownloads() {
     let fm = FileManager.default

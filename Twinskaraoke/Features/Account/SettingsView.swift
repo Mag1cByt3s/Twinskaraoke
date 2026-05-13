@@ -3,9 +3,11 @@ import SwiftUI
 
 struct SettingsView: View {
   @StateObject private var audioManager = AudioPlayerManager.shared
+  @StateObject private var cacheManager = CacheManager.shared
   @AppStorage("nk.streamingQuality") private var streamingQuality: String = "high"
   @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @AppStorage("nk.debugLogging") private var debugLogging: Bool = false
   @State private var pendingAction: SettingsDestructiveAction?
   var body: some View {
     List {
@@ -51,58 +53,7 @@ struct SettingsView: View {
         Text("When enabled, songs you play are saved for offline listening.")
       }
       if DeviceCapability.supportsKaraoke {
-        Section {
-          Toggle("Vocal Removal", isOn: $audioManager.karaokeMode)
-            .tint(.appAccent)
-          if audioManager.karaokeMode {
-            HStack {
-              Text("Removal Level")
-              Spacer()
-              Text(aiStrengthLabel)
-                .foregroundStyle(.secondary)
-            }
-            StrengthSlider(value: $audioManager.aiVocalStrength)
-          }
-          Toggle("Bass Enhance", isOn: $audioManager.bassEnhanceMode)
-            .tint(.appAccent)
-          if audioManager.bassEnhanceMode {
-            HStack {
-              Text("Strength")
-              Spacer()
-              Text(bassStrengthLabel)
-                .foregroundStyle(.secondary)
-            }
-            StrengthSlider(value: $audioManager.bassEnhanceStrength)
-          }
-          Toggle("Vocal Enhance", isOn: $audioManager.vocalEnhanceMode)
-            .tint(.appAccent)
-          if audioManager.vocalEnhanceMode {
-            HStack {
-              Text("Strength")
-              Spacer()
-              Text(vocalEnhanceStrengthLabel)
-                .foregroundStyle(.secondary)
-            }
-            StrengthSlider(value: $audioManager.vocalEnhanceStrength)
-          }
-          Toggle("Instrumental Enhance", isOn: $audioManager.backgroundEnhanceMode)
-            .tint(.appAccent)
-          if audioManager.backgroundEnhanceMode {
-            HStack {
-              Text("Strength")
-              Spacer()
-              Text(backgroundEnhanceStrengthLabel)
-                .foregroundStyle(.secondary)
-            }
-            StrengthSlider(value: $audioManager.backgroundEnhanceStrength)
-          }
-        } header: {
-          Text("Karaoke")
-        } footer: {
-          Text(
-            "Powered by on-device AI. Audio is separated into vocals and instrumentals in real time — the first use on a song may take a moment to process."
-          )
-        }
+        aiAudioSection
       }
       Section {
         Toggle("Equalizer", isOn: $audioManager.eqEnabled)
@@ -130,24 +81,16 @@ struct SettingsView: View {
         Toggle("Respect Reduce Motion", isOn: $respectReducedMotion)
           .tint(.appAccent)
       }
-      Section {
-        Button(role: .destructive) {
-          pendingAction = .removeDownloads
-        } label: {
-          Text("Remove All Downloads")
+      storageSection
+      Section("Developer") {
+        Toggle("Debug Logging", isOn: $debugLogging)
+          .tint(.appAccent)
+        if debugLogging {
+          Button("Export Debug Logs") {
+            exportDebugLogs()
+          }
+          .foregroundStyle(Color.appAccent)
         }
-        Button(role: .destructive) {
-          pendingAction = .clearCache
-        } label: {
-          Text("Clear All Cache")
-        }
-        Button(role: .destructive) {
-          pendingAction = .clearRecentlyPlayed
-        } label: {
-          Text("Clear Recently Played")
-        }
-      } header: {
-        Text("Storage")
       }
     }
     .navigationTitle("Settings")
@@ -169,19 +112,199 @@ struct SettingsView: View {
       Text(action.message)
     }
   }
+
+  // MARK: - AI Audio Section
+
+  @ViewBuilder
+  private var aiAudioSection: some View {
+    Section {
+      Toggle("AI Audio Processing", isOn: $audioManager.aiEnabled)
+        .tint(.appAccent)
+
+      if audioManager.aiEnabled {
+        Toggle("Auto-Analyze During Playback", isOn: $audioManager.aiAutoAnalyze)
+          .tint(.appAccent)
+
+        if audioManager.aiAutoAnalyze {
+          VStack(alignment: .leading, spacing: 8) {
+            Label {
+              Text("Benefits")
+                .font(.subheadline.weight(.medium))
+            } icon: {
+              Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.caption)
+            }
+            Text(
+              "Instantly switch between karaoke modes without processing delay. Music is pre-analyzed in the background for a smoother experience."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Label {
+              Text("Trade-offs")
+                .font(.subheadline.weight(.medium))
+            } icon: {
+              Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .font(.caption)
+            }
+            Text(
+              "Uses additional battery and processing power during playback. Separated stems are cached within the 4 GB music cache limit."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          }
+          .padding(.vertical, 4)
+        }
+
+        // Karaoke controls
+        Toggle("Vocal Removal", isOn: $audioManager.karaokeMode)
+          .tint(.appAccent)
+        if audioManager.karaokeMode {
+          HStack {
+            Text("Removal Level")
+            Spacer()
+            Text(aiStrengthLabel)
+              .foregroundStyle(.secondary)
+          }
+          StrengthSlider(value: $audioManager.aiVocalStrength)
+        }
+        Toggle("Bass Enhance", isOn: $audioManager.bassEnhanceMode)
+          .tint(.appAccent)
+        if audioManager.bassEnhanceMode {
+          HStack {
+            Text("Strength")
+            Spacer()
+            Text(bassStrengthLabel)
+              .foregroundStyle(.secondary)
+          }
+          StrengthSlider(value: $audioManager.bassEnhanceStrength)
+        }
+        Toggle("Vocal Enhance", isOn: $audioManager.vocalEnhanceMode)
+          .tint(.appAccent)
+        if audioManager.vocalEnhanceMode {
+          HStack {
+            Text("Strength")
+            Spacer()
+            Text(vocalEnhanceStrengthLabel)
+              .foregroundStyle(.secondary)
+          }
+          StrengthSlider(value: $audioManager.vocalEnhanceStrength)
+        }
+        Toggle("Instrumental Enhance", isOn: $audioManager.instrumentalEnhanceMode)
+          .tint(.appAccent)
+        if audioManager.instrumentalEnhanceMode {
+          HStack {
+            Text("Strength")
+            Spacer()
+            Text(instrumentalEnhanceStrengthLabel)
+              .foregroundStyle(.secondary)
+          }
+          StrengthSlider(value: $audioManager.instrumentalEnhanceStrength)
+        }
+      }
+    } header: {
+      Text("AI Audio")
+    } footer: {
+      if audioManager.aiEnabled && !audioManager.aiAutoAnalyze {
+        Text(
+          "Real-time mode: audio is processed on-the-fly when you activate a karaoke feature. Only the unplayed portion is processed for faster results."
+        )
+      } else if !audioManager.aiEnabled {
+        Text(
+          "Enable AI Audio Processing to access vocal removal, bass enhance, and other AI-powered audio features."
+        )
+      } else {
+        Text(
+          "Powered by on-device AI. Audio is separated into vocals and instrumentals using a neural network model."
+        )
+      }
+    }
+  }
+
+  // MARK: - Storage Section
+
+  @ViewBuilder
+  private var storageSection: some View {
+    Section {
+      HStack {
+        Label("Image Cache", systemImage: "photo")
+        Spacer()
+        Text(cacheManager.formattedImageCacheSize())
+          .foregroundStyle(.secondary)
+        Text("/ 2 GB")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+      HStack {
+        Label("Music Cache", systemImage: "music.note")
+        Spacer()
+        Text(cacheManager.formattedMusicCacheSize())
+          .foregroundStyle(.secondary)
+        Text("/ 4 GB")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+      Button(role: .destructive) {
+        pendingAction = .clearImageCache
+      } label: {
+        Text("Clear Image Cache")
+      }
+      Button(role: .destructive) {
+        pendingAction = .clearMusicCache
+      } label: {
+        Text("Clear Music Cache")
+      }
+      Button(role: .destructive) {
+        pendingAction = .removeDownloads
+      } label: {
+        Text("Remove All Downloads")
+      }
+      Button(role: .destructive) {
+        pendingAction = .clearRecentlyPlayed
+      } label: {
+        Text("Clear Recently Played")
+      }
+    } header: {
+      Text("Storage")
+    } footer: {
+      Text(
+        "Image cache is limited to 2 GB, music cache (including AI stems) to 4 GB. Items older than 6 months are automatically cleaned. Downloads are exempt from these limits."
+      )
+    }
+  }
+
+  // MARK: - Actions
+
   private func perform(_ action: SettingsDestructiveAction) {
     switch action {
     case .removeDownloads:
       DownloadManager.shared.removeAll()
-    case .clearCache:
+    case .clearImageCache:
+      cacheManager.clearImageCache()
+    case .clearMusicCache:
       audioManager.clearCache()
-      SDImageCache.shared.clearMemory()
-      SDImageCache.shared.clearDisk(onCompletion: nil)
-      URLCache.shared.removeAllCachedResponses()
+      cacheManager.clearMusicCache()
     case .clearRecentlyPlayed:
       RecentlyPlayedStore.shared.reset()
     }
   }
+
+  private func exportDebugLogs() {
+    #if canImport(UIKit)
+      let logs = DebugLogger.exportLogs()
+      let av = UIActivityViewController(activityItems: [logs], applicationActivities: nil)
+      if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+        let root = windowScene.windows.first?.rootViewController
+      {
+        root.present(av, animated: true)
+      }
+    #endif
+  }
+
+  // MARK: - Labels
+
   private var aiStrengthLabel: String {
     let s = audioManager.aiVocalStrength
     if s >= 0.99 { return "Maximum" }
@@ -196,8 +319,8 @@ struct SettingsView: View {
   private var vocalEnhanceStrengthLabel: String {
     strengthText(audioManager.vocalEnhanceStrength)
   }
-  private var backgroundEnhanceStrengthLabel: String {
-    strengthText(audioManager.backgroundEnhanceStrength)
+  private var instrumentalEnhanceStrengthLabel: String {
+    strengthText(audioManager.instrumentalEnhanceStrength)
   }
   private func strengthText(_ v: Float) -> String {
     if v < 0.15 { return "Almost off" }
@@ -329,12 +452,14 @@ private struct EqualizerBand: View {
 
 private enum SettingsDestructiveAction {
   case removeDownloads
-  case clearCache
+  case clearImageCache
+  case clearMusicCache
   case clearRecentlyPlayed
   var title: String {
     switch self {
     case .removeDownloads: return "Remove all downloads?"
-    case .clearCache: return "Clear all cache?"
+    case .clearImageCache: return "Clear image cache?"
+    case .clearMusicCache: return "Clear music cache?"
     case .clearRecentlyPlayed: return "Clear recently played?"
     }
   }
@@ -342,9 +467,11 @@ private enum SettingsDestructiveAction {
     switch self {
     case .removeDownloads:
       return "All offline downloads will be deleted from this device."
-    case .clearCache:
+    case .clearImageCache:
+      return "Cached artwork and images will be removed. They will redownload as you use the app."
+    case .clearMusicCache:
       return
-        "Cached playback files and images will be removed. Songs and artwork will redownload as you use the app."
+        "Cached audio files and AI stems will be removed. Songs will re-buffer as you play them."
     case .clearRecentlyPlayed:
       return "Your recently played history will be cleared."
     }
@@ -352,7 +479,8 @@ private enum SettingsDestructiveAction {
   var actionLabel: String {
     switch self {
     case .removeDownloads: return "Remove All Downloads"
-    case .clearCache: return "Clear All Cache"
+    case .clearImageCache: return "Clear Image Cache"
+    case .clearMusicCache: return "Clear Music Cache"
     case .clearRecentlyPlayed: return "Clear Recently Played"
     }
   }

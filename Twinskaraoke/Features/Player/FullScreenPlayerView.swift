@@ -7,6 +7,7 @@ import SwiftUI
 struct FullScreenPlayerView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
   @ObservedObject private var favorites = FavoritesManager.shared
+  @ObservedObject private var vocalSeparator = VocalSeparator.shared
   @Environment(\.dismiss) private var dismiss
   @State private var showingQueue = false
   @State private var showLyrics = false
@@ -81,6 +82,11 @@ struct FullScreenPlayerView: View {
     .onChange(of: audioManager.showFullScreen) { isShown in
       if !isShown { dismiss() }
     }
+    .onChange(of: audioManager.aiEnabled) { enabled in
+      if !enabled {
+        showKaraokeControls = false
+      }
+    }
     .onAppear { favorites.loadIfNeeded() }
   }
   @ViewBuilder
@@ -104,10 +110,16 @@ struct FullScreenPlayerView: View {
             )
           }
           .overlay(alignment: .bottomTrailing) {
-            if DeviceCapability.supportsKaraoke {
-              KaraokeRightDock(showKaraokeControls: $showKaraokeControls)
-                .padding(.trailing, 16)
-                .padding(.bottom, 32)
+            if DeviceCapability.supportsKaraoke && audioManager.aiEnabled {
+              VStack(spacing: 8) {
+                // Processing indicator
+                if vocalSeparator.processingSongID != nil {
+                  aiProcessingIndicator
+                }
+                KaraokeRightDock(showKaraokeControls: $showKaraokeControls)
+              }
+              .padding(.trailing, 16)
+              .padding(.bottom, 32)
             }
           }
           .transition(.opacity)
@@ -285,5 +297,33 @@ struct FullScreenPlayerView: View {
   private func formattedTime(_ seconds: Double) -> String {
     let s = Int(seconds)
     return String(format: "%d:%02d", s / 60, s % 60)
+  }
+
+  // MARK: - AI Processing Indicator
+
+  private var aiProcessingIndicator: some View {
+    VStack(spacing: 4) {
+      ZStack {
+        Circle()
+          .stroke(Color.primary.opacity(0.15), lineWidth: 2)
+        Circle()
+          .trim(from: 0, to: CGFloat(vocalSeparator.progressFraction))
+          .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+        Image(systemName: "waveform")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundColor(.appAccent)
+      }
+      .frame(width: 28, height: 28)
+      .background(
+        Circle()
+          .fill(.ultraThinMaterial)
+      )
+      Text("\(Int(vocalSeparator.progressFraction * 100))%")
+        .font(.system(size: 9, weight: .medium, design: .monospaced))
+        .foregroundColor(.secondary)
+    }
+    .transition(.scale.combined(with: .opacity))
+    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vocalSeparator.progressFraction)
   }
 }

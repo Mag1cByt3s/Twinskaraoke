@@ -92,7 +92,7 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
 }
 
 private enum AudioEffect {
-  case karaoke, bassEnhance, vocalEnhance, backgroundEnhance
+  case karaoke, bassEnhance, vocalEnhance, instrumentalEnhance
 }
 
 class AudioPlayerManager: ObservableObject {
@@ -113,6 +113,48 @@ class AudioPlayerManager: ObservableObject {
   @Published var autoplayEnabled: Bool = true
   @Published var isRadioMode: Bool = false
   @Published var radioArtworkURL: URL?
+
+  /// Master AI audio processing toggle — when off, all karaoke/enhance features are hidden and disabled
+  @Published var aiEnabled: Bool = {
+    if UserDefaults.standard.object(forKey: "nk.aiEnabled") != nil {
+      return UserDefaults.standard.bool(forKey: "nk.aiEnabled")
+    }
+    return DeviceCapability.supportsKaraoke
+  }() {
+    didSet {
+      UserDefaults.standard.set(aiEnabled, forKey: "nk.aiEnabled")
+      DebugLogger.log("AI enabled: \(aiEnabled)", category: .ai)
+      if !aiEnabled {
+        // Disable all AI modes when master toggle is off
+        _suppressModeSwitch = true
+        karaokeMode = false
+        bassEnhanceMode = false
+        vocalEnhanceMode = false
+        instrumentalEnhanceMode = false
+        _suppressModeSwitch = false
+        VocalSeparator.shared.cancel()
+        VocalSeparator.shared.cancelBackgroundAnalysis()
+        VocalSeparator.shared.cleanupRealtimeTemp()
+        if audioKit.mode == .aiStems { audioKit.revertToMain() }
+      }
+    }
+  }
+
+  /// When enabled, AI separation runs in background during playback for faster future switching
+  @Published var aiAutoAnalyze: Bool = {
+    UserDefaults.standard.bool(forKey: "nk.aiAutoAnalyze")
+  }() {
+    didSet {
+      UserDefaults.standard.set(aiAutoAnalyze, forKey: "nk.aiAutoAnalyze")
+      DebugLogger.log("AI auto-analyze: \(aiAutoAnalyze)", category: .ai)
+      if aiAutoAnalyze, aiEnabled, let song = currentSong, !isRadioMode {
+        triggerBackgroundAnalysis(for: song)
+      }
+      if !aiAutoAnalyze {
+        VocalSeparator.shared.cancelBackgroundAnalysis()
+      }
+    }
+  }
 
   @Published var karaokeMode: Bool = false {
     didSet {
@@ -175,20 +217,20 @@ class AudioPlayerManager: ObservableObject {
     }
   }
 
-  @Published var backgroundEnhanceMode: Bool = false {
+  @Published var instrumentalEnhanceMode: Bool = false {
     didSet {
       guard !_suppressModeSwitch else { return }
-      if backgroundEnhanceMode {
-        disableOtherModes(except: .backgroundEnhance)
+      if instrumentalEnhanceMode {
+        disableOtherModes(except: .instrumentalEnhance)
       }
       applyMLSeparationIfNeeded()
     }
   }
-  @Published var backgroundEnhanceStrength: Float = AudioPlayerManager.loadFloat(
-    "nk.backgroundEnhanceStrength", default: 0.5)
+  @Published var instrumentalEnhanceStrength: Float = AudioPlayerManager.loadFloat(
+    "nk.instrumentalEnhanceStrength", default: 0.5)
   {
     didSet {
-      UserDefaults.standard.set(backgroundEnhanceStrength, forKey: "nk.backgroundEnhanceStrength")
+      UserDefaults.standard.set(instrumentalEnhanceStrength, forKey: "nk.instrumentalEnhanceStrength")
       applyAIMixVolumes()
     }
   }
@@ -307,13 +349,14 @@ class AudioPlayerManager: ObservableObject {
   #endif
 
   var anyAIEffectActive: Bool {
-    karaokeMode || bassEnhanceMode || vocalEnhanceMode || backgroundEnhanceMode
+    karaokeMode || bassEnhanceMode || vocalEnhanceMode || instrumentalEnhanceMode
   }
 
   init() {
     configureAudioSessionCategory()
     activateAudioSession()
     AudioPlayerManager.cleanupOrphanPartialCacheFiles()
+    DebugLogger.log("AudioPlayerManager initializing", category: .playback)
     #if os(iOS)
       UIApplication.shared.beginReceivingRemoteControlEvents()
     #endif
@@ -387,7 +430,7 @@ class AudioPlayerManager: ObservableObject {
     if keep != .karaoke { karaokeMode = false }
     if keep != .bassEnhance { bassEnhanceMode = false }
     if keep != .vocalEnhance { vocalEnhanceMode = false }
-    if keep != .backgroundEnhance { backgroundEnhanceMode = false }
+    if keep != .instrumentalEnhance { instrumentalEnhanceMode = false }
     _suppressModeSwitch = false
   }
 
@@ -395,23 +438,24 @@ class AudioPlayerManager: ObservableObject {
     if karaokeMode { return .karaoke }
     if bassEnhanceMode { return .bassEnhance }
     if vocalEnhanceMode { return .vocalEnhance }
-    if backgroundEnhanceMode { return .backgroundEnhance }
+    if instrumentalEnhanceMode { return .instrumentalEnhance }
     return nil
   }
 
   private func applyAIMixVolumes() {
     guard audioKit.mode == .aiStems else { return }
-    audioKit.resetBassEQ()
+    audioKit.resetInstrumentalEQ()
     if karaokeMode {
-      audioKit.setStemVolumes(vocals: max(0, 1.0 - aiVocalStrength), drums: 1, bass: 1, other: 1)
+      audioKit.setStemVolumes(vocals: max(0, 1.0 - aiVocalStrength), instrumental: 1)
     } else if bassEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1, drums: 1, bass: 1 + 0.5 * bassEnhanceStrength, other: 1)
+      audioKit.setStemVolumes(vocals: 1, instrumental: 1)
+      audioKit.setInstrumentalEQGain(dB: 6.0 * bassEnhanceStrength)
     } else if vocalEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1 + 0.5 * vocalEnhanceStrength, drums: 1, bass: 1, other: 1)
-    } else if backgroundEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1, drums: 1 + 0.5 * backgroundEnhanceStrength, bass: 1 + 0.5 * backgroundEnhanceStrength, other: 1 + 0.5 * backgroundEnhanceStrength)
+      audioKit.setStemVolumes(vocals: 1 + 0.5 * vocalEnhanceStrength, instrumental: 1)
+    } else if instrumentalEnhanceMode {
+      audioKit.setStemVolumes(vocals: 1, instrumental: 1 + 0.5 * instrumentalEnhanceStrength)
     } else {
-      audioKit.setStemVolumes(vocals: 1, drums: 1, bass: 1, other: 1)
+      audioKit.setStemVolumes(vocals: 1, instrumental: 1)
     }
   }
 
@@ -450,6 +494,7 @@ class AudioPlayerManager: ObservableObject {
   }
 
   func play(song: Song, context: [Song] = []) {
+    DebugLogger.log("Play requested: \(song.title) (id: \(song.id))", category: .playback)
     if isRadioMode { RadioController.shared.stop() }
     stopRadioPlayer()
     isRadioMode = false
@@ -481,13 +526,38 @@ class AudioPlayerManager: ObservableObject {
     downloadSession = nil
     let cacheURL = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(song.id).mp3")
     let downloadedURL = DownloadManager.shared.localURL(for: song.id)
+    let fileURL: URL?
     if FileManager.default.fileExists(atPath: downloadedURL.path) {
-      startPlayingFile(downloadedURL)
-      applyMLSeparationIfNeeded()
+      fileURL = downloadedURL
+    } else if FileManager.default.fileExists(atPath: cacheURL.path) {
+      fileURL = cacheURL
+    } else {
+      fileURL = nil
+    }
+    if let fileURL, let stems = stemsForCachedAIMode(song: song) {
+      instrumentalTask?.cancel()
+      instrumentalTask = nil
+      separationGeneration &+= 1
+      VocalSeparator.shared.cancel()
+      currentPlaybackURL = fileURL
+      configureAudioSessionCategory()
+      activateAudioSession()
+      NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
+      audioKit.playStems(
+        originalURL: fileURL,
+        vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
+        startOffset: stems.startOffset)
+      applyAIMixVolumes()
+      isPlaying = true
+      isBuffering = false
+      updateNowPlayingInfo(reloadArtwork: true)
+      #if canImport(UIKit)
+        endTrackTransitionBackgroundTask()
+      #endif
       return
     }
-    if FileManager.default.fileExists(atPath: cacheURL.path) {
-      startPlayingFile(cacheURL)
+    if let fileURL {
+      startPlayingFile(fileURL)
       applyMLSeparationIfNeeded()
       return
     }
@@ -503,6 +573,8 @@ class AudioPlayerManager: ObservableObject {
       guard self.currentSong?.id == songID else { return }
       self.isBuffering = false
       if let url {
+        CacheManager.shared.recordAccess(for: url)
+        CacheManager.shared.enforceMusicCacheLimits()
         self.startPlayingFile(url)
         self.applyMLSeparationIfNeeded()
       }
@@ -515,6 +587,7 @@ class AudioPlayerManager: ObservableObject {
     instrumentalTask = nil
     separationGeneration &+= 1
     VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cleanupRealtimeTemp()
     currentPlaybackURL = url
     configureAudioSessionCategory()
     activateAudioSession()
@@ -523,6 +596,13 @@ class AudioPlayerManager: ObservableObject {
     isPlaying = true
     isBuffering = false
     updateNowPlayingInfo(reloadArtwork: true)
+    DebugLogger.log("Playing file: \(url.lastPathComponent)", category: .playback)
+    // Record access for LRU cache tracking
+    CacheManager.shared.recordAccess(for: url)
+    // Trigger background AI analysis if enabled
+    if let song = currentSong, aiEnabled, aiAutoAnalyze {
+      triggerBackgroundAnalysis(for: song)
+    }
     #if canImport(UIKit)
       endTrackTransitionBackgroundTask()
     #endif
@@ -738,10 +818,12 @@ class AudioPlayerManager: ObservableObject {
   }
 
   func clearCache() {
+    DebugLogger.log("Clearing all cache", category: .cache)
     downloadSession?.cancel()
     downloadSession = nil
     instrumentalTask?.cancel()
     instrumentalTask = nil
+    VocalSeparator.shared.cleanupRealtimeTemp()
     let fm = FileManager.default
     if let entries = try? fm.contentsOfDirectory(
       at: AudioPlayerManager.audioCacheDir, includingPropertiesForKeys: nil)
@@ -754,6 +836,7 @@ class AudioPlayerManager: ObservableObject {
       AudioPlayerManager.artworkCache.removeAllObjects()
       nowPlayingArtwork = nil
     #endif
+    CacheManager.shared.refreshSizes()
   }
 
   private static func cleanupOrphanPartialCacheFiles() {
@@ -766,12 +849,56 @@ class AudioPlayerManager: ObservableObject {
     }
   }
 
+  private func stemsForCachedAIMode(song: Song) -> CachedStems? {
+    guard aiEnabled, anyAIEffectActive, !isRadioMode, VocalSeparator.shared.isAvailable else {
+      return nil
+    }
+    return VocalSeparator.shared.cachedStems(forSongID: song.id)
+  }
+
+  /// Triggers background AI separation for the given song (auto-analyze mode)
+  private func triggerBackgroundAnalysis(for song: Song) {
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return }
+    guard VocalSeparator.shared.isAvailable else { return }
+
+    let songID = song.id
+    let existingURL = currentPlaybackURL
+
+    // Find a source file for analysis
+    var sourceURL: URL?
+    let downloaded = DownloadManager.shared.localURL(for: songID)
+    let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
+    if FileManager.default.fileExists(atPath: downloaded.path) {
+      sourceURL = downloaded
+    } else if FileManager.default.fileExists(atPath: cached.path) {
+      sourceURL = cached
+    } else if let u = existingURL, FileManager.default.fileExists(atPath: u.path) {
+      sourceURL = u
+    }
+
+    if let sourceURL {
+      DebugLogger.log("Triggering background analysis for \(songID)", category: .ai)
+      VocalSeparator.shared.analyzeInBackground(songID: songID, sourceURL: sourceURL)
+    } else {
+      // Wait for download to complete, then trigger
+      DebugLogger.log(
+        "Source not available yet for background analysis of \(songID), will retry",
+        category: .ai)
+      Task { @MainActor [weak self] in
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        guard let self, self.currentSong?.id == songID, self.aiAutoAnalyze, self.aiEnabled
+        else { return }
+        self.triggerBackgroundAnalysis(for: song)
+      }
+    }
+  }
+
   private func applyMLSeparationIfNeeded() {
     instrumentalTask?.cancel()
     instrumentalTask = nil
     separationGeneration &+= 1
     let gen = separationGeneration
-    guard anyAIEffectActive, !isRadioMode, let song = currentSong else {
+    guard aiEnabled, anyAIEffectActive, !isRadioMode, let song = currentSong else {
       VocalSeparator.shared.cancel()
       if audioKit.mode == .aiStems { audioKit.revertToMain() }
       return
@@ -784,10 +911,11 @@ class AudioPlayerManager: ObservableObject {
       applyAIMixVolumes()
       return
     }
+    // Check persistent cache first (available regardless of auto-analyze setting)
     if let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) {
+      DebugLogger.log("Using cached stems for \(song.id)", category: .ai)
       audioKit.switchToStems(
-        vocalsURL: stems.vocals, drumsURL: stems.drums,
-        bassURL: stems.bass, otherURL: stems.other,
+        vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
         startOffset: stems.startOffset)
       applyAIMixVolumes()
       isPlaying = true
@@ -796,21 +924,30 @@ class AudioPlayerManager: ObservableObject {
     VocalSeparator.shared.cancel()
     let songID = song.id
     let trimStart = audioKit.currentTime
+    let existingURL = currentPlaybackURL
+    let useRealTime = !aiAutoAnalyze
+    DebugLogger.log(
+      "Starting \(useRealTime ? "real-time" : "full") separation for \(songID) from \(trimStart)s",
+      category: .separation)
     instrumentalTask = Task { @MainActor [weak self] in
       var sourceURL: URL?
-      let deadline = Date().addingTimeInterval(30)
-      while sourceURL == nil, Date() < deadline {
-        if Task.isCancelled { return }
-        guard let self, self.separationGeneration == gen,
-          self.currentSong?.id == songID, self.anyAIEffectActive else { return }
-        let downloaded = DownloadManager.shared.localURL(for: songID)
-        let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
-        if FileManager.default.fileExists(atPath: downloaded.path) {
-          sourceURL = downloaded
-        } else if FileManager.default.fileExists(atPath: cached.path) {
-          sourceURL = cached
-        } else {
-          try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s poll
+      if let u = existingURL, FileManager.default.fileExists(atPath: u.path) {
+        sourceURL = u
+      } else {
+        let deadline = Date().addingTimeInterval(30)
+        while sourceURL == nil, Date() < deadline {
+          if Task.isCancelled { return }
+          guard let self, self.separationGeneration == gen,
+            self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+          let downloaded = DownloadManager.shared.localURL(for: songID)
+          let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
+          if FileManager.default.fileExists(atPath: downloaded.path) {
+            sourceURL = downloaded
+          } else if FileManager.default.fileExists(atPath: cached.path) {
+            sourceURL = cached
+          } else {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+          }
         }
       }
       guard let sourceURL else { return }
@@ -819,18 +956,33 @@ class AudioPlayerManager: ObservableObject {
         self.currentSong?.id == songID, self.anyAIEffectActive else { return }
 
       do {
-        let stems = try await VocalSeparator.shared.separate(
-          forSongID: songID, sourceURL: sourceURL, startTime: trimStart
-        )
+        let stems: CachedStems
+        if useRealTime {
+          // Real-time mode: process only unplayed parts, no persistent cache
+          stems = try await VocalSeparator.shared.separateRealTime(
+            forSongID: songID, sourceURL: sourceURL, fromTime: trimStart)
+        } else {
+          // Full mode: process entire song and cache for future use
+          stems = try await VocalSeparator.shared.separate(
+            forSongID: songID, sourceURL: sourceURL, startTime: trimStart)
+        }
         if Task.isCancelled { return }
         guard self.separationGeneration == gen,
-          self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+          self.currentSong?.id == songID, self.anyAIEffectActive else {
+          // Clean up temp files if we're not going to use them
+          if stems.isTemporary {
+            VocalSeparator.shared.cleanupRealtimeTemp()
+          }
+          return
+        }
         self.audioKit.switchToStems(
-          vocalsURL: stems.vocals, drumsURL: stems.drums,
-          bassURL: stems.bass, otherURL: stems.other,
+          vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
           startOffset: stems.startOffset)
         self.applyAIMixVolumes()
         self.isPlaying = true
+        DebugLogger.log(
+          "Separation applied for \(songID), mode=\(useRealTime ? "realtime" : "full")",
+          category: .separation)
       } catch is CancellationError {
         return
       } catch VocalSeparatorError.cancelled {
@@ -838,7 +990,7 @@ class AudioPlayerManager: ObservableObject {
       } catch VocalSeparatorError.unavailable {
         return
       } catch {
-        print("[Karaoke] AI separation failed for \(songID): \(error)")
+        DebugLogger.log("AI separation failed for \(songID): \(error)", category: .separation)
         return
       }
     }
