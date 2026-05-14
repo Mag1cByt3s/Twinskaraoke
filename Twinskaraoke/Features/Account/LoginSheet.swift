@@ -36,9 +36,10 @@ struct LoginSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
+          GlassXButton(action: { dismiss() })
         }
       }
+      .toolbarBackground(.hidden, for: .navigationBar)
       .onChange(of: auth.isLoggedIn) { _, isLoggedIn in
         if isLoggedIn { dismiss() }
       }

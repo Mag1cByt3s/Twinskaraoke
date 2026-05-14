@@ -199,11 +199,10 @@ struct ZoomableImageViewer: View {
           } label: {
             Image(systemName: "xmark")
               .font(.system(size: 16, weight: .semibold))
-              .foregroundColor(.white)
+              .foregroundColor(.white.opacity(0.85))
               .frame(width: 36, height: 36)
-              .background(Color.black.opacity(0.4))
-              .clipShape(Circle())
           }
+          .modifier(GlassCircle())
           Spacer()
           Button {
             onSave()

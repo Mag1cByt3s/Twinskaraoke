@@ -86,6 +86,7 @@ struct LibraryView: View {
         PlaylistDetailView(playlist: playlist)
       }
       .onAppear {
+        favorites.loadIfNeeded()
         viewModel.fetchPlaylists()
         viewModel.fetchFavoriteSongs()
       }
@@ -138,12 +139,25 @@ struct PlaylistListRow: View {
 struct PlaylistsGridScreen: View {
   @ObservedObject var viewModel: PlaylistsViewModel
   @ObservedObject var savedStore: SavedPlaylistsStore = .shared
+  @ObservedObject private var userManager = UserPlaylistsManager.shared
+  @ObservedObject private var favorites = FavoritesManager.shared
+  @State private var showCreateSheet = false
   let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
-  var body: some View {
+  private var isLoggedIn: Bool {
+    UserDefaults.standard.string(forKey: "nk.token") != nil
+  }
+  private var combinedPlaylists: [Playlist] {
+    let userConverted = userManager.playlists.map { $0.asPlaylist() }
     let all = viewModel.allPlaylists(saved: savedStore.playlists)
+    let existingIDs = Set(all.map { $0.id })
+    let uniqueUser = userConverted.filter { !existingIDs.contains($0.id) }
+    return uniqueUser + all
+  }
+  var body: some View {
+    let all = combinedPlaylists
     ScrollView {
       Group {
-        if viewModel.isLoading && all.isEmpty {
+        if viewModel.isLoading && userManager.isLoading && all.isEmpty {
           PlaylistsSkeletonView(cols: cols)
         } else if all.isEmpty {
           VStack(spacing: 16) {
@@ -170,6 +184,26 @@ struct PlaylistsGridScreen: View {
       }
     }
     .navigationTitle("Playlists")
+    .toolbar {
+      if isLoggedIn {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button {
+            showCreateSheet = true
+          } label: {
+            Image(systemName: "plus")
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(.appAccent)
+          }
+        }
+      }
+    }
+    .task { userManager.loadIfNeeded() }
+    .onChange(of: favorites.favoriteIDs) { _ in
+      viewModel.fetchFavoriteSongs()
+    }
+    .sheet(isPresented: $showCreateSheet) {
+      CreatePlaylistSheet()
+    }
   }
 }
 
@@ -186,9 +220,15 @@ struct PlaylistGridCell: View {
         .font(.system(size: 14, weight: .bold))
         .foregroundColor(.primary)
         .lineLimit(1)
-      Text("\(playlist.songCount) songs")
-        .font(.system(size: 12))
-        .foregroundColor(.secondary)
+      if playlist.songCount > 0 {
+        Text("\(playlist.songCount) songs")
+          .font(.system(size: 12))
+          .foregroundColor(.secondary)
+      } else {
+        Text("Playlist")
+          .font(.system(size: 12))
+          .foregroundColor(.secondary)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }

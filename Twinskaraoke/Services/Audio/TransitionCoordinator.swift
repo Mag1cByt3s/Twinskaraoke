@@ -3,6 +3,11 @@ import Foundation
 @MainActor
 final class TransitionCoordinator {
 
+  private struct BPMCacheEntry: Codable {
+    let bpm: Double
+    let updatedAt: TimeInterval
+  }
+
   enum State {
     case idle
     case preparing(nextSong: Song)
@@ -42,21 +47,32 @@ final class TransitionCoordinator {
 
   private let prepareLeadFraction: Double = 0.5
 
-  private var bpmCache: [String: Double] = {
-    UserDefaults.standard.dictionary(forKey: "nk.bpmCache") as? [String: Double] ?? [:]
-  }()
+  private static let bpmCacheKey = "nk.bpmCache.v2"
+  private static let legacyBPMCacheKey = "nk.bpmCache"
+  private static let bpmCacheTTL: TimeInterval = 3600
+  private static let bpmCacheLimit = 500
+
+  private var bpmCache: [String: BPMCacheEntry] = TransitionCoordinator.loadBPMCache()
 
   func cachedBPM(for songID: String) -> Double? {
-    bpmCache[songID]
+    guard let entry = validBPMEntry(for: songID) else { return nil }
+    return entry.bpm
   }
 
   private func storeBPM(_ bpm: Double, for songID: String) {
-    bpmCache[songID] = bpm
-    if bpmCache.count > 500 {
-      let keysToRemove = Array(bpmCache.keys.prefix(bpmCache.count - 500))
-      for key in keysToRemove { bpmCache.removeValue(forKey: key) }
+    pruneExpiredBPMCache()
+    bpmCache[songID] = BPMCacheEntry(bpm: bpm, updatedAt: Date().timeIntervalSince1970)
+    if bpmCache.count > Self.bpmCacheLimit {
+      let overflow = bpmCache.count - Self.bpmCacheLimit
+      let keysToRemove = bpmCache
+        .sorted { $0.value.updatedAt < $1.value.updatedAt }
+        .prefix(overflow)
+        .map(\.key)
+      for key in keysToRemove {
+        bpmCache.removeValue(forKey: key)
+      }
     }
-    UserDefaults.standard.set(bpmCache, forKey: "nk.bpmCache")
+    persistBPMCache()
   }
 
   func poll(
@@ -173,7 +189,7 @@ final class TransitionCoordinator {
   }
 
   private func detectBPM(for song: Song, fileURL: URL?) async -> Double? {
-    if let cached = bpmCache[song.id] { return cached }
+    if let cached = cachedBPM(for: song.id) { return cached }
     guard let url = fileURL else { return nil }
     guard let bpm = await BPMDetector.detect(url: url) else { return nil }
     await MainActor.run { [weak self] in
@@ -205,11 +221,10 @@ final class TransitionCoordinator {
   }
 
   private func audioFileURL(for song: Song) -> URL? {
-    let downloaded = DownloadManager.shared.localURL(for: song.id)
-    if FileManager.default.fileExists(atPath: downloaded.path) { return downloaded }
-    let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(song.id).mp3")
-    if FileManager.default.fileExists(atPath: cached.path) { return cached }
-    return nil
+    if let downloaded = DownloadManager.shared.playableURL(for: song) {
+      return downloaded
+    }
+    return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL)
   }
 
   private func nextSongInQueue(current: Song, queue: [Song]) -> Song? {
@@ -238,12 +253,58 @@ final class TransitionCoordinator {
     state = .idle
     onUpcomingSongDetermined?(nil)
   }
+
+  private static func loadBPMCache() -> [String: BPMCacheEntry] {
+    let defaults = UserDefaults.standard
+    if let data = defaults.data(forKey: bpmCacheKey),
+      let decoded = try? JSONDecoder().decode([String: BPMCacheEntry].self, from: data)
+    {
+      return decoded
+    }
+    if let legacy = defaults.dictionary(forKey: legacyBPMCacheKey) as? [String: Double] {
+      let now = Date().timeIntervalSince1970
+      return legacy.reduce(into: [String: BPMCacheEntry]()) { result, item in
+        result[item.key] = BPMCacheEntry(bpm: item.value, updatedAt: now)
+      }
+    }
+    return [:]
+  }
+
+  private func validBPMEntry(for songID: String) -> BPMCacheEntry? {
+    guard let entry = bpmCache[songID] else { return nil }
+    let now = Date().timeIntervalSince1970
+    guard now - entry.updatedAt < Self.bpmCacheTTL else {
+      bpmCache.removeValue(forKey: songID)
+      persistBPMCache()
+      return nil
+    }
+    return entry
+  }
+
+  private func pruneExpiredBPMCache() {
+    let now = Date().timeIntervalSince1970
+    let before = bpmCache.count
+    bpmCache = bpmCache.filter { now - $0.value.updatedAt < Self.bpmCacheTTL }
+    if bpmCache.count != before {
+      persistBPMCache()
+    }
+  }
+
+  private func persistBPMCache() {
+    let defaults = UserDefaults.standard
+    if let data = try? JSONEncoder().encode(bpmCache) {
+      defaults.set(data, forKey: Self.bpmCacheKey)
+    } else {
+      defaults.removeObject(forKey: Self.bpmCacheKey)
+    }
+  }
 }
 
 private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   private let songID: String
   private let partialURL: URL
   private let finalURL: URL
+  private var remoteURL: URL?
   private var fileHandle: FileHandle?
   private var task: URLSessionDataTask?
   private var session: URLSession?
@@ -251,21 +312,28 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
 
   init(songID: String) {
     self.songID = songID
-    self.finalURL = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
-    self.partialURL = AudioPlayerManager.audioCacheDir.appendingPathComponent(
-      "\(songID).mp3.partial")
+    let songFiles = AudioCacheStore.files(for: songID)
+    self.finalURL = songFiles.main
+    self.partialURL = songFiles.mainPartial
     super.init()
   }
 
   func start(from remoteURL: URL) {
-    if FileManager.default.fileExists(atPath: finalURL.path) {
+    self.remoteURL = remoteURL
+    if AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remoteURL) != nil {
       onCompletion?()
       return
     }
     try? FileManager.default.removeItem(at: partialURL)
     FileManager.default.createFile(atPath: partialURL.path, contents: nil)
     fileHandle = try? FileHandle(forWritingTo: partialURL)
-    session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.urlCache = nil
+    configuration.waitsForConnectivity = false
+    configuration.timeoutIntervalForRequest = 30
+    configuration.timeoutIntervalForResource = 180
+    session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     task = session?.dataTask(with: remoteURL)
     task?.resume()
   }
@@ -298,6 +366,7 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     {
       try? FileManager.default.removeItem(at: finalURL)
       try? FileManager.default.moveItem(at: partialURL, to: finalURL)
+      AudioCacheStore.writeMainSourceURL(remoteURL, for: songID)
     } else {
       try? FileManager.default.removeItem(at: partialURL)
     }

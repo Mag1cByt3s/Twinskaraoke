@@ -2,43 +2,75 @@ import SwiftUI
 
 struct KaraokeRightDock: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @ObservedObject private var vocalSeparator = VocalSeparator.shared
   @Binding var showKaraokeControls: Bool
+
+  private var currentSongID: String? { audioManager.currentSong?.id }
+  private var isProcessing: Bool { vocalSeparator.processingSongID == currentSongID }
+  private var processingFraction: CGFloat {
+    CGFloat(min(1, max(0, vocalSeparator.progressFraction)))
+  }
+  private var processingRingFraction: CGFloat {
+    guard isProcessing else { return 0 }
+    return max(0.03, processingFraction)
+  }
+  private var processingPercentText: String {
+    "\(Int((processingFraction * 100).rounded()))%"
+  }
+  private var shouldShowProcessingIndicator: Bool {
+    audioManager.aiAutoAnalyze && audioManager.isBackgroundKaraokeLocked
+  }
+  private var canActivateKaraoke: Bool {
+    !audioManager.isBackgroundKaraokeLocked
+  }
+
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: 4) {
       if showKaraokeControls && audioManager.karaokeMode {
         karaokeVerticalSlider
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
       karaokeMicButton
+      if shouldShowProcessingIndicator {
+        processingIndicator
+      }
     }
     .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showKaraokeControls)
     .animation(.spring(response: 0.4, dampingFraction: 0.85), value: audioManager.karaokeMode)
   }
+
   private var karaokeMicButton: some View {
     Button {
       if audioManager.karaokeMode {
         audioManager.karaokeMode = false
         showKaraokeControls = false
       } else {
+        guard canActivateKaraoke else { return }
         audioManager.karaokeMode = true
         showKaraokeControls = true
       }
     } label: {
-      Image(systemName: audioManager.karaokeMode ? "mic.fill" : "mic")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundColor(audioManager.karaokeMode ? .appAccent : .primary.opacity(0.85))
-        .frame(width: 36, height: 36)
-        .background(
+      ZStack {
+        // Progress ring when AI separation is running
+        if isProcessing {
           Circle()
-            .fill(.ultraThinMaterial)
-        )
-        .overlay(
-          Circle()
-            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+            .trim(from: 0, to: processingRingFraction)
+            .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(3)
+        }
+
+        Image(systemName: audioManager.karaokeMode ? "mic.fill" : "mic")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(audioManager.karaokeMode ? .appAccent : .primary.opacity(0.85))
+      }
+      .frame(width: 36, height: 36)
+      .modifier(GlassCircle())
+      .opacity(canActivateKaraoke ? 1 : 0.6)
     }
     .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.7))
+    .disabled(!canActivateKaraoke)
+    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: processingFraction)
   }
   private var karaokeVerticalSlider: some View {
     VStack(spacing: 8) {
@@ -62,14 +94,16 @@ struct KaraokeRightDock: View {
     }
     .padding(.vertical, 12)
     .padding(.horizontal, 8)
-    .background(
-      RoundedRectangle(cornerRadius: 18, style: .continuous)
-        .fill(.ultraThinMaterial)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 18, style: .continuous)
-        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-    )
-    .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+    .modifier(GlassRoundedRect(cornerRadius: 18))
+  }
+
+  private var processingIndicator: some View {
+    VStack(spacing: 4) {
+      Text(processingPercentText)
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(isProcessing ? Color.appAccent : .secondary)
+        .monospacedDigit()
+    }
+    .padding(.top, -2)
   }
 }

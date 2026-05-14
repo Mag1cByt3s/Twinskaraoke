@@ -7,11 +7,11 @@ import SwiftUI
 struct FullScreenPlayerView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
   @ObservedObject private var favorites = FavoritesManager.shared
-  @ObservedObject private var vocalSeparator = VocalSeparator.shared
   @Environment(\.dismiss) private var dismiss
   @State private var showingQueue = false
   @State private var showLyrics = false
   @State private var showKaraokeControls = false
+  @State private var showTranslatedLyrics = false
   @StateObject private var lyricsViewModel = LyricsViewModel()
   @StateObject private var upcomingLyricsViewModel = LyricsViewModel()
   var body: some View {
@@ -60,6 +60,8 @@ struct FullScreenPlayerView: View {
       .presentationDragIndicator(.visible)
     }
     .onChange(of: audioManager.currentSong?.id) { newId in
+      showTranslatedLyrics = false
+      showKaraokeControls = false
       if showLyrics, !audioManager.isRadioMode, let id = newId {
         if let prefetched = upcomingLyricsViewModel.lyrics.isEmpty
           ? nil : upcomingLyricsViewModel.lyrics,
@@ -98,28 +100,29 @@ struct FullScreenPlayerView: View {
             lyricsHeader(song: song)
             LyricsView(
               lyrics: lyricsViewModel.lyrics,
-              currentTime: audioManager.progress * Double(song.duration),
+              currentTime: audioManager.playbackTime,
+              showTranslations: showTranslatedLyrics,
               isLoading: lyricsViewModel.isLoading,
               didFail: lyricsViewModel.didFail,
               hasNoLyrics: lyricsViewModel.hasNoLyrics,
               onSeek: { time in
-                guard song.duration > 0 else { return }
-                audioManager.seek(to: (time + 0.1) / Double(song.duration))
+                let duration = audioManager.playbackDuration
+                guard duration > 0 else { return }
+                audioManager.seek(to: (time + 0.1) / duration)
               },
               onRetry: { lyricsViewModel.retry() }
             )
           }
+          .overlay(alignment: .bottomLeading) {
+            lyricsTranslationButton
+              .padding(.leading, 16)
+              .padding(.bottom, 32)
+          }
           .overlay(alignment: .bottomTrailing) {
             if DeviceCapability.supportsKaraoke && audioManager.aiEnabled {
-              VStack(spacing: 8) {
-                // Processing indicator
-                if vocalSeparator.processingSongID != nil {
-                  aiProcessingIndicator
-                }
-                KaraokeRightDock(showKaraokeControls: $showKaraokeControls)
-              }
-              .padding(.trailing, 16)
-              .padding(.bottom, 32)
+              KaraokeRightDock(showKaraokeControls: $showKaraokeControls)
+                .padding(.trailing, 16)
+                .padding(.bottom, 32)
             }
           }
           .transition(.opacity)
@@ -227,6 +230,8 @@ struct FullScreenPlayerView: View {
   }
   @ViewBuilder
   private func progressSection(song: Song) -> some View {
+    let duration = max(audioManager.playbackDuration, 0)
+    let elapsed = min(max(audioManager.playbackTime, 0), duration)
     AppleMusicProgressBar(
       progress: $audioManager.progress,
       isScrubbing: $audioManager.isEditingProgress,
@@ -235,11 +240,9 @@ struct FullScreenPlayerView: View {
     .padding(.horizontal, 32)
     .padding(.top, showLyrics ? 0 : 16)
     HStack {
-      Text(formattedTime(audioManager.progress * Double(song.duration)))
+      Text(formattedTime(elapsed))
       Spacer()
-      Text(
-        formattedTime(
-          max(0, Double(song.duration) - audioManager.progress * Double(song.duration))))
+      Text(formattedTime(max(0, duration - elapsed)))
     }
     .font(.system(size: 12, weight: .medium, design: .monospaced))
     .foregroundColor(audioManager.isEditingProgress ? .primary : .secondary)
@@ -299,31 +302,31 @@ struct FullScreenPlayerView: View {
     return String(format: "%d:%02d", s / 60, s % 60)
   }
 
-  // MARK: - AI Processing Indicator
-
-  private var aiProcessingIndicator: some View {
-    VStack(spacing: 4) {
-      ZStack {
-        Circle()
-          .stroke(Color.primary.opacity(0.15), lineWidth: 2)
-        Circle()
-          .trim(from: 0, to: CGFloat(vocalSeparator.progressFraction))
-          .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-          .rotationEffect(.degrees(-90))
-        Image(systemName: "waveform")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundColor(.appAccent)
+  private var lyricsTranslationButton: some View {
+    Button {
+      if lyricsViewModel.hasTranslatedLyrics {
+        showTranslatedLyrics.toggle()
+      } else {
+        lyricsViewModel.requestTranslation()
       }
-      .frame(width: 28, height: 28)
-      .background(
-        Circle()
-          .fill(.ultraThinMaterial)
-      )
-      Text("\(Int(vocalSeparator.progressFraction * 100))%")
-        .font(.system(size: 9, weight: .medium, design: .monospaced))
-        .foregroundColor(.secondary)
+    } label: {
+      ZStack {
+        if lyricsViewModel.translationState == .translating {
+          Circle()
+            .trim(from: 0, to: 0.82)
+            .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(3)
+        }
+        Image(systemName: showTranslatedLyrics ? "globe.badge.chevron.backward" : "globe")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(showTranslatedLyrics ? .appAccent : .primary.opacity(0.85))
+      }
+      .frame(width: 36, height: 36)
+      .modifier(GlassCircle())
     }
-    .transition(.scale.combined(with: .opacity))
-    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vocalSeparator.progressFraction)
+    .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.7))
+    .disabled(lyricsViewModel.isLoading || lyricsViewModel.hasNoLyrics)
   }
+
 }

@@ -30,22 +30,30 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
   private let songID: String
   private let partialURL: URL
   private let finalURL: URL
+  private var remoteURL: URL?
   private var fileHandle: FileHandle?
   private var task: URLSessionDataTask?
   private var session: URLSession?
   var onCompletion: ((URL?) -> Void)?
   init(songID: String) {
     self.songID = songID
-    self.finalURL = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
-    self.partialURL = AudioPlayerManager.audioCacheDir.appendingPathComponent(
-      "\(songID).mp3.partial")
+    let songFiles = AudioCacheStore.files(for: songID)
+    self.finalURL = songFiles.main
+    self.partialURL = songFiles.mainPartial
     super.init()
   }
   func start(from remoteURL: URL) {
+    self.remoteURL = remoteURL
     try? FileManager.default.removeItem(at: partialURL)
     FileManager.default.createFile(atPath: partialURL.path, contents: nil)
     self.fileHandle = try? FileHandle(forWritingTo: partialURL)
-    session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.urlCache = nil
+    configuration.waitsForConnectivity = false
+    configuration.timeoutIntervalForRequest = 30
+    configuration.timeoutIntervalForResource = 300
+    session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     task = session?.dataTask(with: remoteURL)
     task?.resume()
   }
@@ -82,6 +90,7 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     try? FileManager.default.removeItem(at: finalURL)
     do {
       try FileManager.default.moveItem(at: partialURL, to: finalURL)
+      AudioCacheStore.writeMainSourceURL(remoteURL, for: songID)
       let final = finalURL
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(final) }
     } catch {
@@ -106,6 +115,8 @@ class AudioPlayerManager: ObservableObject {
   @Published var isEditingProgress = false
   @Published var volume: Double = 1.0
   @Published var isUserScrubbingVolume: Bool = false
+  private var suppressTransitionAfterSeek = false
+  private var deferredAIEffect: AudioEffect?
   @Published var routeIcon: String = "airplayaudio"
   @Published var routeName: String = ""
   @Published var repeatMode: RepeatMode = .off
@@ -113,6 +124,7 @@ class AudioPlayerManager: ObservableObject {
   @Published var autoplayEnabled: Bool = true
   @Published var isRadioMode: Bool = false
   @Published var radioArtworkURL: URL?
+  private var isStreamMode: Bool { streamPlayer != nil }
 
   /// Master AI audio processing toggle — when off, all karaoke/enhance features are hidden and disabled
   @Published var aiEnabled: Bool = {
@@ -132,6 +144,8 @@ class AudioPlayerManager: ObservableObject {
         vocalEnhanceMode = false
         instrumentalEnhanceMode = false
         _suppressModeSwitch = false
+        preparedStemSongID = nil
+        deferredAIEffect = nil
         VocalSeparator.shared.cancel()
         VocalSeparator.shared.cancelBackgroundAnalysis()
         VocalSeparator.shared.cleanupRealtimeTemp()
@@ -148,10 +162,20 @@ class AudioPlayerManager: ObservableObject {
       UserDefaults.standard.set(aiAutoAnalyze, forKey: "nk.aiAutoAnalyze")
       DebugLogger.log("AI auto-analyze: \(aiAutoAnalyze)", category: .ai)
       if aiAutoAnalyze, aiEnabled, let song = currentSong, !isRadioMode {
+        if let effect = currentActiveEffect, !isKaraokePreparedForCurrentSong {
+          deferAIEffectActivation(effect)
+          temporarilyDisableAIEffects()
+        }
         triggerBackgroundAnalysis(for: song)
+        prepareBackgroundStemPlaybackIfPossible(for: song)
       }
       if !aiAutoAnalyze {
+        preparedStemSongID = nil
+        deferredAIEffect = nil
         VocalSeparator.shared.cancelBackgroundAnalysis()
+        if !anyAIEffectActive, audioKit.mode == .aiStems {
+          audioKit.revertToMain()
+        }
       }
     }
   }
@@ -159,6 +183,16 @@ class AudioPlayerManager: ObservableObject {
   @Published var karaokeMode: Bool = false {
     didSet {
       guard !_suppressModeSwitch else { return }
+      if karaokeMode, isBackgroundKaraokeLocked {
+        deferAIEffectActivation(.karaoke)
+        temporarilyDisableAIEffects()
+        return
+      }
+      if karaokeMode, shouldDeferAIEffectActivation {
+        deferAIEffectActivation(.karaoke)
+        temporarilyDisableAIEffects()
+        return
+      }
       if karaokeMode {
         disableOtherModes(except: .karaoke)
       }
@@ -184,6 +218,11 @@ class AudioPlayerManager: ObservableObject {
   @Published var bassEnhanceMode: Bool = false {
     didSet {
       guard !_suppressModeSwitch else { return }
+      if bassEnhanceMode, shouldDeferAIEffectActivation {
+        deferAIEffectActivation(.bassEnhance)
+        temporarilyDisableAIEffects()
+        return
+      }
       if bassEnhanceMode {
         disableOtherModes(except: .bassEnhance)
       }
@@ -202,6 +241,11 @@ class AudioPlayerManager: ObservableObject {
   @Published var vocalEnhanceMode: Bool = false {
     didSet {
       guard !_suppressModeSwitch else { return }
+      if vocalEnhanceMode, shouldDeferAIEffectActivation {
+        deferAIEffectActivation(.vocalEnhance)
+        temporarilyDisableAIEffects()
+        return
+      }
       if vocalEnhanceMode {
         disableOtherModes(except: .vocalEnhance)
       }
@@ -220,6 +264,11 @@ class AudioPlayerManager: ObservableObject {
   @Published var instrumentalEnhanceMode: Bool = false {
     didSet {
       guard !_suppressModeSwitch else { return }
+      if instrumentalEnhanceMode, shouldDeferAIEffectActivation {
+        deferAIEffectActivation(.instrumentalEnhance)
+        temporarilyDisableAIEffects()
+        return
+      }
       if instrumentalEnhanceMode {
         disableOtherModes(except: .instrumentalEnhance)
       }
@@ -296,6 +345,7 @@ class AudioPlayerManager: ObservableObject {
     }
   }
   @Published var upcomingSong: Song?
+  @Published private(set) var preparedStemSongID: String?
   #if canImport(UIKit)
     @Published var nowPlayingArtwork: UIImage?
   #endif
@@ -313,6 +363,7 @@ class AudioPlayerManager: ObservableObject {
   private let audioKit = AudioKitPlayback()
   private let transitionCoordinator = TransitionCoordinator()
   private var radioPlayer: AVPlayer?
+  private var streamPlayer: AVPlayer?
   private var radioTimeObserver: (player: AVPlayer, token: Any)?
   private var pollTimer: Timer?
 
@@ -324,7 +375,11 @@ class AudioPlayerManager: ObservableObject {
   private var downloadSession: AudioDownloadSession?
   private var currentPlaybackURL: URL?
   private var instrumentalTask: Task<Void, Never>?
+  private var backgroundAnalysisRetryTask: Task<Void, Never>?
+  private var cacheCompressionTask: Task<Void, Never>?
+  private var quickCutTimer: Timer?
   private var separationGeneration: UInt64 = 0
+  private var suppressPlaybackEndedUntil: Date = .distantPast
 
   #if canImport(UIKit)
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -352,6 +407,23 @@ class AudioPlayerManager: ObservableObject {
     karaokeMode || bassEnhanceMode || vocalEnhanceMode || instrumentalEnhanceMode
   }
 
+  private var shouldDeferAIEffectActivation: Bool {
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return false }
+    guard currentSong != nil else { return false }
+    return !isKaraokePreparedForCurrentSong
+  }
+
+  var isBackgroundKaraokeLocked: Bool {
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return false }
+    guard currentSong != nil else { return false }
+    return !isKaraokePreparedForCurrentSong
+  }
+
+  var isKaraokePreparedForCurrentSong: Bool {
+    guard let songID = currentSong?.id else { return false }
+    return preparedStemSongID == songID
+  }
+
   init() {
     configureAudioSessionCategory()
     activateAudioSession()
@@ -366,11 +438,24 @@ class AudioPlayerManager: ObservableObject {
       guard let self, !self.isRadioMode else { return }
       guard self.isPlaying else { return }
       guard !self.audioKit.isCrossfading else { return }
+      guard !self.suppressTransitionAfterSeek else { return }
+      guard !self.isPlaybackEndedCallbackSuppressed else {
+        DebugLogger.log("Ignoring suppressed playback-ended callback", category: .playback)
+        return
+      }
       self.playNextOrRandom()
     }
     audioKit.onCrossfadeCompleted = { [weak self] in
       guard let self else { return }
       self.transitionCoordinatorDidFinish()
+    }
+    audioKit.onPlaybackError = { [weak self] error in
+      guard let self else { return }
+      DebugLogger.log("AudioKit playback error: \(error)", category: .playback)
+      self.cancelPendingTransitionWork()
+      self.isPlaying = false
+      self.isBuffering = false
+      self.updateNowPlayingInfo(reloadArtwork: false)
     }
     audioKit.setEQEnabled(eqEnabled)
     audioKit.setEQGains(eqGainsDB)
@@ -390,6 +475,12 @@ class AudioPlayerManager: ObservableObject {
     NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
       .sink { [weak self] note in self?.handleRouteChange(note) }
       .store(in: &cancellables)
+    NotificationCenter.default.publisher(for: .vocalSeparatorDidCacheStems)
+      .sink { [weak self] note in
+        guard let self, let songID = note.object as? String else { return }
+        self.handleCachedStemsReady(songID: songID)
+      }
+      .store(in: &cancellables)
     updateRouteIcon()
     AVAudioSession.sharedInstance().publisher(for: \.outputVolume)
       .receive(on: DispatchQueue.main)
@@ -405,24 +496,241 @@ class AudioPlayerManager: ObservableObject {
         .sink { [weak self] _ in self?.handleBackgroundTransition() }
         .store(in: &cancellables)
       NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
-        .sink { [weak self] _ in
-          AudioPlayerManager.artworkCache.removeAllObjects()
-          self?.instrumentalTask?.cancel()
-          self?.instrumentalTask = nil
-        }
+        .sink { [weak self] _ in self?.handleMemoryWarning() }
         .store(in: &cancellables)
     #endif
   }
 
   deinit {
     pollTimer?.invalidate()
+    quickCutTimer?.invalidate()
     instrumentalTask?.cancel()
+    backgroundAnalysisRetryTask?.cancel()
     if let existing = radioTimeObserver {
       existing.player.removeTimeObserver(existing.token)
     }
     artworkTask?.cancel()
     downloadSession?.cancel()
+    cacheCompressionTask?.cancel()
     radioPlayer?.pause()
+  }
+
+  private func cancelBackgroundAnalysisRetry() {
+    backgroundAnalysisRetryTask?.cancel()
+    backgroundAnalysisRetryTask = nil
+  }
+
+  private func localPlaybackFileURL(for song: Song) -> URL? {
+    if let downloaded = DownloadManager.shared.playableURL(for: song) {
+      return downloaded
+    }
+    return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL)
+  }
+
+  private func activePlaybackTime(for song: Song? = nil) -> TimeInterval {
+    if isStreamMode {
+      let streamTime = streamPlayer?.currentTime().seconds ?? .nan
+      if streamTime.isFinite, streamTime >= 0 {
+        return streamTime
+      }
+      let fallbackDuration = Double(song?.duration ?? currentSong?.duration ?? 0)
+      if fallbackDuration > 0 {
+        return progress * fallbackDuration
+      }
+      return 0
+    }
+    let currentTime = audioKit.currentTime
+    if currentTime.isFinite, currentTime >= 0 {
+      return currentTime
+    }
+    return 0
+  }
+
+  var playbackTime: TimeInterval {
+    activePlaybackTime()
+  }
+
+  var playbackDuration: TimeInterval {
+    if isStreamMode {
+      let streamDuration = streamPlayer?.currentItem?.duration.seconds ?? .nan
+      if streamDuration.isFinite, streamDuration > 0 {
+        return streamDuration
+      }
+    }
+    let audioDuration = audioKit.duration
+    if audioDuration.isFinite, audioDuration > 0 {
+      return audioDuration
+    }
+    if let song = currentSong, song.duration > 0 {
+      return Double(song.duration)
+    }
+    return 0
+  }
+
+  private var isPlaybackEndedCallbackSuppressed: Bool {
+    Date() < suppressPlaybackEndedUntil
+  }
+
+  private func suppressPlaybackEndedCallbacks(for seconds: TimeInterval = 1.0) {
+    suppressPlaybackEndedUntil = Date().addingTimeInterval(seconds)
+  }
+
+  private func keepPreparedStems(for song: Song? = nil) -> Bool {
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return false }
+    let targetID = song?.id ?? currentSong?.id
+    return preparedStemSongID == targetID
+  }
+
+  private func handleCachedStemsReady(songID: String) {
+    guard currentSong?.id == songID else { return }
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return }
+    preparedStemSongID = songID
+    if let song = currentSong {
+      prepareBackgroundStemPlaybackIfPossible(for: song)
+    }
+    restoreDeferredAIEffectIfNeeded(for: songID)
+  }
+
+  private func deferAIEffectActivation(_ effect: AudioEffect) {
+    deferredAIEffect = effect
+    if let song = currentSong, aiEnabled, aiAutoAnalyze, !isRadioMode {
+      triggerBackgroundAnalysis(for: song)
+    }
+  }
+
+  private func temporarilyDisableAIEffects() {
+    _suppressModeSwitch = true
+    karaokeMode = false
+    bassEnhanceMode = false
+    vocalEnhanceMode = false
+    instrumentalEnhanceMode = false
+    _suppressModeSwitch = false
+    if audioKit.mode == .aiStems {
+      audioKit.revertToMain()
+    }
+  }
+
+  private func restoreDeferredAIEffectIfNeeded(for songID: String) {
+    guard currentSong?.id == songID else { return }
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode, isKaraokePreparedForCurrentSong else { return }
+    guard let effect = deferredAIEffect else { return }
+    deferredAIEffect = nil
+    switch effect {
+    case .karaoke:
+      karaokeMode = true
+    case .bassEnhance:
+      bassEnhanceMode = true
+    case .vocalEnhance:
+      vocalEnhanceMode = true
+    case .instrumentalEnhance:
+      instrumentalEnhanceMode = true
+    }
+  }
+
+  private func prepareBackgroundStemPlaybackIfPossible(for song: Song) {
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return }
+    guard !anyAIEffectActive else { return }
+    guard let sourceURL = localPlaybackFileURL(for: song) else { return }
+    guard let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) else { return }
+
+    preparedStemSongID = song.id
+    switchActivePlaybackToStems(for: song, stems: stems, sourceURL: sourceURL)
+    guard audioKit.mode == .aiStems else { return }
+    applyAIMixVolumes()
+  }
+
+  private func scheduleIdleCacheCompression(excluding songIDs: Set<String>) {
+    cacheCompressionTask?.cancel()
+    cacheCompressionTask = Task.detached(priority: .utility) {
+      AudioCacheStore.compressIdleAssets(excluding: songIDs)
+      await MainActor.run {
+        CacheManager.shared.refreshSizes()
+      }
+    }
+  }
+
+  private func switchActivePlaybackToStems(
+    for song: Song, stems: CachedStems, sourceURL: URL
+  ) {
+    suppressPlaybackEndedCallbacks()
+    let shouldResume = isPlaying
+    let startAt = activePlaybackTime(for: song)
+    currentPlaybackURL = sourceURL
+    configureAudioSessionCategory()
+    activateAudioSession()
+    if shouldResume {
+      NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
+    }
+    if isStreamMode {
+      stopStreamPlayer()
+      audioKit.playStems(
+        originalURL: sourceURL,
+        vocalsURL: stems.vocals,
+        instrumentsURL: stems.instruments,
+        startOffset: stems.startOffset,
+        startAt: startAt)
+    } else {
+      audioKit.switchToStems(
+        vocalsURL: stems.vocals,
+        instrumentsURL: stems.instruments,
+        startOffset: stems.startOffset)
+    }
+    if !shouldResume {
+      audioKit.pause()
+    }
+    isPlaying = shouldResume
+    isBuffering = false
+    updateNowPlayingInfo(reloadArtwork: false)
+  }
+
+  private func cancelQuickCutTimer(resetVolume: Bool = true) {
+    quickCutTimer?.invalidate()
+    quickCutTimer = nil
+    if resetVolume {
+      audioKit.setMasterVolume(1.0)
+    }
+  }
+
+  private func cancelPendingTransitionWork(resetVolume: Bool = true) {
+    cancelQuickCutTimer(resetVolume: resetVolume)
+    transitionCoordinator.reset()
+    cancelBackgroundAnalysisRetry()
+    #if canImport(UIKit)
+      endTrackTransitionBackgroundTask()
+    #endif
+  }
+
+  private func handleMemoryWarning() {
+    DebugLogger.log(
+      "Memory warning received — cancelling AI work and reclaiming caches",
+      category: .playback)
+    cancelPendingTransitionWork()
+    downloadSession?.cancel()
+    downloadSession = nil
+    instrumentalTask?.cancel()
+    instrumentalTask = nil
+    cancelBackgroundAnalysisRetry()
+    VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cancelBackgroundAnalysis()
+    VocalSeparator.shared.cleanupRealtimeTemp()
+    preparedStemSongID = nil
+    if anyAIEffectActive {
+      _suppressModeSwitch = true
+      karaokeMode = false
+      bassEnhanceMode = false
+      vocalEnhanceMode = false
+      instrumentalEnhanceMode = false
+      _suppressModeSwitch = false
+    }
+    if audioKit.mode == .aiStems {
+      audioKit.revertToMain()
+    }
+    #if canImport(UIKit)
+      AudioPlayerManager.artworkCache.removeAllObjects()
+      nowPlayingArtwork = nil
+    #endif
+    CacheManager.shared.refreshSizes()
+    updateNowPlayingInfo(reloadArtwork: false)
   }
 
   private func disableOtherModes(except keep: AudioEffect) {
@@ -446,65 +754,101 @@ class AudioPlayerManager: ObservableObject {
     guard audioKit.mode == .aiStems else { return }
     audioKit.resetInstrumentalEQ()
     if karaokeMode {
-      audioKit.setStemVolumes(vocals: max(0, 1.0 - aiVocalStrength), instrumental: 1)
+      audioKit.setAIMix(main: 0, vocals: max(0, 1.0 - aiVocalStrength), instrumental: 1)
     } else if bassEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1, instrumental: 1)
+      audioKit.setAIMix(main: 0, vocals: 1, instrumental: 1)
       audioKit.setInstrumentalEQGain(dB: 6.0 * bassEnhanceStrength)
     } else if vocalEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1 + 0.5 * vocalEnhanceStrength, instrumental: 1)
+      audioKit.setAIMix(main: 0, vocals: 1 + 0.5 * vocalEnhanceStrength, instrumental: 1)
     } else if instrumentalEnhanceMode {
-      audioKit.setStemVolumes(vocals: 1, instrumental: 1 + 0.5 * instrumentalEnhanceStrength)
+      audioKit.setAIMix(main: 0, vocals: 1, instrumental: 1 + 0.5 * instrumentalEnhanceStrength)
     } else {
-      audioKit.setStemVolumes(vocals: 1, instrumental: 1)
+      audioKit.setAIMix(main: 1, vocals: 0, instrumental: 0)
     }
   }
 
   private func startPollTimer() {
     pollTimer?.invalidate()
-    pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
-      @MainActor [weak self] _ in
-      guard let self else { return }
-      guard !self.isRadioMode else { return }
-      guard !self.isEditingProgress else { return }
-      let totalDur: Double
-      if let song = self.currentSong, song.duration > 0 {
-        totalDur = Double(song.duration)
-      } else {
-        totalDur = self.audioKit.duration
-      }
-      guard totalDur.isFinite, totalDur > 0 else { return }
-      let t = self.audioKit.currentTime
-      self.progress = min(1.0, max(0.0, t / totalDur))
-      self.updateNowPlayingElapsed(t)
+    let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        guard !self.isRadioMode else { return }
+        guard !self.isEditingProgress else { return }
+        if self.suppressTransitionAfterSeek {
+          self.suppressTransitionAfterSeek = false
+          return
+        }
+        // Stream mode: update progress only (AVPlayer handles its own buffering/transitions)
+        if self.isStreamMode {
+          guard let player = self.streamPlayer,
+                let item = player.currentItem,
+                item.status == .readyToPlay else { return }
+          let t = player.currentTime().seconds
+          let dur = item.duration.seconds
+          guard dur.isFinite, dur > 0 else { return }
+          self.progress = min(1.0, max(0.0, t / dur))
+          self.updateNowPlayingElapsed(t)
+          return
+        }
+        // AudioKit mode: full poll with transition detection
+        let totalDur = self.playbackDuration
+        guard totalDur.isFinite, totalDur > 0 else { return }
+        let t = min(max(0, self.audioKit.currentTime), totalDur)
+        self.progress = min(1.0, max(0.0, t / totalDur))
+        self.updateNowPlayingElapsed(t)
 
-      if self.repeatMode != .one {
-        self.transitionCoordinator.poll(
-          currentTime: t,
-          totalDuration: totalDur,
-          currentSong: self.currentSong,
-          queue: self.queue,
-          autoMixEnabled: self.autoMixEnabled,
-          crossfadeEnabled: self.crossfadeEnabled,
-          crossfadeSeconds: self.crossfadeSeconds,
-          aiEffectActive: self.anyAIEffectActive,
-          autoplayEnabled: self.autoplayEnabled
-        )
+        if self.repeatMode != .one {
+          self.transitionCoordinator.poll(
+            currentTime: t,
+            totalDuration: totalDur,
+            currentSong: self.currentSong,
+            queue: self.queue,
+            autoMixEnabled: self.autoMixEnabled,
+            crossfadeEnabled: self.crossfadeEnabled,
+            crossfadeSeconds: self.crossfadeSeconds,
+            aiEffectActive: self.anyAIEffectActive,
+            autoplayEnabled: self.autoplayEnabled
+          )
+        }
       }
     }
+    pollTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   func play(song: Song, context: [Song] = []) {
     DebugLogger.log("Play requested: \(song.title) (id: \(song.id))", category: .playback)
+    let previousSongID = currentSong?.id
+    let effectToResume = currentActiveEffect ?? deferredAIEffect
+    suppressPlaybackEndedCallbacks()
     if isRadioMode { RadioController.shared.stop() }
     stopRadioPlayer()
+    stopStreamPlayer()
     isRadioMode = false
     radioArtworkURL = nil
-    transitionCoordinator.reset()
+    cancelPendingTransitionWork()
     audioKit.cancelCrossfade()
+    audioKit.stop()
+    instrumentalTask?.cancel()
+    instrumentalTask = nil
+    separationGeneration &+= 1
+    VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cancelBackgroundAnalysis()
+    VocalSeparator.shared.cleanupRealtimeTemp()
     reportPlayCount(for: song.id)
     enrichSongMetadataIfNeeded(for: song)
+    if previousSongID != song.id {
+      scheduleIdleCacheCompression(excluding: Set([song.id]))
+    }
+    preparedStemSongID = nil
+    if previousSongID != song.id && aiEnabled && aiAutoAnalyze {
+      deferredAIEffect = effectToResume
+      if effectToResume != nil {
+        temporarilyDisableAIEffects()
+      }
+    }
+    progress = 0
     if currentSong?.id != song.id {
-      progress = 0
       withAnimation(.easeInOut(duration: 0.32)) {
         currentSong = song
       }
@@ -524,21 +868,13 @@ class AudioPlayerManager: ObservableObject {
     }
     downloadSession?.cancel()
     downloadSession = nil
-    let cacheURL = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(song.id).mp3")
-    let downloadedURL = DownloadManager.shared.localURL(for: song.id)
-    let fileURL: URL?
-    if FileManager.default.fileExists(atPath: downloadedURL.path) {
-      fileURL = downloadedURL
-    } else if FileManager.default.fileExists(atPath: cacheURL.path) {
-      fileURL = cacheURL
-    } else {
-      fileURL = nil
-    }
+    let fileURL = localPlaybackFileURL(for: song)
     if let fileURL, let stems = stemsForCachedAIMode(song: song) {
       instrumentalTask?.cancel()
       instrumentalTask = nil
       separationGeneration &+= 1
       VocalSeparator.shared.cancel()
+      preparedStemSongID = song.id
       currentPlaybackURL = fileURL
       configureAudioSessionCategory()
       activateAudioSession()
@@ -547,6 +883,7 @@ class AudioPlayerManager: ObservableObject {
         originalURL: fileURL,
         vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
         startOffset: stems.startOffset)
+      guard audioKit.mode == .aiStems else { return }
       applyAIMixVolumes()
       isPlaying = true
       isBuffering = false
@@ -558,31 +895,95 @@ class AudioPlayerManager: ObservableObject {
     }
     if let fileURL {
       startPlayingFile(fileURL)
+      prepareBackgroundStemPlaybackIfPossible(for: song)
       applyMLSeparationIfNeeded()
       return
     }
     guard let remoteURL = song.audioURL else { return }
+    // Use AVPlayer for immediate progressive playback, download in background
     audioKit.stop()
-    isPlaying = false
-    isBuffering = true
+    stopStreamPlayer()
+    currentPlaybackURL = remoteURL
+    configureAudioSessionCategory()
+    activateAudioSession()
+    let item = AVPlayerItem(url: remoteURL)
+    let player = AVPlayer(playerItem: item)
+    if #available(iOS 15.0, *) {
+      player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+    }
+    player.automaticallyWaitsToMinimizeStalling = true
+    player.volume = 1.0
+    streamPlayer = player
+    NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
+    player.play()
+    isPlaying = true
+    isBuffering = false
+    updateNowPlayingInfo(reloadArtwork: true)
+    if aiEnabled {
+      if anyAIEffectActive {
+        applyMLSeparationIfNeeded()
+      } else if aiAutoAnalyze {
+        triggerBackgroundAnalysis(for: song)
+      }
+    }
+    // Download to cache in background for future offline/AI use
     let songID = song.id
     let session = AudioDownloadSession(songID: songID)
     downloadSession = session
     session.onCompletion = { [weak self] url in
       guard let self else { return }
-      guard self.currentSong?.id == songID else { return }
-      self.isBuffering = false
-      if let url {
-        CacheManager.shared.recordAccess(for: url)
-        CacheManager.shared.enforceMusicCacheLimits()
-        self.startPlayingFile(url)
+      self.downloadSession = nil
+      guard let url else { return }
+      CacheManager.shared.recordAccess(for: url)
+      CacheManager.shared.enforceMusicCacheLimits()
+      guard let currentSong = self.currentSong, currentSong.id == songID else { return }
+      guard
+        let playableURL = AudioCacheStore.playableMainURL(
+          for: songID,
+          expectedRemoteURL: currentSong.audioURL)
+      else { return }
+      self.currentPlaybackURL = playableURL
+      self.prepareBackgroundStemPlaybackIfPossible(for: currentSong)
+      if self.anyAIEffectActive {
         self.applyMLSeparationIfNeeded()
+      } else if self.aiEnabled, self.aiAutoAnalyze {
+        self.triggerBackgroundAnalysis(for: currentSong)
       }
     }
     session.start(from: remoteURL)
   }
 
+  func playNext(song: Song) {
+    guard !isRadioMode else {
+      play(song: song)
+      return
+    }
+    guard let current = currentSong else {
+      play(song: song)
+      return
+    }
+
+    func inserting(_ song: Song, into source: [Song], after current: Song) -> [Song] {
+      var updated = source
+      updated.removeAll { $0.id == song.id && $0.id != current.id }
+      if updated.contains(where: { $0.id == current.id }) == false {
+        updated.insert(current, at: 0)
+      }
+      guard song.id != current.id else { return updated }
+      let currentIndex = updated.firstIndex(where: { $0.id == current.id }) ?? 0
+      let insertIndex = min(currentIndex + 1, updated.count)
+      updated.insert(song, at: insertIndex)
+      return updated
+    }
+
+    queue = inserting(song, into: queue, after: current)
+    if !originalQueue.isEmpty {
+      originalQueue = inserting(song, into: originalQueue, after: current)
+    }
+  }
+
   private func startPlayingFile(_ url: URL) {
+    suppressPlaybackEndedCallbacks()
     instrumentalTask?.cancel()
     instrumentalTask = nil
     separationGeneration &+= 1
@@ -600,8 +1001,9 @@ class AudioPlayerManager: ObservableObject {
     // Record access for LRU cache tracking
     CacheManager.shared.recordAccess(for: url)
     // Trigger background AI analysis if enabled
-    if let song = currentSong, aiEnabled, aiAutoAnalyze {
+    if let song = currentSong, aiEnabled, aiAutoAnalyze, !anyAIEffectActive {
       triggerBackgroundAnalysis(for: song)
+      prepareBackgroundStemPlaybackIfPossible(for: song)
     }
     #if canImport(UIKit)
       endTrackTransitionBackgroundTask()
@@ -620,7 +1022,19 @@ class AudioPlayerManager: ObservableObject {
       updateNowPlayingInfo(reloadArtwork: false)
       return
     }
+    if isStreamMode {
+      if isPlaying {
+        streamPlayer?.pause()
+      } else {
+        NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
+        streamPlayer?.play()
+      }
+      isPlaying.toggle()
+      updateNowPlayingInfo(reloadArtwork: false)
+      return
+    }
     if isPlaying {
+      cancelPendingTransitionWork()
       audioKit.pause()
       isPlaying = false
     } else {
@@ -635,7 +1049,10 @@ class AudioPlayerManager: ObservableObject {
     guard isPlaying else { return }
     if isRadioMode {
       radioPlayer?.pause()
+    } else if isStreamMode {
+      streamPlayer?.pause()
     } else {
+      cancelPendingTransitionWork()
       audioKit.pause()
     }
     isPlaying = false
@@ -645,6 +1062,21 @@ class AudioPlayerManager: ObservableObject {
   func seek(to fraction: Double) {
     guard fraction.isFinite, (0.0...1.0).contains(fraction) else { return }
     if isRadioMode { return }
+    suppressTransitionAfterSeek = true
+    suppressPlaybackEndedCallbacks()
+    progress = fraction
+    if isStreamMode {
+      guard let player = streamPlayer, let duration = player.currentItem?.duration,
+            duration.isNumeric, duration.seconds > 0 else { return }
+      let target = CMTime(seconds: duration.seconds * fraction, preferredTimescale: 600)
+      player.seek(to: target)
+      if anyAIEffectActive {
+        applyMLSeparationIfNeeded()
+      }
+      updateNowPlayingInfo(reloadArtwork: false)
+      return
+    }
+    cancelPendingTransitionWork()
     let audioDur = audioKit.duration
     let totalDur: Double
     if audioDur.isFinite, audioDur > 0 {
@@ -656,7 +1088,20 @@ class AudioPlayerManager: ObservableObject {
     }
     let target = min(totalDur * fraction, totalDur - 1.5)
     guard target >= 0 else { return }
-    audioKit.seek(to: target)
+    var needsAIRefresh = false
+    if audioKit.mode == .aiStems {
+      if !audioKit.seek(to: target) {
+        audioKit.revertToMain()
+        _ = audioKit.seek(to: target)
+        needsAIRefresh = anyAIEffectActive
+      }
+    } else {
+      _ = audioKit.seek(to: target)
+      needsAIRefresh = anyAIEffectActive
+    }
+    if needsAIRefresh {
+      applyMLSeparationIfNeeded()
+    }
     updateNowPlayingInfo(reloadArtwork: false)
   }
 
@@ -694,14 +1139,14 @@ class AudioPlayerManager: ObservableObject {
 
   func playPrevious() {
     if isRadioMode { return }
-    if let current = currentSong, !queue.isEmpty,
+    guard let current = currentSong, !queue.isEmpty,
       let idx = queue.firstIndex(where: { $0.id == current.id }),
       idx - 1 >= 0
-    {
-      play(song: queue[idx - 1])
-    } else {
+    else {
       seek(to: 0)
+      return
     }
+    play(song: queue[idx - 1])
   }
 
   func toggleRepeat() { repeatMode = repeatMode.next() }
@@ -760,11 +1205,17 @@ class AudioPlayerManager: ObservableObject {
       updateNowPlayingInfo(reloadArtwork: true)
       return
     }
+    cancelPendingTransitionWork()
     audioKit.stop()
     instrumentalTask?.cancel()
     instrumentalTask = nil
+    preparedStemSongID = nil
+    deferredAIEffect = nil
+    VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cancelBackgroundAnalysis()
     downloadSession?.cancel()
     downloadSession = nil
+    scheduleIdleCacheCompression(excluding: Set<String>())
     isRadioMode = true
     radioArtworkURL = artworkURL
     progress = 0
@@ -803,6 +1254,11 @@ class AudioPlayerManager: ObservableObject {
     radioPlayer = nil
   }
 
+  private func stopStreamPlayer() {
+    streamPlayer?.pause()
+    streamPlayer = nil
+  }
+
   func updateRadioMetadata(song: Song, artworkURL: URL?) {
     guard isRadioMode else { return }
     currentSong = song
@@ -819,10 +1275,16 @@ class AudioPlayerManager: ObservableObject {
 
   func clearCache() {
     DebugLogger.log("Clearing all cache", category: .cache)
+    cancelPendingTransitionWork()
+    cacheCompressionTask?.cancel()
     downloadSession?.cancel()
     downloadSession = nil
     instrumentalTask?.cancel()
     instrumentalTask = nil
+    preparedStemSongID = nil
+    deferredAIEffect = nil
+    VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cancelBackgroundAnalysis()
     VocalSeparator.shared.cleanupRealtimeTemp()
     let fm = FileManager.default
     if let entries = try? fm.contentsOfDirectory(
@@ -840,13 +1302,7 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private static func cleanupOrphanPartialCacheFiles() {
-    let fm = FileManager.default
-    guard
-      let entries = try? fm.contentsOfDirectory(at: audioCacheDir, includingPropertiesForKeys: nil)
-    else { return }
-    for url in entries where url.pathExtension == "partial" {
-      try? fm.removeItem(at: url)
-    }
+    AudioCacheStore.cleanupLegacyArtifacts()
   }
 
   private func stemsForCachedAIMode(song: Song) -> CachedStems? {
@@ -858,25 +1314,22 @@ class AudioPlayerManager: ObservableObject {
 
   /// Triggers background AI separation for the given song (auto-analyze mode)
   private func triggerBackgroundAnalysis(for song: Song) {
-    guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return }
+    guard aiEnabled, aiAutoAnalyze, !isRadioMode, !anyAIEffectActive else { return }
     guard VocalSeparator.shared.isAvailable else { return }
 
-    let songID = song.id
-    let existingURL = currentPlaybackURL
-
-    // Find a source file for analysis
-    var sourceURL: URL?
-    let downloaded = DownloadManager.shared.localURL(for: songID)
-    let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
-    if FileManager.default.fileExists(atPath: downloaded.path) {
-      sourceURL = downloaded
-    } else if FileManager.default.fileExists(atPath: cached.path) {
-      sourceURL = cached
-    } else if let u = existingURL, FileManager.default.fileExists(atPath: u.path) {
-      sourceURL = u
+    if VocalSeparator.shared.cachedStems(forSongID: song.id) != nil {
+      preparedStemSongID = song.id
+      prepareBackgroundStemPlaybackIfPossible(for: song)
+      return
     }
 
+    let songID = song.id
+
+    // Find a source file for analysis
+    let sourceURL = localPlaybackFileURL(for: song)
+
     if let sourceURL {
+      cancelBackgroundAnalysisRetry()
       DebugLogger.log("Triggering background analysis for \(songID)", category: .ai)
       VocalSeparator.shared.analyzeInBackground(songID: songID, sourceURL: sourceURL)
     } else {
@@ -884,11 +1337,18 @@ class AudioPlayerManager: ObservableObject {
       DebugLogger.log(
         "Source not available yet for background analysis of \(songID), will retry",
         category: .ai)
-      Task { @MainActor [weak self] in
+      cancelBackgroundAnalysisRetry()
+      backgroundAnalysisRetryTask = Task { @MainActor [weak self] in
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        guard let self, self.currentSong?.id == songID, self.aiAutoAnalyze, self.aiEnabled
+        guard let self,
+          let currentSong = self.currentSong,
+          currentSong.id == songID,
+          self.aiAutoAnalyze,
+          self.aiEnabled
         else { return }
-        self.triggerBackgroundAnalysis(for: song)
+        guard !self.anyAIEffectActive else { return }
+        self.backgroundAnalysisRetryTask = nil
+        self.triggerBackgroundAnalysis(for: currentSong)
       }
     }
   }
@@ -898,74 +1358,91 @@ class AudioPlayerManager: ObservableObject {
     instrumentalTask = nil
     separationGeneration &+= 1
     let gen = separationGeneration
-    guard aiEnabled, anyAIEffectActive, !isRadioMode, let song = currentSong else {
+    guard aiEnabled, !isRadioMode, let song = currentSong else {
       VocalSeparator.shared.cancel()
+      preparedStemSongID = nil
       if audioKit.mode == .aiStems { audioKit.revertToMain() }
+      if aiEnabled, aiAutoAnalyze, !isRadioMode, let song = currentSong {
+        triggerBackgroundAnalysis(for: song)
+      }
       return
     }
     guard VocalSeparator.shared.isAvailable else {
+      preparedStemSongID = nil
       if audioKit.mode == .aiStems { audioKit.revertToMain() }
       return
+    }
+    let shouldKeepPreparedStems = keepPreparedStems(for: song)
+    guard anyAIEffectActive || shouldKeepPreparedStems else {
+      VocalSeparator.shared.cancel()
+      if audioKit.mode == .aiStems { audioKit.revertToMain() }
+      if aiAutoAnalyze {
+        triggerBackgroundAnalysis(for: song)
+      }
+      return
+    }
+    cancelBackgroundAnalysisRetry()
+    if anyAIEffectActive {
+      VocalSeparator.shared.cancelBackgroundAnalysis()
     }
     if audioKit.mode == .aiStems {
       applyAIMixVolumes()
       return
     }
-    // Check persistent cache first (available regardless of auto-analyze setting)
-    if let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) {
+    if let stems = VocalSeparator.shared.cachedStems(forSongID: song.id),
+      let sourceURL = localPlaybackFileURL(for: song)
+    {
       DebugLogger.log("Using cached stems for \(song.id)", category: .ai)
-      audioKit.switchToStems(
-        vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
-        startOffset: stems.startOffset)
+      preparedStemSongID = song.id
+      switchActivePlaybackToStems(for: song, stems: stems, sourceURL: sourceURL)
+      guard audioKit.mode == .aiStems else { return }
       applyAIMixVolumes()
-      isPlaying = true
+      return
+    }
+    guard anyAIEffectActive else {
+      triggerBackgroundAnalysis(for: song)
       return
     }
     VocalSeparator.shared.cancel()
     let songID = song.id
-    let trimStart = audioKit.currentTime
-    let existingURL = currentPlaybackURL
-    let useRealTime = !aiAutoAnalyze
+    let initialStart = activePlaybackTime(for: song)
+    let totalDur = isStreamMode ? Double(song.duration) : audioKit.duration
+    // Don't start separation if we're too close to the end — would crash CMTimeRange
+    if totalDur.isFinite, totalDur > 0, initialStart >= totalDur - 1.0 {
+      return
+    }
     DebugLogger.log(
-      "Starting \(useRealTime ? "real-time" : "full") separation for \(songID) from \(trimStart)s",
+      "Starting real-time separation for \(songID) from \(initialStart)s",
       category: .separation)
     instrumentalTask = Task { @MainActor [weak self] in
-      var sourceURL: URL?
-      if let u = existingURL, FileManager.default.fileExists(atPath: u.path) {
-        sourceURL = u
-      } else {
-        let deadline = Date().addingTimeInterval(30)
-        while sourceURL == nil, Date() < deadline {
-          if Task.isCancelled { return }
-          guard let self, self.separationGeneration == gen,
-            self.currentSong?.id == songID, self.anyAIEffectActive else { return }
-          let downloaded = DownloadManager.shared.localURL(for: songID)
-          let cached = AudioPlayerManager.audioCacheDir.appendingPathComponent("\(songID).mp3")
-          if FileManager.default.fileExists(atPath: downloaded.path) {
-            sourceURL = downloaded
-          } else if FileManager.default.fileExists(atPath: cached.path) {
-            sourceURL = cached
-          } else {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-          }
+      guard let self else { return }
+      guard let activeSong = self.currentSong, activeSong.id == songID else { return }
+      var sourceURL = self.localPlaybackFileURL(for: activeSong)
+      let deadline = Date().addingTimeInterval(30)
+      while sourceURL == nil, Date() < deadline {
+        if Task.isCancelled { return }
+        guard self.separationGeneration == gen,
+          let currentSong = self.currentSong,
+          currentSong.id == songID,
+          self.anyAIEffectActive
+        else { return }
+        sourceURL = self.localPlaybackFileURL(for: currentSong)
+        if sourceURL == nil {
+          try? await Task.sleep(nanoseconds: 500_000_000)
         }
       }
       guard let sourceURL else { return }
       if Task.isCancelled { return }
-      guard let self, self.separationGeneration == gen,
-        self.currentSong?.id == songID, self.anyAIEffectActive else { return }
+      guard self.separationGeneration == gen,
+        let currentSong = self.currentSong,
+        currentSong.id == songID,
+        self.anyAIEffectActive
+      else { return }
 
       do {
-        let stems: CachedStems
-        if useRealTime {
-          // Real-time mode: process only unplayed parts, no persistent cache
-          stems = try await VocalSeparator.shared.separateRealTime(
-            forSongID: songID, sourceURL: sourceURL, fromTime: trimStart)
-        } else {
-          // Full mode: process entire song and cache for future use
-          stems = try await VocalSeparator.shared.separate(
-            forSongID: songID, sourceURL: sourceURL, startTime: trimStart)
-        }
+        let separationStart = max(initialStart, self.activePlaybackTime(for: currentSong))
+        let stems = try await VocalSeparator.shared.separateRealTime(
+          forSongID: songID, sourceURL: sourceURL, fromTime: separationStart)
         if Task.isCancelled { return }
         guard self.separationGeneration == gen,
           self.currentSong?.id == songID, self.anyAIEffectActive else {
@@ -975,13 +1452,11 @@ class AudioPlayerManager: ObservableObject {
           }
           return
         }
-        self.audioKit.switchToStems(
-          vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
-          startOffset: stems.startOffset)
+        self.switchActivePlaybackToStems(for: song, stems: stems, sourceURL: sourceURL)
+        guard self.audioKit.mode == .aiStems else { return }
         self.applyAIMixVolumes()
-        self.isPlaying = true
         DebugLogger.log(
-          "Separation applied for \(songID), mode=\(useRealTime ? "realtime" : "full")",
+          "Separation applied for \(songID), mode=realtime",
           category: .separation)
       } catch is CancellationError {
         return
@@ -1017,7 +1492,9 @@ class AudioPlayerManager: ObservableObject {
     switch type {
     case .began:
       if isPlaying {
-        if isRadioMode { radioPlayer?.pause() } else { audioKit.pause() }
+        if isRadioMode { radioPlayer?.pause() }
+        else if isStreamMode { streamPlayer?.pause() }
+        else { audioKit.pause() }
         isPlaying = false
         updateNowPlayingInfo(reloadArtwork: false)
       }
@@ -1027,7 +1504,9 @@ class AudioPlayerManager: ObservableObject {
       if opts.contains(.shouldResume) {
         activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
-        if isRadioMode { radioPlayer?.play() } else { audioKit.resume() }
+        if isRadioMode { radioPlayer?.play() }
+        else if isStreamMode { streamPlayer?.play() }
+        else { audioKit.resume() }
         isPlaying = true
         updateNowPlayingInfo(reloadArtwork: false)
       }
@@ -1041,7 +1520,9 @@ class AudioPlayerManager: ObservableObject {
       let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
     else { return }
     if reason == .oldDeviceUnavailable, isPlaying {
-      if isRadioMode { radioPlayer?.pause() } else { audioKit.pause() }
+      if isRadioMode { radioPlayer?.pause() }
+      else if isStreamMode { streamPlayer?.pause() }
+      else { audioKit.pause() }
       isPlaying = false
       updateNowPlayingInfo(reloadArtwork: false)
     }
@@ -1117,7 +1598,7 @@ class AudioPlayerManager: ObservableObject {
       guard let self = self,
         let positionEvent = event as? MPChangePlaybackPositionCommandEvent
       else { return .commandFailed }
-      let dur = self.audioKit.duration
+      let dur = self.playbackDuration
       guard dur.isFinite, dur > 0 else { return .commandFailed }
       self.seek(to: positionEvent.positionTime / dur)
       return .success
@@ -1137,11 +1618,9 @@ class AudioPlayerManager: ObservableObject {
       info[MPMediaItemPropertyPlaybackDuration] = nil
       info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nil
     } else {
-      let dur = audioKit.duration
-      let actualDuration = (dur.isFinite && dur > 0) ? dur : Double(song.duration)
       info[MPNowPlayingInfoPropertyIsLiveStream] = false
-      info[MPMediaItemPropertyPlaybackDuration] = actualDuration
-      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = audioKit.currentTime
+      info[MPMediaItemPropertyPlaybackDuration] = playbackDuration
+      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = playbackTime
     }
     info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
     let targetArt = isRadioMode ? radioArtworkURL : song.imageURL
@@ -1328,27 +1807,37 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private func quickCutToNext(plan: TransitionCoordinator.TransitionPlan) {
+    cancelQuickCutTimer(resetVolume: false)
     let fadeDuration = plan.fadeDuration
     let song = plan.nextSong
     let steps = Int(fadeDuration * 60)
     let interval: TimeInterval = 1.0 / 60.0
     var step = 0
-    Timer.scheduledTimer(withTimeInterval: interval, repeats: true) {
-      @MainActor [weak self] timer in
-      guard let self else {
+    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
+      guard self != nil else {
         timer.invalidate()
         return
       }
-      step += 1
-      let t = Float(step) / Float(max(1, steps))
-      self.audioKit.setMasterVolume(1.0 - t)
-      if t >= 1.0 {
-        timer.invalidate()
-        self.audioKit.setMasterVolume(1.0)
-        self.transitionCoordinator.reset()
-        self.play(song: song)
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        guard self.transitionCoordinator.state.isCrossfading, !self.isRadioMode else {
+          self.cancelPendingTransitionWork()
+          return
+        }
+        step += 1
+        let t = Float(step) / Float(max(1, steps))
+        self.audioKit.setMasterVolume(1.0 - t)
+        if t >= 1.0 {
+          timer.invalidate()
+          self.quickCutTimer = nil
+          self.audioKit.setMasterVolume(1.0)
+          self.transitionCoordinator.reset()
+          self.play(song: song)
+        }
       }
     }
+    quickCutTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   private func transitionCoordinatorDidFinish() {

@@ -2,9 +2,15 @@ import Combine
 import Foundation
 
 class HomeViewModel: ObservableObject {
+  private enum TopPicksSource {
+    case publicPlaylists
+    case setlists
+  }
+
   @Published var trending: [Song] = []
   @Published var suggestions: [Song] = []
   @Published var recentPlaylists: [Playlist] = []
+  @Published var newReleases: [Song] = []
   @Published var isLoading = false
   @Published var isLoadingMoreTopPicks = false
   @Published var canLoadMoreTopPicks = true
@@ -13,7 +19,12 @@ class HomeViewModel: ObservableObject {
   private var hasLoaded = false
   private var topPicksPage = 0
   private let topPicksPageSize = 12
-  private var loadedSinglePlaylistID: String?
+  private var topPicksSource: TopPicksSource = .publicPlaylists
+
+  init() {
+    fetchHomeData()
+  }
+
   func fetchHomeData(force: Bool = false) {
     if hasLoaded && !force { return }
     hasLoaded = true
@@ -34,14 +45,26 @@ class HomeViewModel: ObservableObject {
       group.leave()
     }
     group.enter()
-    fetchData(urlString: topPicksURL(startIndex: 0)) { [weak self] (response: [Playlist]?) in
+    fetchTopPicks(startIndex: 0) { [weak self] response in
       DispatchQueue.main.async {
         if let response {
           self?.recentPlaylists = response
           self?.topPicksPage = 1
           self?.canLoadMoreTopPicks = response.count == (self?.topPicksPageSize ?? 0)
-          if let first = response.first { self?.loadLatestSingle(from: first) }
         }
+        group.leave()
+      }
+    }
+    group.enter()
+    fetchLatestReleases { [weak self] songs in
+      DispatchQueue.main.async {
+        guard let self else {
+          group.leave()
+          return
+        }
+        self.newReleases = songs
+        self.latestSingle = songs.first
+        self.latestSingleContext = songs
         group.leave()
       }
     }
@@ -56,8 +79,7 @@ class HomeViewModel: ObservableObject {
   private func loadMoreTopPicks() {
     isLoadingMoreTopPicks = true
     let startIndex = topPicksPage * topPicksPageSize
-    fetchData(urlString: topPicksURL(startIndex: startIndex)) {
-      [weak self] (response: [Playlist]?) in
+    fetchData(urlString: topPicksURL(startIndex: startIndex, source: topPicksSource)) { [weak self] (response: [Playlist]?) in
       DispatchQueue.main.async {
         guard let self = self else { return }
         if let response, !response.isEmpty {
@@ -72,32 +94,63 @@ class HomeViewModel: ObservableObject {
       }
     }
   }
-  private func topPicksURL(startIndex: Int) -> String {
-    "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=True&isSetlist=True&year=0"
+  private func fetchTopPicks(startIndex: Int, completion: @escaping ([Playlist]?) -> Void) {
+    fetchData(urlString: topPicksURL(startIndex: startIndex, source: .publicPlaylists)) {
+      [weak self] (response: [Playlist]?) in
+      if let response, !response.isEmpty {
+        self?.topPicksSource = .publicPlaylists
+        completion(response)
+      } else {
+        self?.topPicksSource = .setlists
+        self?.fetchData(
+          urlString: self?.topPicksURL(startIndex: startIndex, source: .setlists) ?? ""
+        ) { (fallback: [Playlist]?) in
+          completion(fallback)
+        }
+      }
+    }
   }
-  private func loadLatestSingle(from playlist: Playlist) {
-    if loadedSinglePlaylistID == playlist.id, latestSingle != nil { return }
-    loadedSinglePlaylistID = playlist.id
-    if let inline = playlist.songListDTOs, let first = inline.first {
-      self.latestSingle = first
-      self.latestSingleContext = inline
+
+  private func topPicksURL(startIndex: Int, source: TopPicksSource) -> String {
+    switch source {
+    case .publicPlaylists:
+      return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=False&isSetlist=False&year=0"
+    case .setlists:
+      return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=True&isSetlist=True&year=0"
+    }
+  }
+
+  private func fetchLatestReleases(completion: @escaping ([Song]) -> Void) {
+    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
+      completion([])
       return
     }
-    guard let url = URL(string: "\(StorageHost.api)/api/playlist/\(playlist.id)") else { return }
     var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 15
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     if let token = UserDefaults.standard.string(forKey: "nk.token") {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
     GuestIdentity.applyIfNeeded(to: &request)
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+    request.httpBody = try? JSONSerialization.data(withJSONObject: [
+      "page": 1,
+      "pageSize": 24,
+      "search": "",
+    ])
+
+    URLSession.shared.dataTask(with: request) { data, _, _ in
       guard let data,
-        let decoded = try? JSONDecoder().decode(Playlist.self, from: data),
-        let songs = decoded.songListDTOs, let first = songs.first
-      else { return }
-      DispatchQueue.main.async {
-        self?.latestSingle = first
-        self?.latestSingleContext = songs
+        let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data)
+      else {
+        completion([])
+        return
       }
+      let filtered = decoded.items.filter {
+        !$0.title.localizedCaseInsensitiveContains("Temporary Stream Audio")
+      }
+      let curated = Array((filtered.isEmpty ? decoded.items : filtered).prefix(12))
+      completion(curated)
     }.resume()
   }
   private func fetchData<T: Codable>(urlString: String, completion: @escaping (T?) -> Void) {
@@ -110,10 +163,26 @@ class HomeViewModel: ObservableObject {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
     GuestIdentity.applyIfNeeded(to: &request)
-    URLSession.shared.dataTask(with: request) { data, _, _ in
-      if let data, let decoded = try? JSONDecoder().decode(T.self, from: data) {
+    URLSession.shared.dataTask(with: request) { data, resp, error in
+      if let error {
+        DebugLogger.log("Home fetch failed: \(urlString) — \(error.localizedDescription)", category: .network)
+        completion(nil)
+        return
+      }
+      if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        DebugLogger.log("Home fetch HTTP \(http.statusCode): \(urlString)", category: .network)
+        completion(nil)
+        return
+      }
+      guard let data else {
+        completion(nil)
+        return
+      }
+      do {
+        let decoded = try JSONDecoder().decode(T.self, from: data)
         completion(decoded)
-      } else {
+      } catch {
+        DebugLogger.log("Home fetch decode error: \(urlString) — \(error)", category: .network)
         completion(nil)
       }
     }.resume()

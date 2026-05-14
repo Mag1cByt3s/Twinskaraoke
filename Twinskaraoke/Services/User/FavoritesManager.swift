@@ -14,9 +14,7 @@ final class FavoritesManager: ObservableObject {
   }
   func isFavorite(_ songID: String) -> Bool { favoriteIDs.contains(songID) }
   func loadIfNeeded() {
-    guard !loaded, token != nil else { return }
-    loaded = true
-    Task { await load() }
+    reload()
   }
   func reload() {
     Task { await load() }

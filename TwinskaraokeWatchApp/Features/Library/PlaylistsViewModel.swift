@@ -8,24 +8,20 @@ class PlaylistsViewModel: ObservableObject {
     guard
       let url = URL(
         string:
-          "https://api.neurokaraoke.com/api/playlists?startIndex=0&pageSize=15&search=&sortBy=&sortDescending=False&isSetlist=True&year=0"
+          "\(StorageHost.api)/api/playlists?startIndex=0&pageSize=15&search=&sortBy=&sortDescending=False&isSetlist=True&year=0"
       )
     else { return }
     isLoading = true
     var request = URLRequest(url: url)
     request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
-    URLSession.shared.dataTask(with: request) { data, _, _ in
-      if let data = data,
-        let decodedData = try? JSONDecoder().decode([Playlist].self, from: data)
-      {
-        DispatchQueue.main.async {
-          self.playlists = decodedData
-          self.isLoading = false
-        }
-      } else {
-        DispatchQueue.main.async {
-          self.isLoading = false
-        }
+    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+      Task { @MainActor [weak self] in
+        guard let self = self else { return }
+        defer { self.isLoading = false }
+        guard let data,
+          let decodedData = try? JSONDecoder().decode([Playlist].self, from: data)
+        else { return }
+        self.playlists = decodedData
       }
     }.resume()
   }

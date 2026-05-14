@@ -13,10 +13,11 @@ final class RadioController: ObservableObject {
   func start() {
     Task { await refresh() }
     pollTimer?.invalidate()
-    pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) {
-      @MainActor [weak self] _ in
+    let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
       Task { @MainActor in await self?.refresh() }
     }
+    pollTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
   func stop() {
     pollTimer?.invalidate()

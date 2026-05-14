@@ -23,7 +23,7 @@ struct Song: Codable, Identifiable, Equatable {
     guard isNeuro else { return nil }
     return URL(
       string:
-        "https://images.neurokaraoke.com/WxURxyML82UkE7gY-PiBKw/277232b2-e00e-426b-ffb8-bb8664a73600/quality=95"
+        "\(StorageHost.images)/WxURxyML82UkE7gY-PiBKw/277232b2-e00e-426b-ffb8-bb8664a73600/quality=95"
     )
   }
   var audioURL: URL? {

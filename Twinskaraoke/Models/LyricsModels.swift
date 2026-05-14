@@ -1,9 +1,20 @@
 import Foundation
 
-struct LyricLine: Identifiable {
+struct LyricLine: Identifiable, Codable {
   let id = UUID()
   let time: TimeInterval
   let text: String
+  let translatedText: String?
+
+  init(time: TimeInterval, text: String, translatedText: String? = nil) {
+    self.time = time
+    self.text = text
+    self.translatedText = translatedText
+  }
+
+  func withTranslation(_ translatedText: String?) -> LyricLine {
+    LyricLine(time: time, text: text, translatedText: translatedText)
+  }
 }
 
 struct RawLyricLine: Codable {

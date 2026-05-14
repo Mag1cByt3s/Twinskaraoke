@@ -27,29 +27,16 @@ struct HomeView: View {
               if !viewModel.suggestions.isEmpty {
                 HomeSongSection(title: "Made for You", songs: viewModel.suggestions)
               }
-              HomePlaceholderSection(
-                title: "New Releases",
-                tiles: HomePlaceholderTile.newReleases,
-                artworkOverride: { tile in
-                  switch tile.title {
-                  case "Latest Singles": return viewModel.latestSingle?.imageURL
-                  case "New Albums": return viewModel.recentPlaylists.first?.imageURL
-                  default: return nil
-                  }
-                },
-                playlistForTile: { tile in
-                  tile.title == "New Albums" ? viewModel.recentPlaylists.first : nil
-                },
-                onTapTile: { tile in
-                  switch tile.title {
-                  case "Latest Singles":
-                    if let song = viewModel.latestSingle {
-                      audioManager.play(song: song, context: [song])
-                    }
-                  default: break
-                  }
-                }
-              )
+              if let latestSingle = viewModel.latestSingle {
+                LatestSingleSection(
+                  song: latestSingle,
+                  context: viewModel.latestSingleContext.isEmpty
+                    ? [latestSingle] : viewModel.latestSingleContext
+                )
+              }
+              if !viewModel.newReleases.isEmpty {
+                HomeSongSection(title: "New Releases", songs: viewModel.newReleases)
+              }
               HomePlaceholderSection(
                 title: "Stations for You",
                 tiles: HomePlaceholderTile.stations,
@@ -67,7 +54,7 @@ struct HomeView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .navigationTitle("Home")
-      .onAppear { viewModel.fetchHomeData() }
+      .onAppear { viewModel.fetchHomeData(force: true) }
     }
   }
 }
@@ -189,23 +176,6 @@ struct HomePlaceholderTile: Identifiable {
   let title: String
   let subtitle: String
   let gradient: [Color]
-  static let newReleases: [HomePlaceholderTile] = [
-    .init(
-      title: "Latest Singles", subtitle: "Updated daily",
-      gradient: [
-        Color(red: 0.96, green: 0.30, blue: 0.45), Color(red: 0.55, green: 0.10, blue: 0.30),
-      ]),
-    .init(
-      title: "New Albums", subtitle: "This week",
-      gradient: [
-        Color(red: 0.20, green: 0.55, blue: 0.95), Color(red: 0.10, green: 0.20, blue: 0.55),
-      ]),
-    .init(
-      title: "Coming Soon", subtitle: "Pre-add now",
-      gradient: [
-        Color(red: 0.95, green: 0.45, blue: 0.10), Color(red: 0.55, green: 0.15, blue: 0.05),
-      ]),
-  ]
   static let stations: [HomePlaceholderTile] = [
     .init(
       title: "Pop Station", subtitle: "Today's biggest hits",
@@ -223,6 +193,50 @@ struct HomePlaceholderTile: Identifiable {
         Color(red: 0.10, green: 0.75, blue: 0.85), Color(red: 0.05, green: 0.30, blue: 0.45),
       ]),
   ]
+}
+
+private struct LatestSingleSection: View {
+  let song: Song
+  let context: [Song]
+  @EnvironmentObject var audioManager: AudioPlayerManager
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.m) {
+      AMSectionHeader("Latest Single")
+      Button {
+        audioManager.play(song: song, context: context)
+      } label: {
+        HStack(spacing: AM.Spacing.m) {
+          LoadingImage(url: song.imageURL, cornerRadius: AM.Radius.card)
+            .frame(width: 92, height: 92)
+            .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
+            .amShadow(AM.Shadow.card)
+          VStack(alignment: .leading, spacing: 6) {
+            Text(song.title)
+              .font(.system(size: 18, weight: .bold))
+              .foregroundStyle(.primary)
+              .lineLimit(2)
+            Text(song.displayArtist)
+              .font(.system(size: 13, weight: .medium))
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+            Label("Play Latest Release", systemImage: "play.fill")
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(Color.appAccent)
+              .padding(.top, 4)
+          }
+          Spacer(minLength: 12)
+        }
+        .padding(14)
+        .background(
+          RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(Color.primary.opacity(0.06))
+        )
+      }
+      .buttonStyle(PressableButtonStyle())
+      .padding(.horizontal, AM.Spacing.screenMargin)
+    }
+  }
 }
 
 struct HomePlaceholderSection: View {

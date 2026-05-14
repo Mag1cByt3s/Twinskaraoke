@@ -1,14 +1,30 @@
 import Combine
 import Foundation
 
+enum LyricsTranslationState: Equatable {
+  case idle
+  case translating
+  case ready
+  case unavailable
+  case failed
+}
+
 final class LyricsViewModel: ObservableObject {
   @Published private(set) var lyrics: [LyricLine] = []
   @Published private(set) var isLoading = false
   @Published private(set) var didFail = false
   @Published private(set) var hasNoLyrics = false
+  @Published private(set) var translationState: LyricsTranslationState = .idle
+
   private(set) var loadedSongID: String?
   private var inFlightSongID: String?
   private var currentTask: URLSessionDataTask?
+  private var translationTask: Task<Void, Never>?
+
+  var hasTranslatedLyrics: Bool {
+    lyrics.contains { ($0.translatedText?.isEmpty == false) && $0.translatedText != $0.text }
+  }
+
   func adopt(songID: String, lyrics: [LyricLine]) {
     cancelInFlight()
     inFlightSongID = nil
@@ -17,18 +33,44 @@ final class LyricsViewModel: ObservableObject {
     isLoading = false
     didFail = false
     hasNoLyrics = lyrics.isEmpty
+    refreshTranslationState(for: lyrics)
   }
+
   func fetch(songID: String) {
     if songID == loadedSongID, !lyrics.isEmpty { return }
     if songID == loadedSongID, hasNoLyrics { return }
     if songID == inFlightSongID, isLoading { return }
+
     cancelInFlight()
     inFlightSongID = songID
+
+    if let cachedTranslated = LyricsCacheStore.load(songID: songID, variant: .translated) {
+      loadedSongID = songID
+      lyrics = cachedTranslated
+      isLoading = false
+      didFail = false
+      hasNoLyrics = cachedTranslated.isEmpty
+      translationState = cachedTranslated.isEmpty ? .idle : .ready
+      return
+    }
+
+    if let cachedOriginal = LyricsCacheStore.load(songID: songID, variant: .original) {
+      loadedSongID = songID
+      lyrics = cachedOriginal
+      isLoading = false
+      didFail = false
+      hasNoLyrics = cachedOriginal.isEmpty
+      refreshTranslationState(for: cachedOriginal)
+      return
+    }
+
     if loadedSongID != songID {
       lyrics = []
       loadedSongID = nil
       hasNoLyrics = false
+      translationState = .idle
     }
+
     isLoading = true
     didFail = false
     let encoded =
@@ -76,13 +118,62 @@ final class LyricsViewModel: ObservableObject {
     currentTask = task
     task.resume()
   }
+
   func retry() {
     guard let id = inFlightSongID ?? loadedSongID else { return }
     loadedSongID = nil
     didFail = false
     hasNoLyrics = false
     lyrics = []
+    translationState = .idle
     fetch(songID: id)
+  }
+
+  func requestTranslation() {
+    guard let songID = loadedSongID, !lyrics.isEmpty, !hasNoLyrics else { return }
+    if hasTranslatedLyrics {
+      translationState = .ready
+      return
+    }
+    if let cached = LyricsCacheStore.load(songID: songID, variant: .translated) {
+      lyrics = mergeTranslations(from: cached, into: lyrics)
+      translationState = .ready
+      return
+    }
+    guard LyricsTranslationService.shared.isConfigured else {
+      translationState = .unavailable
+      return
+    }
+
+    translationTask?.cancel()
+    translationState = .translating
+    let sourceLyrics = lyrics
+    translationTask = Task { [weak self] in
+      do {
+        let translated = try await LyricsTranslationService.shared.translate(
+          songID: songID,
+          lyrics: sourceLyrics
+        )
+        await MainActor.run {
+          guard let self, self.loadedSongID == songID else { return }
+          self.lyrics = translated
+          self.translationState = .ready
+          LyricsCacheStore.save(translated, songID: songID, variant: .translated)
+        }
+      } catch is CancellationError {
+        return
+      } catch LyricsTranslationError.unavailable {
+        await MainActor.run {
+          guard let self, self.loadedSongID == songID else { return }
+          self.translationState = .unavailable
+        }
+      } catch {
+        await MainActor.run {
+          guard let self, self.loadedSongID == songID else { return }
+          self.translationState = .failed
+        }
+      }
+    }
   }
 
   private enum FetchResult {
@@ -90,6 +181,7 @@ final class LyricsViewModel: ObservableObject {
     case empty
     case failure
   }
+
   private func finish(songID: String, result: FetchResult) {
     inFlightSongID = nil
     currentTask = nil
@@ -100,19 +192,45 @@ final class LyricsViewModel: ObservableObject {
       lyrics = parsed
       didFail = false
       hasNoLyrics = false
+      refreshTranslationState(for: parsed)
+      LyricsCacheStore.save(parsed, songID: songID, variant: .original)
     case .empty:
       loadedSongID = songID
       lyrics = []
       didFail = false
       hasNoLyrics = true
+      translationState = .idle
+      LyricsCacheStore.save([], songID: songID, variant: .original)
     case .failure:
       lyrics = []
       didFail = true
       hasNoLyrics = false
+      translationState = .idle
     }
   }
+
+  private func refreshTranslationState(for lyrics: [LyricLine]) {
+    let hasTranslations = lyrics.contains {
+      ($0.translatedText?.isEmpty == false) && $0.translatedText != $0.text
+    }
+    if hasTranslations {
+      translationState = .ready
+    } else {
+      translationState = LyricsTranslationService.shared.isConfigured ? .idle : .unavailable
+    }
+  }
+
+  private func mergeTranslations(from translated: [LyricLine], into original: [LyricLine]) -> [LyricLine] {
+    guard translated.count == original.count else { return original }
+    return zip(original, translated).map { source, translatedLine in
+      source.withTranslation(translatedLine.translatedText ?? translatedLine.text)
+    }
+  }
+
   private func cancelInFlight() {
     currentTask?.cancel()
     currentTask = nil
+    translationTask?.cancel()
+    translationTask = nil
   }
 }

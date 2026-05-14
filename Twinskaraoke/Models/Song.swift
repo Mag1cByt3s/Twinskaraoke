@@ -77,13 +77,51 @@ struct Playlist: Codable, Identifiable {
   let id: String
   let name: String
   let songCount: Int
+  let media: PlaylistMedia?
   let mosaicMedia: [Media]?
   let songListDTOs: [Song]?
+  var isPersonal: Bool = false
+
+  init(
+    id: String,
+    name: String,
+    songCount: Int,
+    media: PlaylistMedia? = nil,
+    mosaicMedia: [Media]?,
+    songListDTOs: [Song]?,
+    isPersonal: Bool = false
+  ) {
+    self.id = id
+    self.name = name
+    self.songCount = songCount
+    self.media = media
+    self.mosaicMedia = mosaicMedia
+    self.songListDTOs = songListDTOs
+    self.isPersonal = isPersonal
+  }
+
   var imageURL: URL? {
-    guard let path = mosaicMedia?.first?.absolutePath else { return nil }
-    return URL(string: StorageHost.images + path + "/quality=95")
+    if let cfId = media?.cloudflareId, !cfId.isEmpty {
+      return URL(string: "\(StorageHost.images)/\(cfId)/public")
+    }
+    if let path = media?.absolutePath, !path.isEmpty {
+      return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+    }
+    if let path = mosaicMedia?.first?.absolutePath {
+      return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+    }
+    return songListDTOs?.first?.imageURL
   }
   var isFavorites: Bool { id == Self.favoritesID }
+
+  private func normalizedImagePath(_ rawPath: String) -> String {
+    rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+  }
+}
+
+struct PlaylistMedia: Codable {
+  let cloudflareId: String?
+  let absolutePath: String?
 }
 
 struct Media: Codable {

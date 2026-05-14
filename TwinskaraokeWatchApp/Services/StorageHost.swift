@@ -1,6 +1,9 @@
 import Foundation
 
 enum StorageHost {
+  static var api: String {
+    isChinaRegion ? "https://api.neurokaraoke.com.cn" : "https://api.neurokaraoke.com"
+  }
   static var base: String {
     isChinaRegion ? "https://storage.neurokaraoke.com.cn" : "https://storage.neurokaraoke.com"
   }

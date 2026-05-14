@@ -4,6 +4,10 @@ import CoreML
 import Foundation
 import Spleeter
 
+extension Notification.Name {
+  static let vocalSeparatorDidCacheStems = Notification.Name("VocalSeparatorDidCacheStems")
+}
+
 enum DeviceCapability {
   static var supportsKaraoke: Bool {
     if #available(iOS 18.0, *) {
@@ -41,6 +45,11 @@ struct CachedStems {
 final class VocalSeparator: ObservableObject {
   static let shared = VocalSeparator()
 
+  private enum SeparationTaskKind {
+    case foreground
+    case background
+  }
+
   @Published private(set) var processingSongID: String?
   @Published private(set) var progressFraction: Float = 0
   @Published private(set) var isBackgroundAnalyzing: Bool = false
@@ -48,14 +57,8 @@ final class VocalSeparator: ObservableObject {
   let isAvailable: Bool
   private let modelURL: URL?
   private var activeTask: Task<URL, Error>?
+  private var activeTaskKind: SeparationTaskKind?
   private var backgroundAnalysisTask: Task<Void, Never>?
-
-  private static var stemsCacheDir: URL {
-    let dir = AudioPlayerManager.audioCacheDir
-      .appendingPathComponent("Stems", isDirectory: true)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir
-  }
 
   private static var realtimeTempDir: URL {
     let dir = FileManager.default.temporaryDirectory
@@ -86,38 +89,55 @@ final class VocalSeparator: ObservableObject {
   }
 
   func cachedVocalsURL(forSongID songID: String) -> URL? {
-    validCachedURL(Self.stemsCacheDir.appendingPathComponent("\(songID).vocals.wav"))
+    let url = AudioCacheStore.files(for: songID).vocals
+    return validCachedURL(url) ?? validCachedURL(AudioCacheStore.compressedURL(for: url))
   }
 
   func cachedInstrumentsURL(forSongID songID: String) -> URL? {
-    validCachedURL(Self.stemsCacheDir.appendingPathComponent("\(songID).instruments.wav"))
+    let url = AudioCacheStore.files(for: songID).instruments
+    return validCachedURL(url) ?? validCachedURL(AudioCacheStore.compressedURL(for: url))
+  }
+
+  private func removeCachedStems(forSongID songID: String) {
+    let songFiles = AudioCacheStore.files(for: songID)
+    let urls = [
+      songFiles.vocals,
+      songFiles.instruments,
+      AudioCacheStore.compressedURL(for: songFiles.vocals),
+      AudioCacheStore.compressedURL(for: songFiles.instruments),
+      songFiles.offset,
+    ]
+    for url in urls {
+      try? FileManager.default.removeItem(at: url)
+    }
   }
 
   func cachedStems(forSongID songID: String) -> CachedStems? {
-    guard let v = cachedVocalsURL(forSongID: songID),
-      let inst = cachedInstrumentsURL(forSongID: songID)
-    else { return nil }
-    let offset = cachedStartOffset(forSongID: songID)
+    let offset = AudioCacheStore.readStartOffset(for: songID)
+    guard offset <= 1.0 else {
+      DebugLogger.log(
+        "Discarding legacy partial stem cache for \(songID) (offset=\(offset))",
+        category: .separation)
+      removeCachedStems(forSongID: songID)
+      return nil
+    }
+    guard let stems = AudioCacheStore.playableStems(for: songID, startOffset: offset) else {
+      return nil
+    }
     DebugLogger.log("Cache hit for stems: \(songID)", category: .separation)
-    // Touch files for LRU tracking
-    CacheManager.shared.recordAccess(for: v)
-    CacheManager.shared.recordAccess(for: inst)
-    return CachedStems(vocals: v, instruments: inst, startOffset: offset)
+    CacheManager.shared.recordAccess(for: stems.vocals)
+    CacheManager.shared.recordAccess(for: stems.instruments)
+    return stems
   }
 
   func cachedStartOffset(forSongID songID: String) -> TimeInterval {
-    let offsetURL = Self.stemsCacheDir.appendingPathComponent("\(songID).offset")
-    guard let data = try? Data(contentsOf: offsetURL),
-      let str = String(data: data, encoding: .utf8),
-      let val = Double(str.trimmingCharacters(in: .whitespacesAndNewlines))
-    else { return 0 }
-    return val
+    AudioCacheStore.readStartOffset(for: songID)
   }
 
   // MARK: - Full Separation (cached, for auto-analyze mode)
 
   func separate(
-    forSongID songID: String, sourceURL: URL, startTime: TimeInterval = 0
+    forSongID songID: String, sourceURL: URL, initiatedByBackground: Bool = false
   ) async throws -> CachedStems {
     if let cached = cachedStems(forSongID: songID) { return cached }
     guard isAvailable, let modelURL else { throw VocalSeparatorError.unavailable }
@@ -130,49 +150,37 @@ final class VocalSeparator: ObservableObject {
     if let old = activeTask {
       old.cancel()
       activeTask = nil
+      activeTaskKind = nil
       processingSongID = nil
       progressFraction = 0
     }
     try Task.checkCancellation()
     guard #available(iOS 18.0, *) else { throw VocalSeparatorError.unavailable }
-    DebugLogger.log(
-      "Starting full separation for \(songID), startTime=\(startTime)",
-      category: .separation)
+    DebugLogger.log("Starting full separation for \(songID)", category: .separation)
     processingSongID = songID
-    let vocalsURL = Self.stemsCacheDir.appendingPathComponent("\(songID).vocals.wav")
-    let instrumentsURL = Self.stemsCacheDir.appendingPathComponent("\(songID).instruments.wav")
-    let offsetURL = Self.stemsCacheDir.appendingPathComponent("\(songID).offset")
+    activeTaskKind = initiatedByBackground ? .background : .foreground
+    let songFiles = AudioCacheStore.files(for: songID)
+    let vocalsURL = songFiles.vocals
+    let instrumentsURL = songFiles.instruments
     let modelRef = modelURL
-    let normalizedStart = max(0, startTime)
-    let task = Task<URL, Error>.detached {
+    let task = Task<URL, Error>.detached(priority: .utility) {
       do {
-        let trimmedSource: URL
-        let trimmedTemp: URL?
-        if normalizedStart > 1.0 {
-          let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(songID).aitrim.m4a")
-          try await Self.trim(source: sourceURL, from: normalizedStart, to: tmp)
-          trimmedSource = tmp
-          trimmedTemp = tmp
-        } else {
-          trimmedSource = sourceURL
-          trimmedTemp = nil
-        }
         try await Self.runSeparation2(
           modelURL: modelRef,
           songID: songID,
-          sourceURL: trimmedSource,
+          sourceURL: sourceURL,
           vocalsOutputURL: vocalsURL,
           instrumentsOutputURL: instrumentsURL
         ) { fraction in
           await VocalSeparator.shared.updateProgress(songID: songID, fraction: fraction)
         }
-        if let trimmedTemp { try? FileManager.default.removeItem(at: trimmedTemp) }
-        try? FileManager.default.removeItem(at: offsetURL)
-        if normalizedStart > 1.0 {
-          try? "\(normalizedStart)".data(using: .utf8)?.write(to: offsetURL)
-        }
+        AudioCacheStore.clearMainOffset(for: songID)
         await VocalSeparator.shared.finishJob(songID: songID)
+        await MainActor.run {
+          NotificationCenter.default.post(
+            name: .vocalSeparatorDidCacheStems,
+            object: songID)
+        }
         return vocalsURL
       } catch {
         await VocalSeparator.shared.finishJob(songID: songID)
@@ -201,6 +209,7 @@ final class VocalSeparator: ObservableObject {
     if let old = activeTask {
       old.cancel()
       activeTask = nil
+      activeTaskKind = nil
       processingSongID = nil
       progressFraction = 0
     }
@@ -214,11 +223,12 @@ final class VocalSeparator: ObservableObject {
       category: .separation)
 
     processingSongID = songID
+    activeTaskKind = .foreground
     let vocalsURL = Self.realtimeTempDir.appendingPathComponent("\(songID).vocals.wav")
     let instrumentsURL = Self.realtimeTempDir.appendingPathComponent("\(songID).instruments.wav")
     let modelRef = modelURL
 
-    let task = Task<URL, Error>.detached {
+    let task = Task<URL, Error>.detached(priority: .utility) {
       do {
         let trimmedSource: URL
         let trimmedTemp: URL?
@@ -232,6 +242,11 @@ final class VocalSeparator: ObservableObject {
           trimmedSource = sourceURL
           trimmedTemp = nil
         }
+        defer {
+          if let trimmedTemp {
+            try? FileManager.default.removeItem(at: trimmedTemp)
+          }
+        }
         try await Self.runSeparation2(
           modelURL: modelRef,
           songID: songID,
@@ -241,7 +256,6 @@ final class VocalSeparator: ObservableObject {
         ) { fraction in
           await VocalSeparator.shared.updateProgress(songID: songID, fraction: fraction)
         }
-        if let trimmedTemp { try? FileManager.default.removeItem(at: trimmedTemp) }
         await VocalSeparator.shared.finishJob(songID: songID)
         return vocalsURL
       } catch {
@@ -262,10 +276,12 @@ final class VocalSeparator: ObservableObject {
     DebugLogger.log(
       "Real-time separation complete for \(songID), offset=\(normalizedStart)",
       category: .separation)
+    // Only set offset when source was trimmed (matching full-separation behavior)
+    let offset = normalizedStart > 1.0 ? normalizedStart : 0
     return CachedStems(
       vocals: vocalsURL,
       instruments: instrumentsURL,
-      startOffset: normalizedStart,
+      startOffset: offset,
       isTemporary: true)
   }
 
@@ -289,7 +305,10 @@ final class VocalSeparator: ObservableObject {
     backgroundAnalysisTask?.cancel()
     backgroundAnalysisTask = Task { @MainActor [weak self] in
       do {
-        _ = try await self?.separate(forSongID: songID, sourceURL: sourceURL, startTime: 0)
+        _ = try await self?.separate(
+          forSongID: songID,
+          sourceURL: sourceURL,
+          initiatedByBackground: true)
         DebugLogger.log("Background analysis succeeded for \(songID)", category: .ai)
       } catch is CancellationError {
         DebugLogger.log("Background analysis cancelled for \(songID)", category: .ai)
@@ -305,6 +324,14 @@ final class VocalSeparator: ObservableObject {
   func cancelBackgroundAnalysis() {
     backgroundAnalysisTask?.cancel()
     backgroundAnalysisTask = nil
+    if activeTaskKind == .background {
+      let old = activeTask
+      activeTask = nil
+      activeTaskKind = nil
+      processingSongID = nil
+      progressFraction = 0
+      old?.cancel()
+    }
     isBackgroundAnalyzing = false
     DebugLogger.log("Background analysis cancelled", category: .ai)
   }
@@ -314,6 +341,7 @@ final class VocalSeparator: ObservableObject {
   func cancel() {
     let old = activeTask
     activeTask = nil
+    activeTaskKind = nil
     processingSongID = nil
     progressFraction = 0
     old?.cancel()
@@ -321,7 +349,10 @@ final class VocalSeparator: ObservableObject {
   }
 
   func clearCache() {
-    try? FileManager.default.removeItem(at: Self.stemsCacheDir)
+    for directory in AudioCacheStore.cachedSongDirectories() {
+      let songID = directory.lastPathComponent
+      removeCachedStems(forSongID: songID)
+    }
     DebugLogger.log("Stems cache cleared", category: .cache)
   }
 
@@ -349,6 +380,7 @@ final class VocalSeparator: ObservableObject {
       processingSongID = nil
       progressFraction = 0
       activeTask = nil
+      activeTaskKind = nil
     }
   }
 
@@ -366,7 +398,11 @@ final class VocalSeparator: ObservableObject {
     } else {
       duration = asset.duration
     }
-    export.timeRange = CMTimeRange(start: start, end: duration)
+    // Guard against start >= duration (crashes CMTimeRange)
+    let safeStartSeconds = min(startSeconds, max(0, duration.seconds - 0.5))
+    let safeStart = safeStartSeconds < startSeconds
+      ? CMTime(seconds: safeStartSeconds, preferredTimescale: 600) : start
+    export.timeRange = CMTimeRange(start: safeStart, end: duration)
     export.outputURL = output
     export.outputFileType = .m4a
     if #available(iOS 18.0, *) {

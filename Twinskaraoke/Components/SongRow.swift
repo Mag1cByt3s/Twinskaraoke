@@ -35,6 +35,7 @@ struct SongRow: View {
   var trailing: AnyView? = nil
   @EnvironmentObject var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
+  @State private var showAddToPlaylist = false
   private var isCurrentSong: Bool { audioManager.currentSong?.id == song.id }
   var body: some View {
     HStack(spacing: 12) {
@@ -80,9 +81,14 @@ struct SongRow: View {
       } else {
         Menu {
           Button {
-            audioManager.play(song: song)
+            audioManager.playNext(song: song)
           } label: {
             Label("Play Next", systemImage: "text.insert")
+          }
+          Button {
+            showAddToPlaylist = true
+          } label: {
+            Label("Add to Playlist", systemImage: "plus.circle")
           }
           if downloads.isDownloaded(song.id) {
             Button(role: .destructive) {
@@ -113,6 +119,9 @@ struct SongRow: View {
       }
     }
     .contentShape(Rectangle())
+    .sheet(isPresented: $showAddToPlaylist) {
+      AddToPlaylistSheet(song: song)
+    }
   }
 }
 

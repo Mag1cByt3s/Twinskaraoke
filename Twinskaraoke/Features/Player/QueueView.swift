@@ -23,8 +23,8 @@ struct QueueView: View {
               .font(.system(size: 16, weight: .semibold))
               .foregroundColor(.white.opacity(0.85))
               .frame(width: 36, height: 36)
-              .contentShape(Rectangle())
           }
+          .modifier(GlassCircle())
           .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
         }
         .padding(.horizontal, 20)

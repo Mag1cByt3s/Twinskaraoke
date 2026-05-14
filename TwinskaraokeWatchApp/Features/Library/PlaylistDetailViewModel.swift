@@ -9,24 +9,20 @@ class PlaylistDetailViewModel: ObservableObject {
     self.playlistID = playlistID
   }
   func fetchSongs() {
-    guard let url = URL(string: "https://api.neurokaraoke.com/api/playlist/\(playlistID)") else {
+    guard let url = URL(string: "\(StorageHost.api)/api/playlist/\(playlistID)") else {
       return
     }
     isLoading = true
     var request = URLRequest(url: url)
     request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
-    URLSession.shared.dataTask(with: request) { data, _, _ in
-      if let data = data,
-        let decodedData = try? JSONDecoder().decode(PlaylistDetail.self, from: data)
-      {
-        DispatchQueue.main.async {
-          self.songs = decodedData.songListDTOs
-          self.isLoading = false
-        }
-      } else {
-        DispatchQueue.main.async {
-          self.isLoading = false
-        }
+    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+      Task { @MainActor [weak self] in
+        guard let self = self else { return }
+        defer { self.isLoading = false }
+        guard let data,
+          let decodedData = try? JSONDecoder().decode(PlaylistDetail.self, from: data)
+        else { return }
+        self.songs = decodedData.songListDTOs
       }
     }.resume()
   }

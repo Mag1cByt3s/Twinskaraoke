@@ -3,6 +3,7 @@ import SwiftUI
 struct LyricsView: View {
   let lyrics: [LyricLine]
   let currentTime: TimeInterval
+  var showTranslations: Bool = false
   var isLoading: Bool = false
   var didFail: Bool = false
   var hasNoLyrics: Bool = false
@@ -43,6 +44,7 @@ struct LyricsView: View {
                 index: index,
                 currentIndex: currentIndex,
                 currentTime: currentTime,
+                showTranslation: showTranslations,
                 nextLineTime: index + 1 < lyrics.count ? lyrics[index + 1].time : nil,
                 onSeek: onSeek
               )
@@ -168,6 +170,7 @@ private struct LyricLineRow: View {
   let index: Int
   let currentIndex: Int
   let currentTime: TimeInterval
+  let showTranslation: Bool
   let nextLineTime: TimeInterval?
   let onSeek: (TimeInterval) -> Void
   private var isCurrent: Bool { index == currentIndex }
@@ -206,13 +209,27 @@ private struct LyricLineRow: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.vertical, isCurrent ? 10 : 6)
         } else {
-          Text(line.text)
-            .font(.system(size: isCurrent ? 30 : 23, weight: isCurrent ? .bold : .semibold))
-            .foregroundColor(lineColor)
-            .blur(radius: lineBlur)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, isCurrent ? 10 : 6)
+          VStack(alignment: .leading, spacing: isCurrent ? 6 : 3) {
+            Text(line.text)
+              .font(.system(size: isCurrent ? 30 : 23, weight: isCurrent ? .bold : .semibold))
+              .foregroundColor(lineColor)
+              .blur(radius: lineBlur)
+              .multilineTextAlignment(.leading)
+              .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showTranslation,
+              let translated = line.translatedText,
+              !translated.isEmpty,
+              translated != line.text
+            {
+              Text(translated)
+                .font(.system(size: isCurrent ? 18 : 15, weight: .medium))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          .padding(.vertical, isCurrent ? 10 : 6)
         }
       }
       .padding(.horizontal, 4)

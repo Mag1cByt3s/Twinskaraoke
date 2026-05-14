@@ -296,8 +296,8 @@ struct BadgeDetailSheet: View {
           .background(Color(.tertiarySystemBackground), in: Circle())
       }
       .buttonStyle(.plain)
-      .padding(.top, 14)
-      .padding(.trailing, 14)
+        .padding(.top, 14)
+        .padding(.trailing, 14)
     }
   }
 }

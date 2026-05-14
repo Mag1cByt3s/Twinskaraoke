@@ -33,10 +33,7 @@ private struct GenreDetail: Decodable {
 class TopChartViewModel: ObservableObject {
   @Published var songs: [Song] = []
   @Published var weeklyTrending: [Song] = []
-  private var hasLoaded = false
   func loadIfNeeded() {
-    if hasLoaded { return }
-    hasLoaded = true
     fetch(
       url: "\(StorageHost.api)/api/explore/trendings?days=all",
       keyPath: \.songs)
@@ -65,7 +62,6 @@ class GenresViewModel: ObservableObject {
   @Published var allSongs: [String: [Song]] = [:]
   @Published var isLoadingMore = false
   @Published var canLoadMore = true
-  private var hasLoaded = false
   private var page = 0
   private let pageSize = 50
   private var genreDetailOrder: [String] = []
@@ -84,8 +80,6 @@ class GenresViewModel: ObservableObject {
     #endif
   }
   func loadIfNeeded() {
-    if hasLoaded { return }
-    hasLoaded = true
     fetchPage(0, replace: true)
   }
   func loadMoreIfNeeded(current: GenreSummary) {

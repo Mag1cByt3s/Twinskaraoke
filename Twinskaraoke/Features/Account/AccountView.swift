@@ -9,6 +9,7 @@ struct AccountView: View {
   @State private var profile: Profile?
   @State private var badges: [Badge] = []
   @State private var uploadLimits: UploadLimits?
+  @State private var levelUpAnnouncement: LevelUpAnnouncement?
   var body: some View {
     NavigationStack {
       List {
@@ -24,6 +25,11 @@ struct AccountView: View {
       .sheet(isPresented: $showQRApprove) {
         QRApproveView(auth: auth)
       }
+      .sheet(item: $levelUpAnnouncement) { announcement in
+        LevelUpSheet(announcement: announcement)
+          .presentationDetents([.medium])
+          .presentationBackground(.clear)
+      }
       .task(id: auth.isLoggedIn) {
         if auth.isLoggedIn {
           await loadData()
@@ -32,6 +38,7 @@ struct AccountView: View {
           profile = nil
           badges = []
           uploadLimits = nil
+          levelUpAnnouncement = nil
           FavoritesManager.shared.clear()
         }
       }
@@ -137,6 +144,7 @@ struct AccountView: View {
     if let data = await badgeData,
       let decoded = try? JSONDecoder().decode(ProfileResponse.self, from: data)
     {
+      handleLevelChange(with: decoded.profile)
       profile = decoded.profile
       badges = decoded.badges ?? []
     }
@@ -151,6 +159,29 @@ struct AccountView: View {
     var req = URLRequest(url: url)
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     return try? await URLSession.shared.data(for: req).0
+  }
+
+  private func handleLevelChange(with newProfile: Profile) {
+    guard let level = newProfile.level, level > 0 else { return }
+    guard let identity = auth.currentUserId ?? auth.currentUsername, !identity.isEmpty else { return }
+
+    let key = "nk.lastSeenLevel.\(identity)"
+    let defaults = UserDefaults.standard
+
+    if defaults.object(forKey: key) == nil {
+      defaults.set(level, forKey: key)
+      return
+    }
+
+    let previousLevel = defaults.integer(forKey: key)
+    if level > previousLevel {
+      levelUpAnnouncement = LevelUpAnnouncement(
+        previousLevel: previousLevel,
+        currentLevel: level,
+        levelTitle: newProfile.levelTitle
+      )
+    }
+    defaults.set(level, forKey: key)
   }
 }
 

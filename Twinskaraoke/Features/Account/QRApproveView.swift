@@ -29,12 +29,16 @@ struct QRApproveView: View {
             .foregroundStyle(.white)
         }
         ToolbarItem(placement: .cancellationAction) {
-          Button("Close") { dismiss() }
-            .foregroundStyle(.white)
+          GlassXButton(action: { dismiss() })
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          GlassCheckmarkButton(
+            action: { qrConfirmAction() },
+            isEnabled: !isApproving
+          )
         }
       }
-      .toolbarBackground(.black, for: .navigationBar)
-      .toolbarBackground(.visible, for: .navigationBar)
+      .toolbarBackground(.hidden, for: .navigationBar)
       .toolbarColorScheme(.dark, for: .navigationBar)
     }
     .task { await checkPermission() }
@@ -205,6 +209,24 @@ struct QRApproveView: View {
     .padding(28)
     .frame(maxWidth: 380)
     .padding(.horizontal, 24)
+  }
+  private var isApproving: Bool {
+    if case .approving = phase { return true }
+    return false
+  }
+  private func qrConfirmAction() {
+    switch phase {
+    case .scanning:
+      dismiss()
+    case .confirming(let sessionId):
+      Task { await approve(sessionId: sessionId) }
+    case .approving:
+      break
+    case .success:
+      dismiss()
+    case .failure:
+      phase = .scanning
+    }
   }
   private func handleScan(_ value: String) {
     guard case .scanning = phase else { return }

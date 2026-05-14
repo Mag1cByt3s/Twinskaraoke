@@ -64,15 +64,18 @@ struct PlaylistDetailView: View {
     }
     .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
     .onAppear {
-      loader.load(playlistID: playlist.id, fallback: playlist.songListDTOs)
+      loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
       RecentlyPlayedStore.shared.record(playlist)
     }
     .onChange(of: favorites.favoriteIDs) { _ in
       guard playlist.isFavorites else { return }
-      loader.reload(playlistID: playlist.id)
+      loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
     }
   }
-  @ViewBuilder
+  private var playlistCoverURL: URL? {
+    playlist.imageURL ?? loader.songs?.first?.imageURL
+  }
+
   private func parallaxHero(width: CGFloat) -> some View {
     let baseSize: CGFloat = 240
     let stretch = max(0, scrollOffset)
@@ -80,11 +83,13 @@ struct PlaylistDetailView: View {
     let size = max(140, baseSize + stretch * 0.6 - shrink)
     let blur = min(8, max(0, -scrollOffset / 30))
     let yOffset = scrollOffset > 0 ? -scrollOffset / 2 : 0
-    Group {
+    return Group {
       if playlist.isFavorites {
         FavoritesArtworkTile()
+      } else if let url = playlistCoverURL {
+        LoadingImage(url: url, cornerRadius: 14)
       } else {
-        LoadingImage(url: playlist.imageURL, cornerRadius: 14)
+        PlaylistPlaceholderArtwork(seed: playlist.id)
       }
     }
     .frame(width: size, height: size)
@@ -143,7 +148,7 @@ private struct PlaylistMoreMenu: View {
   private var allDownloaded: Bool {
     !songs.isEmpty && pendingCount == 0 && inFlightCount == 0
   }
-  private var canSaveToLibrary: Bool { !playlist.isFavorites }
+  private var canSaveToLibrary: Bool { !playlist.isFavorites && !playlist.isPersonal }
   private var isSaved: Bool { savedStore.isSaved(playlist) }
   var body: some View {
     Menu {
@@ -204,9 +209,9 @@ class PlaylistDetailViewModel: ObservableObject {
   @Published var songs: [Song]?
   @Published var isLoading = false
   private var loadedID: String?
-  func reload(playlistID: String) {
+  func reload(playlistID: String, fallback: [Song]? = nil) {
     loadedID = nil
-    load(playlistID: playlistID, fallback: nil)
+    load(playlistID: playlistID, fallback: fallback)
   }
   func load(playlistID: String, fallback: [Song]?) {
     let alreadyFullyLoaded = (loadedID == playlistID) && (songs?.isEmpty == false)
@@ -223,7 +228,7 @@ class PlaylistDetailViewModel: ObservableObject {
     guard let url = URL(string: urlString) else { return }
     isLoading = true
     var r = URLRequest(url: url)
-    if isFavorites, let token = UserDefaults.standard.string(forKey: "nk.token") {
+    if let token = UserDefaults.standard.string(forKey: "nk.token"), !token.isEmpty {
       r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
     GuestIdentity.applyIfNeeded(to: &r)

@@ -127,10 +127,12 @@ class AudioManager: ObservableObject {
     let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
     timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
       [weak self] time in
-      guard let self = self else { return }
-      let seconds = CMTimeGetSeconds(time)
-      if seconds.isFinite && !seconds.isNaN {
-        self.currentTime = max(0, seconds)
+      Task { @MainActor [weak self] in
+        guard let self = self else { return }
+        let seconds = CMTimeGetSeconds(time)
+        if seconds.isFinite && !seconds.isNaN {
+          self.currentTime = max(0, seconds)
+        }
       }
     }
     if let oldObserver = endTimeObserver {
@@ -139,7 +141,9 @@ class AudioManager: ObservableObject {
     endTimeObserver = NotificationCenter.default.addObserver(
       forName: .AVPlayerItemDidPlayToEndTime, object: playerItem, queue: .main
     ) { [weak self] _ in
-      self?.playEnded()
+      Task { @MainActor [weak self] in
+        self?.playEnded()
+      }
     }
   }
   func togglePlayPause() {
@@ -230,26 +234,26 @@ class AudioManager: ObservableObject {
   private func validateCachedFile(
     at url: URL, expectedDuration: Int, completion: @escaping (Bool) -> Void
   ) {
-    let asset = AVURLAsset(url: url)
-    let expected = Double(expectedDuration)
-    asset.loadValuesAsynchronously(forKeys: ["duration", "playable"]) {
-      DispatchQueue.main.async {
-        var durationError: NSError?
-        var playableError: NSError?
-        let durationStatus = asset.statusOfValue(forKey: "duration", error: &durationError)
-        let playableStatus = asset.statusOfValue(forKey: "playable", error: &playableError)
-        let actual = asset.duration.seconds
+    Task {
+      let asset = AVURLAsset(url: url)
+      let expected = Double(expectedDuration)
+      do {
+        let loadedDuration = try await asset.load(.duration)
+        let isPlayable = try await asset.load(.isPlayable)
+        let actual = loadedDuration.seconds
         let durationOK: Bool
         if expected > 5 {
           durationOK = actual.isFinite && actual >= expected * 0.9
         } else {
           durationOK = actual.isFinite && actual > 0
         }
-        let valid =
-          durationStatus == .loaded && playableStatus == .loaded
-          && durationError == nil && playableError == nil
-          && asset.isPlayable && durationOK
-        completion(valid)
+        await MainActor.run {
+          completion(isPlayable && durationOK)
+        }
+      } catch {
+        await MainActor.run {
+          completion(false)
+        }
       }
     }
   }

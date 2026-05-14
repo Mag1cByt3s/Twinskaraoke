@@ -10,11 +10,14 @@ final class CacheManager: ObservableObject {
   static let imageCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
   /// Music cache limit (original audio + AI stems): 4 GB
   static let musicCacheLimit: UInt64 = 4 * 1024 * 1024 * 1024
+  /// Lyrics cache limit: 2 GB
+  static let lyricsCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
   /// Maximum cache age: 6 months
   static let maxCacheAge: TimeInterval = 6 * 30 * 24 * 3600
 
   @Published private(set) var imageCacheSize: UInt64 = 0
   @Published private(set) var musicCacheSize: UInt64 = 0
+  @Published private(set) var lyricsCacheSize: UInt64 = 0
 
   private let fm = FileManager.default
 
@@ -30,13 +33,15 @@ final class CacheManager: ObservableObject {
   func enforceAllLimits() {
     enforceImageCacheLimits()
     enforceMusicCacheLimits()
+    enforceLyricsCacheLimits()
   }
 
   func refreshSizes() {
     imageCacheSize = computeImageCacheSize()
     musicCacheSize = computeMusicCacheSize()
+    lyricsCacheSize = computeLyricsCacheSize()
     DebugLogger.log(
-      "Cache sizes — images: \(formatBytes(imageCacheSize)), music: \(formatBytes(musicCacheSize))",
+      "Cache sizes — images: \(formatBytes(imageCacheSize)), music: \(formatBytes(musicCacheSize)), lyrics: \(formatBytes(lyricsCacheSize))",
       category: .cache)
   }
 
@@ -60,8 +65,13 @@ final class CacheManager: ObservableObject {
 
   func enforceMusicCacheLimits() {
     let musicDir = AudioPlayerManager.audioCacheDir
-    evictOldestFiles(in: musicDir, limit: Self.musicCacheLimit, label: "music")
+    evictOldestSongDirectories(in: musicDir, limit: Self.musicCacheLimit)
     musicCacheSize = computeMusicCacheSize()
+  }
+
+  func enforceLyricsCacheLimits() {
+    evictOldestFiles(in: LyricsCacheStore.cacheDirectory, limit: Self.lyricsCacheLimit, label: "lyrics")
+    lyricsCacheSize = computeLyricsCacheSize()
   }
 
   func pruneExpiredEntries() {
@@ -72,7 +82,10 @@ final class CacheManager: ObservableObject {
 
     // Prune music cache
     let musicDir = AudioPlayerManager.audioCacheDir
-    prunedCount += pruneOldFiles(in: musicDir, olderThan: cutoff)
+    prunedCount += pruneOldSongDirectories(in: musicDir, olderThan: cutoff)
+
+    // Prune lyrics cache
+    prunedCount += pruneOldFiles(in: LyricsCacheStore.cacheDirectory, olderThan: cutoff)
 
     // Prune SDWebImage cache (it has its own expiry, but we enforce 6-month hard limit)
     SDImageCache.shared.deleteOldFiles(completionBlock: nil)
@@ -83,13 +96,12 @@ final class CacheManager: ObservableObject {
 
   func recordAccess(for url: URL) {
     // Touch the file's access date so LRU eviction works correctly
-    try? fm.setAttributes(
-      [.modificationDate: Date()],
-      ofItemAtPath: url.path)
+    AudioCacheStore.touch(url)
   }
 
   func totalImageCacheSize() -> UInt64 { imageCacheSize }
   func totalMusicCacheSize() -> UInt64 { musicCacheSize }
+  func totalLyricsCacheSize() -> UInt64 { lyricsCacheSize }
 
   func clearImageCache() {
     SDImageCache.shared.clearMemory()
@@ -107,10 +119,17 @@ final class CacheManager: ObservableObject {
     DebugLogger.log("Music cache cleared", category: .cache)
   }
 
+  func clearLyricsCache() {
+    LyricsCacheStore.clear()
+    lyricsCacheSize = 0
+    DebugLogger.log("Lyrics cache cleared", category: .cache)
+  }
+
   // MARK: - Size Formatting
 
   func formattedImageCacheSize() -> String { formatBytes(imageCacheSize) }
   func formattedMusicCacheSize() -> String { formatBytes(musicCacheSize) }
+  func formattedLyricsCacheSize() -> String { formatBytes(lyricsCacheSize) }
 
   // MARK: - Private
 
@@ -127,6 +146,10 @@ final class CacheManager: ObservableObject {
 
   private func computeMusicCacheSize() -> UInt64 {
     directorySize(at: AudioPlayerManager.audioCacheDir)
+  }
+
+  private func computeLyricsCacheSize() -> UInt64 {
+    directorySize(at: LyricsCacheStore.cacheDirectory)
   }
 
   private func directorySize(at url: URL) -> UInt64 {
@@ -175,6 +198,25 @@ final class CacheManager: ObservableObject {
       category: .cache)
   }
 
+  private func evictOldestSongDirectories(in directory: URL, limit: UInt64) {
+    guard fm.fileExists(atPath: directory.path) else { return }
+
+    var currentSize = directorySize(at: directory)
+    guard currentSize > limit else { return }
+
+    DebugLogger.log(
+      "music cache \(formatBytes(currentSize)) > limit \(formatBytes(limit)), evicting oldest song folders",
+      category: .cache)
+
+    for folder in songDirectoriesOrderedByDate(in: directory) {
+      guard currentSize > limit else { break }
+      let size = directorySize(at: folder)
+      try? fm.removeItem(at: folder)
+      currentSize = currentSize > size ? currentSize - size : 0
+      DebugLogger.log("Evicted song cache: \(folder.lastPathComponent) (\(formatBytes(size)))", category: .cache)
+    }
+  }
+
   private func pruneOldFiles(in directory: URL, olderThan cutoff: Date) -> Int {
     guard fm.fileExists(atPath: directory.path) else { return 0 }
     guard let enumerator = fm.enumerator(
@@ -192,6 +234,32 @@ final class CacheManager: ObservableObject {
         modified < cutoff
       else { continue }
       try? fm.removeItem(at: fileURL)
+      count += 1
+    }
+    return count
+  }
+
+  private func pruneOldSongDirectories(in directory: URL, olderThan cutoff: Date) -> Int {
+    guard fm.fileExists(atPath: directory.path) else { return 0 }
+    guard
+      let entries = try? fm.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+        options: [.skipsHiddenFiles])
+    else {
+      return 0
+    }
+
+    var count = 0
+    for folder in entries {
+      guard let values = try? folder.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey]),
+        values.isDirectory == true,
+        let modified = values.contentModificationDate,
+        modified < cutoff
+      else {
+        continue
+      }
+      try? fm.removeItem(at: folder)
       count += 1
     }
     return count
@@ -221,6 +289,30 @@ final class CacheManager: ObservableObject {
       let size = values.fileSize
     else { return 0 }
     return UInt64(size)
+  }
+
+  private func songDirectoriesOrderedByDate(in directory: URL) -> [URL] {
+    guard
+      let entries = try? fm.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+        options: [.skipsHiddenFiles])
+    else {
+      return []
+    }
+
+    return entries
+      .compactMap { url -> (URL, Date)? in
+        guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey]),
+          values.isDirectory == true,
+          let modified = values.contentModificationDate
+        else {
+          return nil
+        }
+        return (url, modified)
+      }
+      .sorted { $0.1 < $1.1 }
+      .map(\.0)
   }
 
   private func removeAllFiles(in directory: URL) {
