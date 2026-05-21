@@ -3,6 +3,8 @@ import SwiftUI
 struct SearchView: View {
   @StateObject var viewModel = SearchViewModel()
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @State private var pendingSongID: String?
+  @State private var playbackTask: Task<Void, Never>?
   var body: some View {
     NavigationStack {
       Group {
@@ -28,10 +30,11 @@ struct SearchView: View {
         } else {
           List(viewModel.results) { song in
             Button {
-              audioManager.play(song: song, context: viewModel.results)
+              playSelection(song)
             } label: {
-              SearchResultRow(song: song)
+              SearchResultRow(song: song, isPending: pendingSongID == song.id)
             }
+            .disabled(pendingSongID != nil)
             .buttonStyle(PressableButtonStyle())
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -50,6 +53,30 @@ struct SearchView: View {
         placement: .navigationBarDrawer(displayMode: .always),
         prompt: "Songs, Artists, Lyrics, and More"
       )
+      .onChange(of: audioManager.currentSong?.id) { currentSongID in
+        guard currentSongID == pendingSongID else { return }
+        pendingSongID = nil
+      }
+      .onDisappear {
+        playbackTask?.cancel()
+        playbackTask = nil
+        pendingSongID = nil
+      }
+    }
+  }
+
+  private func playSelection(_ song: Song) {
+    guard pendingSongID == nil else { return }
+    pendingSongID = song.id
+    let context = viewModel.results
+    playbackTask?.cancel()
+    playbackTask = Task { @MainActor in
+      await Task.yield()
+      guard !Task.isCancelled else { return }
+      audioManager.play(song: song, context: context)
+      try? await Task.sleep(nanoseconds: 400_000_000)
+      guard !Task.isCancelled, pendingSongID == song.id else { return }
+      pendingSongID = nil
     }
   }
 }
@@ -317,8 +344,13 @@ private struct CategoryTile: View {
 
 struct SearchResultRow: View {
   let song: Song
+  var isPending: Bool = false
   var body: some View {
-    SongRow(song: song, size: .regular)
+    SongRow(
+      song: song,
+      size: .regular,
+      trailing: isPending ? AnyView(LoadingIndicator(size: 18)) : nil
+    )
   }
 }
 

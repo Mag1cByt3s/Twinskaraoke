@@ -32,6 +32,7 @@ enum SongRowSize {
 struct SongRow: View {
   let song: Song
   let size: SongRowSize
+  var showsArtwork: Bool = true
   var trailing: AnyView? = nil
   @EnvironmentObject var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
@@ -40,9 +41,20 @@ struct SongRow: View {
   var body: some View {
     HStack(spacing: 12) {
       ZStack {
-        LoadingImage(url: audioManager.displayImageURL(for: song), cornerRadius: size.cornerRadius)
-          .frame(width: size.artSize, height: size.artSize)
-          .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous))
+        if showsArtwork {
+          LoadingImage(url: audioManager.displayImageURL(for: song), cornerRadius: size.cornerRadius)
+            .frame(width: size.artSize, height: size.artSize)
+            .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous))
+        } else {
+          RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
+            .fill(Color(.tertiarySystemFill))
+            .frame(width: size.artSize, height: size.artSize)
+            .overlay {
+              Image(systemName: "music.note")
+                .font(.system(size: size.indicatorSize, weight: .semibold))
+                .foregroundStyle(.secondary)
+            }
+        }
         if isCurrentSong {
           RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
             .fill(Color.black.opacity(0.4))

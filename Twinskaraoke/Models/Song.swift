@@ -1,5 +1,24 @@
 import Foundation
 
+nonisolated struct LossyArray<Element: Decodable>: Decodable, Sendable where Element: Sendable {
+  let elements: [Element]
+
+  init(from decoder: Decoder) throws {
+    var container = try decoder.unkeyedContainer()
+    var items: [Element] = []
+    while !container.isAtEnd {
+      if let value = try? container.decode(Element.self) {
+        items.append(value)
+      } else {
+        _ = try? container.decode(DiscardedDecodable.self)
+      }
+    }
+    elements = items
+  }
+}
+
+private struct DiscardedDecodable: Decodable, Sendable {}
+
 nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
   let id: String
   let title: String
@@ -116,6 +135,42 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
 
   private func normalizedImagePath(_ rawPath: String) -> String {
     rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+  }
+}
+
+nonisolated struct PlaylistListItem: Decodable, Identifiable, Sendable {
+  let id: String
+  let name: String
+  let songCount: Int
+  let media: PlaylistMedia?
+  let mosaicMedia: [Media]?
+
+  private enum CodingKeys: String, CodingKey {
+    case id, name, songCount, count, media, mosaicMedia
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    name = try container.decode(String.self, forKey: .name)
+    if let value = try? container.decode(Int.self, forKey: .songCount) {
+      songCount = value
+    } else {
+      songCount = (try? container.decode(Int.self, forKey: .count)) ?? 0
+    }
+    media = try? container.decodeIfPresent(PlaylistMedia.self, forKey: .media)
+    mosaicMedia = try? container.decodeIfPresent(LossyArray<Media>.self, forKey: .mosaicMedia)?.elements
+  }
+
+  func asPlaylist() -> Playlist {
+    Playlist(
+      id: id,
+      name: name,
+      songCount: songCount,
+      media: media,
+      mosaicMedia: mosaicMedia,
+      songListDTOs: nil
+    )
   }
 }
 

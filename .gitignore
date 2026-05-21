@@ -70,6 +70,9 @@ fastlane/test_output/
 graphify-out/
 MEMORY_*.md
 MEMORY_*.txt
-README_MEMORY_FIXES.md
 AUDIO_*.md
 README_AUDIO_*.md
+README_MEMORY_*.md
+test_*.swift
+update_*.swift
+full_response.json

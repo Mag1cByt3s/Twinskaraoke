@@ -7,6 +7,7 @@ struct PlaylistDetailView: View {
   @StateObject private var loader = PlaylistDetailViewModel()
   @ObservedObject private var favorites = FavoritesManager.shared
   @State private var scrollOffset: CGFloat = 0
+  @State private var showSongArtwork = true
   var body: some View {
     let songs: [Song] = loader.songs ?? playlist.songListDTOs ?? []
     GeometryReader { geo in
@@ -29,10 +30,10 @@ struct PlaylistDetailView: View {
                 Button {
                   audioManager.play(song: song, context: songs)
                 } label: {
-                  PlaylistRow(song: song)
+                  PlaylistRow(song: song, showsArtwork: showSongArtwork)
                 }
                 .buttonStyle(PressableButtonStyle())
-                Divider().padding(.leading, 76)
+                Divider().padding(.leading, showSongArtwork ? 76 : 28)
               }
             }
           } else if loader.isLoading {
@@ -59,11 +60,18 @@ struct PlaylistDetailView: View {
     .toolbarBackground(scrollOffset < -180 ? .visible : .hidden, for: .navigationBar)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        PlaylistMoreMenu(playlist: playlist, songs: songs)
+        PlaylistMoreMenu(
+          playlist: playlist,
+          songs: songs,
+          showSongArtwork: $showSongArtwork
+        )
       }
     }
     .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
     .onAppear {
+      if loader.songs == nil {
+        showSongArtwork = PlaylistArtworkPreference.defaultValue(songCount: playlist.songCount)
+      }
       loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
       RecentlyPlayedStore.shared.record(playlist)
     }
@@ -137,6 +145,7 @@ struct PlaylistDetailView: View {
 private struct PlaylistMoreMenu: View {
   let playlist: Playlist
   let songs: [Song]
+  @Binding var showSongArtwork: Bool
   @StateObject private var downloads = DownloadManager.shared
   @ObservedObject private var savedStore: SavedPlaylistsStore = .shared
   private var pendingCount: Int {
@@ -152,6 +161,9 @@ private struct PlaylistMoreMenu: View {
   private var isSaved: Bool { savedStore.isSaved(playlist) }
   var body: some View {
     Menu {
+      Toggle(isOn: $showSongArtwork) {
+        Label(showSongArtwork ? "Hide Song Art" : "Show Song Art", systemImage: "photo")
+      }
       if canSaveToLibrary {
         Button {
           savedStore.toggle(playlist)
@@ -198,8 +210,9 @@ private struct ScrollOffsetKey: PreferenceKey {
 
 struct PlaylistRow: View {
   let song: Song
+  let showsArtwork: Bool
   var body: some View {
-    SongRow(song: song, size: .regular)
+    SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
       .padding(.horizontal)
       .padding(.vertical, 8)
   }
@@ -246,22 +259,22 @@ class PlaylistDetailViewModel: ObservableObject {
   private static func decodeSongs(from data: Data?) -> [Song]? {
     guard let data = data else { return nil }
     let decoder = JSONDecoder()
+    if let wrapped = try? decoder.decode(PlaylistSongsResponse.self, from: data),
+      !wrapped.songs.isEmpty
+    {
+      return wrapped.songs
+    }
     if let playlist = try? decoder.decode(Playlist.self, from: data),
       let list = playlist.songListDTOs, !list.isEmpty
     {
       return list
     }
-    if let list = try? decoder.decode([Song].self, from: data), !list.isEmpty {
+    if let list = (try? decoder.decode(LossyArray<Song>.self, from: data))?.elements, !list.isEmpty {
       return list
     }
     if let wrapped = try? decoder.decode([FavoriteSongEnvelope].self, from: data) {
       let unwrapped = wrapped.compactMap { $0.song }
       if !unwrapped.isEmpty { return unwrapped }
-    }
-    if let wrapped = try? decoder.decode(PlaylistSongsResponse.self, from: data),
-      !wrapped.songs.isEmpty
-    {
-      return wrapped.songs
     }
     return nil
   }
@@ -293,7 +306,13 @@ private struct PlaylistSongsResponse: Codable {
   }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    if let v = try? c.decode([Song].self, forKey: .songListDTOs) {
+    if let v = try? c.decode(LossyArray<Song>.self, forKey: .songListDTOs) {
+      songs = v.elements
+    } else if let v = try? c.decode(LossyArray<Song>.self, forKey: .items) {
+      songs = v.elements
+    } else if let v = try? c.decode(LossyArray<Song>.self, forKey: .songs) {
+      songs = v.elements
+    } else if let v = try? c.decode([Song].self, forKey: .songListDTOs) {
       songs = v
     } else if let v = try? c.decode([Song].self, forKey: .items) {
       songs = v
@@ -306,5 +325,11 @@ private struct PlaylistSongsResponse: Codable {
   func encode(to encoder: Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
     try c.encode(songs, forKey: .songs)
+  }
+}
+
+private enum PlaylistArtworkPreference {
+  static func defaultValue(songCount: Int) -> Bool {
+    songCount <= 200
   }
 }

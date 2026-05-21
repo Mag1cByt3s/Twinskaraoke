@@ -79,14 +79,16 @@ final class HomeViewModel: ObservableObject {
   private func loadMoreTopPicks() {
     isLoadingMoreTopPicks = true
     let startIndex = topPicksPage * topPicksPageSize
-    fetchData(urlString: topPicksURL(startIndex: startIndex, source: topPicksSource)) { [weak self] (response: [Playlist]?) in
+    fetchData(urlString: topPicksURL(startIndex: startIndex, source: topPicksSource)) {
+      [weak self] (response: [PlaylistListItem]?) in
       DispatchQueue.main.async {
         guard let self = self else { return }
-        if let response, !response.isEmpty {
+        let playlists = response?.map { $0.asPlaylist() } ?? []
+        if !playlists.isEmpty {
           let existing = Set(self.recentPlaylists.map { $0.id })
-          self.recentPlaylists += response.filter { !existing.contains($0.id) }
+          self.recentPlaylists += playlists.filter { !existing.contains($0.id) }
           self.topPicksPage += 1
-          self.canLoadMoreTopPicks = response.count == self.topPicksPageSize
+          self.canLoadMoreTopPicks = playlists.count == self.topPicksPageSize
         } else {
           self.canLoadMoreTopPicks = false
         }
@@ -96,16 +98,17 @@ final class HomeViewModel: ObservableObject {
   }
   private func fetchTopPicks(startIndex: Int, completion: @escaping ([Playlist]?) -> Void) {
     fetchData(urlString: topPicksURL(startIndex: startIndex, source: .publicPlaylists)) {
-      [weak self] (response: [Playlist]?) in
-      if let response, !response.isEmpty {
+      [weak self] (response: LossyArray<PlaylistListItem>?) in
+      let playlists = response?.elements.map { $0.asPlaylist() } ?? []
+      if !playlists.isEmpty {
         self?.topPicksSource = .publicPlaylists
-        completion(response)
+        completion(playlists)
       } else {
         self?.topPicksSource = .setlists
         self?.fetchData(
           urlString: self?.topPicksURL(startIndex: startIndex, source: .setlists) ?? ""
-        ) { (fallback: [Playlist]?) in
-          completion(fallback)
+        ) { (fallback: LossyArray<PlaylistListItem>?) in
+          completion(fallback?.elements.map { $0.asPlaylist() })
         }
       }
     }
@@ -155,7 +158,7 @@ final class HomeViewModel: ObservableObject {
       }
     }.resume()
   }
-  private func fetchData<T: Codable>(urlString: String, completion: @escaping (T?) -> Void) {
+  private func fetchData<T: Decodable>(urlString: String, completion: @escaping (T?) -> Void) {
     guard let url = URL(string: urlString) else {
       completion(nil)
       return

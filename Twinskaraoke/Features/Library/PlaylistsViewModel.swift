@@ -39,10 +39,11 @@ class PlaylistsViewModel: ObservableObject {
     var request = URLRequest(url: url)
     GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      if let data, let decoded = try? JSONDecoder().decode([Playlist].self, from: data) {
+      if let data, let decoded = try? JSONDecoder().decode([PlaylistListItem].self, from: data) {
+        let playlists = decoded.map { $0.asPlaylist() }
         DispatchQueue.main.async {
-          self?.playlists = decoded
-          RecentlyAddedTracker.shared.registerIfNew(decoded.map { $0.id })
+          self?.playlists = playlists
+          RecentlyAddedTracker.shared.registerIfNew(playlists.map { $0.id })
           self?.isLoading = false
         }
       } else {

@@ -129,6 +129,8 @@ final class TransitionCoordinator {
     onUpcomingSongDetermined?(nextSong)
 
     bpmTask?.cancel()
+    predownloadSession?.cancel()
+    predownloadSession = nil
     bpmTask = Task { [weak self] in
       guard let self else { return }
 

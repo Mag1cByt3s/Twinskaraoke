@@ -10,7 +10,7 @@ nonisolated enum LogCategory: String {
   case ui = "UI"
 
   var osLog: OSLog {
-    OSLog(subsystem: "org.evilneuro.Twinskaraoke", category: rawValue)
+    OSLog(subsystem: "com.xiaoyuan151.Twinskaraoke", category: rawValue)
   }
 }
 

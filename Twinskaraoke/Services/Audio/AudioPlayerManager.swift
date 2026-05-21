@@ -378,8 +378,10 @@ class AudioPlayerManager: ObservableObject {
   private var backgroundAnalysisRetryTask: Task<Void, Never>?
   private var cacheCompressionTask: Task<Void, Never>?
   private var quickCutTimer: Timer?
+  private var quickCutGeneration: UInt64 = 0
   private var separationGeneration: UInt64 = 0
   private var suppressPlaybackEndedUntil: Date = .distantPast
+  private var wasPlayingBeforeInterruption = false
 
   #if canImport(UIKit)
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -883,15 +885,18 @@ class AudioPlayerManager: ObservableObject {
         originalURL: fileURL,
         vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
         startOffset: stems.startOffset)
-      guard audioKit.mode == .aiStems else { return }
-      applyAIMixVolumes()
-      isPlaying = true
-      isBuffering = false
-      updateNowPlayingInfo(reloadArtwork: true)
-      #if canImport(UIKit)
-        endTrackTransitionBackgroundTask()
-      #endif
-      return
+      if audioKit.mode == .aiStems {
+        applyAIMixVolumes()
+        isPlaying = true
+        isBuffering = false
+        updateNowPlayingInfo(reloadArtwork: true)
+        #if canImport(UIKit)
+          endTrackTransitionBackgroundTask()
+        #endif
+        return
+      }
+      // Stem playback failed — fall through to normal file playback
+      preparedStemSongID = nil
     }
     if let fileURL {
       startPlayingFile(fileURL)
@@ -901,8 +906,6 @@ class AudioPlayerManager: ObservableObject {
     }
     guard let remoteURL = song.audioURL else { return }
     // Use AVPlayer for immediate progressive playback, download in background
-    audioKit.stop()
-    stopStreamPlayer()
     currentPlaybackURL = remoteURL
     configureAudioSessionCategory()
     activateAudioSession()
@@ -1015,6 +1018,8 @@ class AudioPlayerManager: ObservableObject {
       if isPlaying {
         radioPlayer?.pause()
       } else {
+        configureAudioSessionCategory()
+        activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         radioPlayer?.play()
       }
@@ -1026,6 +1031,8 @@ class AudioPlayerManager: ObservableObject {
       if isPlaying {
         streamPlayer?.pause()
       } else {
+        configureAudioSessionCategory()
+        activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         streamPlayer?.play()
       }
@@ -1107,7 +1114,6 @@ class AudioPlayerManager: ObservableObject {
 
   func playNextOrRandom() {
     if isRadioMode { return }
-    if transitionCoordinator.state.isCrossfading { return }
     transitionCoordinator.reset()
     #if canImport(UIKit)
       beginTrackTransitionBackgroundTask()
@@ -1251,11 +1257,13 @@ class AudioPlayerManager: ObservableObject {
       radioTimeObserver = nil
     }
     radioPlayer?.pause()
+    radioPlayer?.replaceCurrentItem(with: nil)
     radioPlayer = nil
   }
 
   private func stopStreamPlayer() {
     streamPlayer?.pause()
+    streamPlayer?.replaceCurrentItem(with: nil)
     streamPlayer = nil
   }
 
@@ -1491,6 +1499,7 @@ class AudioPlayerManager: ObservableObject {
     else { return }
     switch type {
     case .began:
+      wasPlayingBeforeInterruption = isPlaying
       if isPlaying {
         if isRadioMode { radioPlayer?.pause() }
         else if isStreamMode { streamPlayer?.pause() }
@@ -1501,7 +1510,7 @@ class AudioPlayerManager: ObservableObject {
     case .ended:
       guard let optsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
       let opts = AVAudioSession.InterruptionOptions(rawValue: optsValue)
-      if opts.contains(.shouldResume) {
+      if opts.contains(.shouldResume), wasPlayingBeforeInterruption {
         activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         if isRadioMode { radioPlayer?.play() }
@@ -1808,6 +1817,13 @@ class AudioPlayerManager: ObservableObject {
 
   private func quickCutToNext(plan: TransitionCoordinator.TransitionPlan) {
     cancelQuickCutTimer(resetVolume: false)
+    // Cancel ongoing AI work during the fade — play() will re-trigger if needed
+    instrumentalTask?.cancel()
+    instrumentalTask = nil
+    VocalSeparator.shared.cancel()
+    VocalSeparator.shared.cancelBackgroundAnalysis()
+    quickCutGeneration &+= 1
+    let gen = quickCutGeneration
     let fadeDuration = plan.fadeDuration
     let song = plan.nextSong
     let steps = Int(fadeDuration * 60)
@@ -1820,6 +1836,8 @@ class AudioPlayerManager: ObservableObject {
       }
       Task { @MainActor [weak self] in
         guard let self else { return }
+        // Ignore stale timer callbacks from a previous quick-cut
+        guard self.quickCutGeneration == gen else { return }
         guard self.transitionCoordinator.state.isCrossfading, !self.isRadioMode else {
           self.cancelPendingTransitionWork()
           return
@@ -1845,21 +1863,32 @@ class AudioPlayerManager: ObservableObject {
       transitionCoordinator.reset()
       return
     }
+    // Stop any stream player left over from the previous song
+    stopStreamPlayer()
     let song = plan.nextSong
     reportPlayCount(for: song.id)
     enrichSongMetadataIfNeeded(for: song)
+    // Clear AI state for the previous song
+    deferredAIEffect = nil
+    preparedStemSongID = nil
     if currentSong?.id != song.id {
       progress = 0
+      scheduleIdleCacheCompression(excluding: Set([song.id]))
       withAnimation(.easeInOut(duration: 0.32)) {
         currentSong = song
       }
     }
+    upcomingSong = nil
     isPlaying = true
     isBuffering = false
     updateNowPlayingInfo(reloadArtwork: true)
     transitionCoordinator.reset()
+    // Re-apply AI effects or trigger background analysis for the new song
     if anyAIEffectActive {
       applyMLSeparationIfNeeded()
+    } else if aiEnabled, aiAutoAnalyze, !isRadioMode {
+      triggerBackgroundAnalysis(for: song)
+      prepareBackgroundStemPlaybackIfPossible(for: song)
     }
     #if canImport(UIKit)
       endTrackTransitionBackgroundTask()
