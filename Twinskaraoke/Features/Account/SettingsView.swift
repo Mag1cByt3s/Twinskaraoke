@@ -5,6 +5,7 @@ struct SettingsView: View {
   @StateObject private var cacheManager = CacheManager.shared
   @AppStorage("nk.streamingQuality") private var streamingQuality: String = "high"
   @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
+  @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @AppStorage("nk.debugLogging") private var debugLogging: Bool = false
   @State private var pendingAction: SettingsDestructiveAction?
@@ -81,6 +82,11 @@ struct SettingsView: View {
         Text("10-band parametric EQ. Drag each band between −12 dB and +12 dB.")
       }
       Section("Appearance") {
+        Picker("Theme", selection: $appearanceMode) {
+          ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+            Text(mode.label).tag(mode.rawValue)
+          }
+        }
         Toggle("Respect Reduce Motion", isOn: $respectReducedMotion)
           .tint(.appAccent)
       }
@@ -128,8 +134,6 @@ struct SettingsView: View {
       )
     }
   }
-
-  // MARK: - AI Audio Section
 
   @ViewBuilder
   private var aiAudioSection: some View {
@@ -237,8 +241,6 @@ struct SettingsView: View {
     }
   }
 
-  // MARK: - Storage Section
-
   @ViewBuilder
   private var storageSection: some View {
     Section {
@@ -309,8 +311,6 @@ struct SettingsView: View {
     }
   }
 
-  // MARK: - Actions
-
   private func perform(_ action: SettingsDestructiveAction) {
     switch action {
     case .removeDownloads:
@@ -338,8 +338,6 @@ struct SettingsView: View {
       }
     #endif
   }
-
-  // MARK: - Labels
 
   private var aiStrengthLabel: String {
     let s = audioManager.aiVocalStrength

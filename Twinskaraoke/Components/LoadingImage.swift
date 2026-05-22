@@ -7,12 +7,12 @@ enum ImageCacheConfig {
     guard !didApply else { return }
     didApply = true
     let cfg = SDImageCache.shared.config
-    cfg.maxMemoryCost = 64 * 1024 * 1024
-    cfg.maxMemoryCount = 60
-    cfg.maxDiskSize = 2 * 1024 * 1024 * 1024
+    cfg.maxMemoryCost = 24 * 1024 * 1024
+    cfg.maxMemoryCount = 36
+    cfg.maxDiskSize = 512 * 1024 * 1024
     cfg.shouldCacheImagesInMemory = true
     cfg.shouldUseWeakMemoryCache = true
-    cfg.maxDiskAge = 186 * 24 * 60 * 60
+    cfg.maxDiskAge = 90 * 24 * 60 * 60
     SDImageCache.shared.clearMemory()
     let dl = SDWebImageDownloader.shared
     dl.config.maxConcurrentDownloads = 4
@@ -30,7 +30,7 @@ enum ImageCacheConfig {
       }
     #endif
   }
-  static let thumbnailPixelSize = CGSize(width: 600, height: 600)
+  static let thumbnailPixelSize = CGSize(width: 480, height: 480)
   static let defaultOptions: SDWebImageOptions = [.retryFailed, .scaleDownLargeImages]
 }
 

@@ -5,7 +5,7 @@ struct FavoritesArtworkTile: View {
   var body: some View {
     GeometryReader { geo in
       ZStack {
-        Color.white
+        Color.appFavoritesTileBackground
         Image(systemName: "star.fill")
           .resizable()
           .scaledToFit()
@@ -45,7 +45,6 @@ struct PlaylistArtwork: View {
   }
 }
 
-/// Loads the first song's artwork for personal playlists that have no mosaic cover.
 private struct PersonalPlaylistCover: View {
   let playlist: Playlist
   let cornerRadius: CGFloat
@@ -97,8 +96,6 @@ struct PlaylistPlaceholderArtwork: View {
     }
   }
 
-  /// Deterministic color pair derived from a seed string, producing
-  /// visually distinct gradients across different playlist IDs.
   static func colorPair(for seed: String) -> (Color, Color) {
     let hash = seed.utf8.reduce(0) { acc, byte in
       (acc &* 31) &+ UInt64(byte)

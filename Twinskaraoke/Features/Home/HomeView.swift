@@ -54,7 +54,6 @@ struct HomeView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .navigationTitle("Home")
-      .onAppear { viewModel.fetchHomeData(force: true) }
     }
   }
 }
@@ -68,7 +67,7 @@ struct PlaylistCarousel: View {
     VStack(alignment: .leading, spacing: AM.Spacing.m) {
       AMSectionHeader(title, destination: PlaylistListView(title: title, playlists: playlists))
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
+        LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
           ForEach(playlists) { playlist in
             NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
               VStack(alignment: .leading, spacing: AM.Spacing.s) {
@@ -132,7 +131,7 @@ struct HomeSongSection: View {
     VStack(alignment: .leading, spacing: AM.Spacing.m) {
       AMSectionHeader(title, destination: BrowseSongCollectionView(title: title, songs: songs))
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
+        LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
           ForEach(songs) { song in
             HomeSongCard(song: song, context: songs)
           }
@@ -251,7 +250,7 @@ struct HomePlaceholderSection: View {
     VStack(alignment: .leading, spacing: AM.Spacing.m) {
       AMSectionHeader(title)
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
+        LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
           ForEach(tiles) { tile in
             let artURL = artworkOverride?(tile) ?? nil
             let playlist = playlistForTile?(tile) ?? nil
@@ -329,6 +328,7 @@ struct BrowseSongCollectionView: View {
   let songs: [Song]
   @EnvironmentObject var audioManager: AudioPlayerManager
   @State private var scrollOffset: CGFloat = 0
+  private var showsArtwork: Bool { songs.count <= 200 }
   init(title: String, subtitle: String? = nil, songs: [Song]) {
     self.title = title
     self.subtitle = subtitle
@@ -355,12 +355,12 @@ struct BrowseSongCollectionView: View {
                 Button {
                   audioManager.play(song: song, context: songs)
                 } label: {
-                  SongRow(song: song, size: .regular)
+                  SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
                     .padding(.horizontal, AM.Spacing.screenMargin)
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(PressableButtonStyle())
-                Divider().padding(.leading, 76)
+                Divider().padding(.leading, showsArtwork ? 76 : 28)
               }
             }
           }

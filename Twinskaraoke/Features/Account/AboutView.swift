@@ -7,6 +7,8 @@ struct AboutView: View {
     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     return "\(v) (\(b))"
   }
+  @State private var versionTapCount = 0
+  @State private var showEasterEgg = false
   var body: some View {
     List {
       Section {
@@ -17,6 +19,13 @@ struct AboutView: View {
           Text("Version \(appVersion)")
             .font(.subheadline)
             .foregroundStyle(.secondary)
+            .onTapGesture {
+              versionTapCount += 1
+              if versionTapCount >= 10 {
+                versionTapCount = 0
+                showEasterEgg = true
+              }
+            }
           Text("NEUROKARAOKE.COM • EVILKARAOKE.COM • TWINSKARAOKE.COM")
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(.secondary)
@@ -112,6 +121,9 @@ struct AboutView: View {
     }
     .navigationTitle("About")
     .navigationBarTitleDisplayMode(.inline)
+    .sheet(isPresented: $showEasterEgg) {
+      EasterEggView()
+    }
   }
   private func longText(_ title: String, body: String) -> some View {
     ScrollView {
@@ -132,5 +144,32 @@ struct AboutView: View {
       .frame(width: 96, height: 96)
       .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       .shadow(color: Color.black.opacity(0.18), radius: 14, y: 6)
+  }
+}
+
+private struct EasterEggView: View {
+  @Environment(\.dismiss) private var dismiss
+  var body: some View {
+    ZStack {
+      LinearGradient(
+        colors: [.appSheetGradientTop, .appSheetGradientBottom],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+      .ignoresSafeArea()
+      VStack(spacing: 20) {
+        AnimatedImage(url: URL(string: "https://storage.neurokaraoke.com/media/nuero_.gif"))
+          .resizable()
+          .scaledToFit()
+          .padding(.horizontal, 24)
+        Text("404 Not Found")
+          .font(.system(size: 28, weight: .bold, design: .monospaced))
+          .foregroundColor(.primary)
+        Text("You've reached the empty place")
+          .font(.system(size: 16))
+          .foregroundColor(.secondary)
+      }
+    }
+    .onTapGesture { dismiss() }
   }
 }

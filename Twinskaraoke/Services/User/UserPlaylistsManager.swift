@@ -22,8 +22,6 @@ final class UserPlaylistsManager: ObservableObject {
     UserDefaults.standard.string(forKey: "nk.token")
   }
 
-  // MARK: - Fetch
-
   func loadIfNeeded() {
     fetchPlaylists()
   }
@@ -59,8 +57,6 @@ final class UserPlaylistsManager: ObservableObject {
       }
     }.resume()
   }
-
-  // MARK: - Create
 
   func createPlaylist(
     name: String,
@@ -106,8 +102,6 @@ final class UserPlaylistsManager: ObservableObject {
     }.resume()
   }
 
-  // MARK: - Add Song
-
   func addSong(_ songID: String, toPlaylist playlistID: String, completion: ((Bool) -> Void)? = nil) {
     guard let token, !token.isEmpty else {
       completion?(false)
@@ -134,8 +128,6 @@ final class UserPlaylistsManager: ObservableObject {
       }
     }.resume()
   }
-
-  // MARK: - Cleanup
 
   func clear() {
     playlists = []

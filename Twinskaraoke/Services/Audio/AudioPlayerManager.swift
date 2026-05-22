@@ -126,7 +126,6 @@ class AudioPlayerManager: ObservableObject {
   @Published var radioArtworkURL: URL?
   private var isStreamMode: Bool { streamPlayer != nil }
 
-  /// Master AI audio processing toggle — when off, all karaoke/enhance features are hidden and disabled
   @Published var aiEnabled: Bool = {
     if UserDefaults.standard.object(forKey: "nk.aiEnabled") != nil {
       return UserDefaults.standard.bool(forKey: "nk.aiEnabled")
@@ -137,7 +136,6 @@ class AudioPlayerManager: ObservableObject {
       UserDefaults.standard.set(aiEnabled, forKey: "nk.aiEnabled")
       DebugLogger.log("AI enabled: \(aiEnabled)", category: .ai)
       if !aiEnabled {
-        // Disable all AI modes when master toggle is off
         _suppressModeSwitch = true
         karaokeMode = false
         bassEnhanceMode = false
@@ -154,7 +152,6 @@ class AudioPlayerManager: ObservableObject {
     }
   }
 
-  /// When enabled, AI separation runs in background during playback for faster future switching
   @Published var aiAutoAnalyze: Bool = {
     UserDefaults.standard.bool(forKey: "nk.aiAutoAnalyze")
   }() {
@@ -349,6 +346,8 @@ class AudioPlayerManager: ObservableObject {
   #if canImport(UIKit)
     @Published var nowPlayingArtwork: UIImage?
   #endif
+  private var lastNowPlayingElapsedSecond: Int?
+  private var lastNowPlayingPlaybackRate: Double?
   private static func loadCrossfadeSeconds() -> Double {
     let raw = UserDefaults.standard.object(forKey: "nk.crossfadeSeconds") as? Double ?? 6.0
     return min(15, max(1, raw))
@@ -364,8 +363,10 @@ class AudioPlayerManager: ObservableObject {
   private let transitionCoordinator = TransitionCoordinator()
   private var radioPlayer: AVPlayer?
   private var streamPlayer: AVPlayer?
+  private var streamEndObserver: NSObjectProtocol?
   private var radioTimeObserver: (player: AVPlayer, token: Any)?
   private var pollTimer: Timer?
+  private var streamFadeTimer: Timer?
 
   private var _suppressModeSwitch = false
   private var originalQueue: [Song] = []
@@ -506,6 +507,7 @@ class AudioPlayerManager: ObservableObject {
   deinit {
     pollTimer?.invalidate()
     quickCutTimer?.invalidate()
+    streamFadeTimer?.invalidate()
     instrumentalTask?.cancel()
     backgroundAnalysisRetryTask?.cancel()
     if let existing = radioTimeObserver {
@@ -515,6 +517,16 @@ class AudioPlayerManager: ObservableObject {
     downloadSession?.cancel()
     cacheCompressionTask?.cancel()
     radioPlayer?.pause()
+    #if canImport(UIKit)
+      if bgTaskID != .invalid {
+        UIApplication.shared.endBackgroundTask(bgTaskID)
+        bgTaskID = .invalid
+      }
+      if trackTransitionTaskID != .invalid {
+        UIApplication.shared.endBackgroundTask(trackTransitionTaskID)
+        trackTransitionTaskID = .invalid
+      }
+    #endif
   }
 
   private func cancelBackgroundAnalysisRetry() {
@@ -695,6 +707,10 @@ class AudioPlayerManager: ObservableObject {
 
   private func cancelPendingTransitionWork(resetVolume: Bool = true) {
     cancelQuickCutTimer(resetVolume: resetVolume)
+    audioKit.cancelCrossfade()
+    streamFadeTimer?.invalidate()
+    streamFadeTimer = nil
+    if resetVolume { streamPlayer?.volume = 1.0 }
     transitionCoordinator.reset()
     cancelBackgroundAnalysisRetry()
     #if canImport(UIKit)
@@ -731,6 +747,7 @@ class AudioPlayerManager: ObservableObject {
       AudioPlayerManager.artworkCache.removeAllObjects()
       nowPlayingArtwork = nil
     #endif
+    URLCache.shared.removeAllCachedResponses()
     CacheManager.shared.refreshSizes()
     updateNowPlayingInfo(reloadArtwork: false)
   }
@@ -771,16 +788,22 @@ class AudioPlayerManager: ObservableObject {
 
   private func startPollTimer() {
     pollTimer?.invalidate()
-    let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-      Task { @MainActor [weak self] in
+    let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated {
         guard let self else { return }
         guard !self.isRadioMode else { return }
         guard !self.isEditingProgress else { return }
+        guard self.currentSong != nil else { return }
         if self.suppressTransitionAfterSeek {
           self.suppressTransitionAfterSeek = false
           return
         }
-        // Stream mode: update progress only (AVPlayer handles its own buffering/transitions)
+        guard self.isPlaying else {
+          if case .idle = self.transitionCoordinator.state {} else {
+            self.transitionCoordinator.reset()
+          }
+          return
+        }
         if self.isStreamMode {
           guard let player = self.streamPlayer,
                 let item = player.currentItem,
@@ -788,15 +811,34 @@ class AudioPlayerManager: ObservableObject {
           let t = player.currentTime().seconds
           let dur = item.duration.seconds
           guard dur.isFinite, dur > 0 else { return }
-          self.progress = min(1.0, max(0.0, t / dur))
+          let newProgress = min(1.0, max(0.0, t / dur))
+          if abs(newProgress - self.progress) > 0.0005 {
+            self.progress = newProgress
+          }
           self.updateNowPlayingElapsed(t)
+
+          if self.repeatMode != .one {
+            self.transitionCoordinator.poll(
+              currentTime: t,
+              totalDuration: dur,
+              currentSong: self.currentSong,
+              queue: self.queue,
+              autoMixEnabled: self.autoMixEnabled,
+              crossfadeEnabled: self.crossfadeEnabled,
+              crossfadeSeconds: self.crossfadeSeconds,
+              aiEffectActive: self.anyAIEffectActive,
+              autoplayEnabled: self.autoplayEnabled
+            )
+          }
           return
         }
-        // AudioKit mode: full poll with transition detection
         let totalDur = self.playbackDuration
         guard totalDur.isFinite, totalDur > 0 else { return }
         let t = min(max(0, self.audioKit.currentTime), totalDur)
-        self.progress = min(1.0, max(0.0, t / totalDur))
+        let newProgress = min(1.0, max(0.0, t / totalDur))
+        if abs(newProgress - self.progress) > 0.0005 {
+          self.progress = newProgress
+        }
         self.updateNowPlayingElapsed(t)
 
         if self.repeatMode != .one {
@@ -895,7 +937,6 @@ class AudioPlayerManager: ObservableObject {
         #endif
         return
       }
-      // Stem playback failed — fall through to normal file playback
       preparedStemSongID = nil
     }
     if let fileURL {
@@ -905,7 +946,6 @@ class AudioPlayerManager: ObservableObject {
       return
     }
     guard let remoteURL = song.audioURL else { return }
-    // Use AVPlayer for immediate progressive playback, download in background
     currentPlaybackURL = remoteURL
     configureAudioSessionCategory()
     activateAudioSession()
@@ -917,6 +957,15 @@ class AudioPlayerManager: ObservableObject {
     player.automaticallyWaitsToMinimizeStalling = true
     player.volume = 1.0
     streamPlayer = player
+    streamEndObserver = NotificationCenter.default.addObserver(
+      forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+    ) { [weak self] _ in
+      guard let self, self.isStreamMode, !self.isRadioMode else { return }
+      guard self.isPlaying else { return }
+      guard !self.suppressTransitionAfterSeek else { return }
+      guard !self.isPlaybackEndedCallbackSuppressed else { return }
+      self.playNextOrRandom()
+    }
     NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
     player.play()
     isPlaying = true
@@ -929,7 +978,6 @@ class AudioPlayerManager: ObservableObject {
         triggerBackgroundAnalysis(for: song)
       }
     }
-    // Download to cache in background for future offline/AI use
     let songID = song.id
     let session = AudioDownloadSession(songID: songID)
     downloadSession = session
@@ -1001,9 +1049,7 @@ class AudioPlayerManager: ObservableObject {
     isBuffering = false
     updateNowPlayingInfo(reloadArtwork: true)
     DebugLogger.log("Playing file: \(url.lastPathComponent)", category: .playback)
-    // Record access for LRU cache tracking
     CacheManager.shared.recordAccess(for: url)
-    // Trigger background AI analysis if enabled
     if let song = currentSong, aiEnabled, aiAutoAnalyze, !anyAIEffectActive {
       triggerBackgroundAnalysis(for: song)
       prepareBackgroundStemPlaybackIfPossible(for: song)
@@ -1176,10 +1222,10 @@ class AudioPlayerManager: ObservableObject {
   }
   func playShuffled(from songs: [Song]) {
     guard let pick = songs.randomElement() else { return }
-    let shuffled = songs.shuffled()
+    let shuffled = [pick] + songs.filter { $0.id != pick.id }.shuffled()
     isShuffled = true
-    originalQueue = songs
     play(song: pick, context: shuffled)
+    originalQueue = songs
   }
   func toggleAutoplay() { autoplayEnabled.toggle() }
   func moveInUpNext(from source: IndexSet, to destination: Int) {
@@ -1262,9 +1308,37 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private func stopStreamPlayer() {
+    if let observer = streamEndObserver {
+      NotificationCenter.default.removeObserver(observer)
+      streamEndObserver = nil
+    }
+    streamFadeTimer?.invalidate()
+    streamFadeTimer = nil
     streamPlayer?.pause()
     streamPlayer?.replaceCurrentItem(with: nil)
     streamPlayer = nil
+  }
+
+  private func fadeOutStreamPlayer(duration: TimeInterval) {
+    guard let player = streamPlayer else { return }
+    streamFadeTimer?.invalidate()
+    let interval = AudioKitPlayback.transitionTimerInterval
+    let steps = max(1, Int((duration / interval).rounded(.up)))
+    var step = 0
+    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
+      guard self != nil else { timer.invalidate(); return }
+      MainActor.assumeIsolated {
+        step += 1
+        let t = Float(step) / Float(max(1, steps))
+        player.volume = max(0, 1.0 - t)
+        if t >= 1.0 {
+          timer.invalidate()
+          self?.streamFadeTimer = nil
+        }
+      }
+    }
+    streamFadeTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   func updateRadioMetadata(song: Song, artworkURL: URL?) {
@@ -1320,7 +1394,6 @@ class AudioPlayerManager: ObservableObject {
     return VocalSeparator.shared.cachedStems(forSongID: song.id)
   }
 
-  /// Triggers background AI separation for the given song (auto-analyze mode)
   private func triggerBackgroundAnalysis(for song: Song) {
     guard aiEnabled, aiAutoAnalyze, !isRadioMode, !anyAIEffectActive else { return }
     guard VocalSeparator.shared.isAvailable else { return }
@@ -1333,7 +1406,6 @@ class AudioPlayerManager: ObservableObject {
 
     let songID = song.id
 
-    // Find a source file for analysis
     let sourceURL = localPlaybackFileURL(for: song)
 
     if let sourceURL {
@@ -1341,7 +1413,6 @@ class AudioPlayerManager: ObservableObject {
       DebugLogger.log("Triggering background analysis for \(songID)", category: .ai)
       VocalSeparator.shared.analyzeInBackground(songID: songID, sourceURL: sourceURL)
     } else {
-      // Wait for download to complete, then trigger
       DebugLogger.log(
         "Source not available yet for background analysis of \(songID), will retry",
         category: .ai)
@@ -1415,7 +1486,6 @@ class AudioPlayerManager: ObservableObject {
     let songID = song.id
     let initialStart = activePlaybackTime(for: song)
     let totalDur = isStreamMode ? Double(song.duration) : audioKit.duration
-    // Don't start separation if we're too close to the end — would crash CMTimeRange
     if totalDur.isFinite, totalDur > 0, initialStart >= totalDur - 1.0 {
       return
     }
@@ -1454,7 +1524,6 @@ class AudioPlayerManager: ObservableObject {
         if Task.isCancelled { return }
         guard self.separationGeneration == gen,
           self.currentSong?.id == songID, self.anyAIEffectActive else {
-          // Clean up temp files if we're not going to use them
           if stems.isTemporary {
             VocalSeparator.shared.cleanupRealtimeTemp()
           }
@@ -1617,6 +1686,8 @@ class AudioPlayerManager: ObservableObject {
   private func updateNowPlayingInfo(reloadArtwork: Bool) {
     guard let song = currentSong else {
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      lastNowPlayingElapsedSecond = nil
+      lastNowPlayingPlaybackRate = nil
       return
     }
     var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
@@ -1644,12 +1715,20 @@ class AudioPlayerManager: ObservableObject {
       }
     }
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    lastNowPlayingElapsedSecond = isRadioMode ? nil : Int(playbackTime.rounded(.down))
+    lastNowPlayingPlaybackRate = isPlaying ? 1.0 : 0.0
   }
   private func updateNowPlayingElapsed(_ elapsed: Double) {
+    let roundedSecond = Int(elapsed.rounded(.down))
+    let playbackRate = isPlaying ? 1.0 : 0.0
+    guard roundedSecond != lastNowPlayingElapsedSecond
+            || playbackRate != lastNowPlayingPlaybackRate else { return }
     var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
-    info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+    info[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    lastNowPlayingElapsedSecond = roundedSecond
+    lastNowPlayingPlaybackRate = playbackRate
   }
   private func loadArtworkAsync(from url: URL) {
     let songID = currentSong?.id
@@ -1734,7 +1813,15 @@ class AudioPlayerManager: ObservableObject {
       if let data = data, let songs = try? JSONDecoder().decode([Song].self, from: data),
         let random = songs.randomElement()
       {
-        DispatchQueue.main.async { self.play(song: random, context: songs) }
+        let rotatedQueue: [Song]
+        if let index = songs.firstIndex(of: random) {
+          rotatedQueue = Array(songs[index...]) + Array(songs[..<index])
+        } else {
+          rotatedQueue = songs
+        }
+        DispatchQueue.main.async { [weak self] in
+          self?.play(song: random, context: rotatedQueue)
+        }
       } else {
         DispatchQueue.main.async {
           #if canImport(UIKit)
@@ -1807,6 +1894,9 @@ class AudioPlayerManager: ObservableObject {
     if anyAIEffectActive {
       quickCutToNext(plan: plan)
     } else {
+      if isStreamMode {
+        fadeOutStreamPlayer(duration: plan.fadeDuration)
+      }
       audioKit.beginCrossfade(
         url: plan.nextFileURL,
         duration: plan.fadeDuration,
@@ -1817,7 +1907,6 @@ class AudioPlayerManager: ObservableObject {
 
   private func quickCutToNext(plan: TransitionCoordinator.TransitionPlan) {
     cancelQuickCutTimer(resetVolume: false)
-    // Cancel ongoing AI work during the fade — play() will re-trigger if needed
     instrumentalTask?.cancel()
     instrumentalTask = nil
     VocalSeparator.shared.cancel()
@@ -1826,17 +1915,16 @@ class AudioPlayerManager: ObservableObject {
     let gen = quickCutGeneration
     let fadeDuration = plan.fadeDuration
     let song = plan.nextSong
-    let steps = Int(fadeDuration * 60)
-    let interval: TimeInterval = 1.0 / 60.0
+    let interval = AudioKitPlayback.transitionTimerInterval
+    let steps = max(1, Int((fadeDuration / interval).rounded(.up)))
     var step = 0
     let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
       guard self != nil else {
         timer.invalidate()
         return
       }
-      Task { @MainActor [weak self] in
+      MainActor.assumeIsolated {
         guard let self else { return }
-        // Ignore stale timer callbacks from a previous quick-cut
         guard self.quickCutGeneration == gen else { return }
         guard self.transitionCoordinator.state.isCrossfading, !self.isRadioMode else {
           self.cancelPendingTransitionWork()
@@ -1863,12 +1951,10 @@ class AudioPlayerManager: ObservableObject {
       transitionCoordinator.reset()
       return
     }
-    // Stop any stream player left over from the previous song
     stopStreamPlayer()
     let song = plan.nextSong
     reportPlayCount(for: song.id)
     enrichSongMetadataIfNeeded(for: song)
-    // Clear AI state for the previous song
     deferredAIEffect = nil
     preparedStemSongID = nil
     if currentSong?.id != song.id {
@@ -1883,7 +1969,6 @@ class AudioPlayerManager: ObservableObject {
     isBuffering = false
     updateNowPlayingInfo(reloadArtwork: true)
     transitionCoordinator.reset()
-    // Re-apply AI effects or trigger background analysis for the new song
     if anyAIEffectActive {
       applyMLSeparationIfNeeded()
     } else if aiEnabled, aiAutoAnalyze, !isRadioMode {

@@ -65,14 +65,6 @@ fastlane/screenshots/**/*.png
 fastlane/test_output/
 
 # =========================
-# Generated Output & Local Investigation
+# Generated Output
 # =========================
 graphify-out/
-MEMORY_*.md
-MEMORY_*.txt
-AUDIO_*.md
-README_AUDIO_*.md
-README_MEMORY_*.md
-test_*.swift
-update_*.swift
-full_response.json

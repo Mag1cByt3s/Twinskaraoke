@@ -13,6 +13,13 @@ enum AudioKitPlaybackRampStyle {
 final class AudioKitPlayback {
   typealias Mode = AudioKitPlaybackMode
   typealias RampStyle = AudioKitPlaybackRampStyle
+  private typealias LoadedMedia = (AVAudioFile?, AVAudioPCMBuffer?)
+  private typealias LoadedStemPair = (LoadedMedia, LoadedMedia)
+  private typealias LoadedStemTriple = (LoadedMedia, LoadedMedia, LoadedMedia)
+  private enum MediaLoadIntent {
+    case immediatePlayback
+    case prefetch
+  }
 
   let engine = AudioEngine()
   let mainPlayer = AudioPlayer()
@@ -34,6 +41,14 @@ final class AudioKitPlayback {
   private(set) var isCrossfading = false
 
   private var crossfadeTimer: Timer?
+  private var singleLoadTask: Task<LoadedMedia, Error>?
+  private var stemsLoadTask: Task<LoadedStemTriple, Error>?
+  private var switchToStemsLoadTask: Task<LoadedStemPair, Error>?
+  private var crossfadePreloadTask: Task<LoadedMedia, Error>?
+  private var crossfadeFinalizeTask: Task<LoadedMedia, Error>?
+  private var primaryLoadGeneration: UInt64 = 0
+  private var crossfadeLoadGeneration: UInt64 = 0
+  private var preparedCrossfadeMedia: LoadedMedia?
 
   private var crossfadeDuration: TimeInterval = 0
 
@@ -50,6 +65,13 @@ final class AudioKitPlayback {
   static let bandFrequencies: [Float] = [
     31.5, 63, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000,
   ]
+  private static let constrainedMemoryThreshold: UInt64 = 4 * 1_024 * 1_024 * 1_024
+  private static let constrainedPlaybackBufferLimitBytes: Int64 = 48 * 1_024 * 1_024
+  private static let defaultPlaybackBufferLimitBytes: Int64 = 96 * 1_024 * 1_024
+  private static let constrainedPrefetchBufferLimitBytes: Int64 = 24 * 1_024 * 1_024
+  private static let defaultPrefetchBufferLimitBytes: Int64 = 48 * 1_024 * 1_024
+  private static let constrainedTransitionTicksPerSecond: Double = 18
+  private static let defaultTransitionTicksPerSecond: Double = 24
 
   init() {
     instEQWrapper = AVAudioUnitWrapperNode(input: stemInstrumental, unit: instEQ)
@@ -143,7 +165,8 @@ final class AudioKitPlayback {
     }
   }
 
-  nonisolated private static func loadMedia(url: URL) throws -> (AVAudioFile?, AVAudioPCMBuffer?) {
+  nonisolated private static func loadMedia(url: URL, intent: MediaLoadIntent) throws -> (AVAudioFile?, AVAudioPCMBuffer?) {
+    try Task.checkCancellation()
     guard FileManager.default.fileExists(atPath: url.path) else {
       let err = NSError(
         domain: NSOSStatusErrorDomain, code: 1_685_348_671,
@@ -152,6 +175,7 @@ final class AudioKitPlayback {
     }
     let headerOK = AudioKitPlayback.hasValidAudioHeader(at: url)
     if headerOK {
+      try Task.checkCancellation()
       if let file = try? AVAudioFile(forReading: url) {
         if file.processingFormat.channelCount == 2 {
           return (file, nil)
@@ -160,6 +184,7 @@ final class AudioKitPlayback {
           return (nil, stereo)
         }
       }
+      try Task.checkCancellation()
       if let file = try? AVAudioFile(
         forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
       {
@@ -171,14 +196,62 @@ final class AudioKitPlayback {
         }
       }
     }
-    if let buffer = AudioKitPlayback.decodeFileToBuffer(url: url) {
+    try Task.checkCancellation()
+    if let buffer = AudioKitPlayback.decodeFileToBuffer(url: url, intent: intent) {
       return (nil, buffer)
     }
+    try Task.checkCancellation()
     let file = try AVAudioFile(forReading: url)
     return (file, nil)
   }
 
-  nonisolated static func decodeFileToBuffer(url: URL) -> AVAudioPCMBuffer? {
+  nonisolated static var transitionTimerInterval: TimeInterval {
+    let ticksPerSecond = isResourceConstrained
+      ? constrainedTransitionTicksPerSecond : defaultTransitionTicksPerSecond
+    return 1.0 / ticksPerSecond
+  }
+
+  nonisolated private static var isResourceConstrained: Bool {
+    let info = ProcessInfo.processInfo
+    return info.isLowPowerModeEnabled || info.physicalMemory <= constrainedMemoryThreshold
+  }
+
+  nonisolated private static func maxBufferedPCMBytes(for intent: MediaLoadIntent) -> Int64 {
+    switch intent {
+    case .immediatePlayback:
+      return isResourceConstrained
+        ? constrainedPlaybackBufferLimitBytes : defaultPlaybackBufferLimitBytes
+    case .prefetch:
+      return isResourceConstrained
+        ? constrainedPrefetchBufferLimitBytes : defaultPrefetchBufferLimitBytes
+    }
+  }
+
+  nonisolated private static func estimatedDecodedPCMBytes(for url: URL) -> Int64? {
+    let asset = AVURLAsset(url: url)
+    let seconds = asset.duration.seconds
+    guard seconds.isFinite, seconds > 0 else { return nil }
+    let bytesPerFrame = 2 * MemoryLayout<Float>.size
+    let estimated = seconds * 44_100 * Double(bytesPerFrame)
+    guard estimated.isFinite, estimated > 0 else { return nil }
+    return Int64(min(estimated.rounded(.up), Double(Int64.max)))
+  }
+
+  nonisolated private static func shouldDecodeEntireFileToBuffer(
+    url: URL,
+    intent: MediaLoadIntent
+  ) -> Bool {
+    guard let estimatedBytes = estimatedDecodedPCMBytes(for: url) else { return true }
+    return estimatedBytes <= maxBufferedPCMBytes(for: intent)
+  }
+
+  nonisolated private static func decodeFileToBuffer(url: URL, intent: MediaLoadIntent) -> AVAudioPCMBuffer? {
+    guard shouldDecodeEntireFileToBuffer(url: url, intent: intent) else {
+      DebugLogger.log(
+        "Skipping eager decode for \(url.lastPathComponent) due to memory budget",
+        category: .playback)
+      return nil
+    }
     let asset = AVURLAsset(url: url)
     let tracks = asset.tracks(withMediaType: .audio)
     guard let track = tracks.first else { return nil }
@@ -206,6 +279,10 @@ final class AudioKitPlayback {
     else { return nil }
     buffer.frameLength = 0
     while reader.status == .reading {
+      if Task.isCancelled {
+        reader.cancelReading()
+        return nil
+      }
       guard let sb = output.copyNextSampleBuffer(), let bb = CMSampleBufferGetDataBuffer(sb)
       else { break }
       let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sb))
@@ -269,6 +346,8 @@ final class AudioKitPlayback {
   }
 
   private func safePlay(_ player: AudioPlayer, from position: TimeInterval) {
+    player.stop()
+    player.playerNode.reset()
     let dur = player.duration
     guard dur.isFinite, dur > 0 else {
       player.play()
@@ -299,12 +378,16 @@ final class AudioKitPlayback {
     mainPlayer.stop()
     stemVocals.stop()
     stemInstrumental.stop()
+    mainPlayer.playerNode.reset()
+    stemVocals.playerNode.reset()
+    stemInstrumental.playerNode.reset()
     mainPlayer.play(from: mainPos, at: startTime)
     stemVocals.play(from: stemPos, at: startTime)
     stemInstrumental.play(from: stemPos, at: startTime)
   }
 
   private func resetCrossfadePlayback() {
+    cancelCrossfadeLoadTasks()
     crossfadeTimer?.invalidate()
     crossfadeTimer = nil
     pendingCrossfadeURL = nil
@@ -315,25 +398,31 @@ final class AudioKitPlayback {
     crossfadeStartMainVol = 1.0
     crossfadeStartVocalsVol = 0
     crossfadeStartInstrumentalVol = 0
-    crossfadePlayer.stop()
-    crossfadePlayer.volume = 0
+    releasePlayerMedia(crossfadePlayer)
   }
-
-  // MARK: - Single-track playback
 
   func play(url: URL, startAt: TimeInterval = 0) {
     DebugLogger.log("AudioKit play single: \(url.lastPathComponent)", category: .playback)
     _paused = false
     suppressionToken &+= 1
     let token = suppressionToken
+    cancelPrimaryLoadTasks()
+    let loadGeneration = primaryLoadGeneration
     resetCrossfadePlayback()
-    stopAllStems()
-    mainPlayer.stop()
+    stopAllStems(releasingMedia: true)
+    releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
+    let loadTask = Task.detached(priority: .userInitiated) {
+      try Self.loadMedia(url: url, intent: .immediatePlayback)
+    }
+    singleLoadTask = loadTask
     Task {
       do {
-        let media = try await Task.detached(priority: .userInitiated) { try Self.loadMedia(url: url) }.value
-        guard self.suppressionToken == token else { return }
+        let media = try await loadTask.value
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
         try self.applyMedia(media, to: self.mainPlayer)
+        self.singleLoadTask = nil
         self.currentURL = url
         self.mode = .single
         self.aiStartOffset = 0
@@ -341,14 +430,18 @@ final class AudioKitPlayback {
         self.resetInstrumentalEQ()
         self.startEngineIfNeeded()
         self.safePlay(self.mainPlayer, from: startAt)
+      } catch is CancellationError {
+        guard self.primaryLoadGeneration == loadGeneration else { return }
+        self.singleLoadTask = nil
       } catch {
-        guard self.suppressionToken == token else { return }
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
+        self.singleLoadTask = nil
         self.onPlaybackError?(error)
       }
     }
   }
-
-  // MARK: - AI stems playback
 
   func playStems(
     originalURL: URL, vocalsURL: URL, instrumentsURL: URL,
@@ -360,22 +453,31 @@ final class AudioKitPlayback {
     _paused = false
     suppressionToken &+= 1
     let token = suppressionToken
+    cancelPrimaryLoadTasks()
+    let loadGeneration = primaryLoadGeneration
     resetCrossfadePlayback()
-    stopAllStems()
-    mainPlayer.stop()
+    stopAllStems(releasingMedia: true)
+    releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
+    let loadTask = Task.detached(priority: .userInitiated) {
+      let m = try Self.loadMedia(url: originalURL, intent: .immediatePlayback)
+      try Task.checkCancellation()
+      let v = try Self.loadMedia(url: vocalsURL, intent: .immediatePlayback)
+      try Task.checkCancellation()
+      let i = try Self.loadMedia(url: instrumentsURL, intent: .immediatePlayback)
+      return (m, v, i)
+    }
+    stemsLoadTask = loadTask
     Task {
       do {
-        let media = try await Task.detached(priority: .userInitiated) {
-          let m = try Self.loadMedia(url: originalURL)
-          let v = try Self.loadMedia(url: vocalsURL)
-          let i = try Self.loadMedia(url: instrumentsURL)
-          return (m, v, i)
-        }.value
-        guard self.suppressionToken == token else { return }
+        let media = try await loadTask.value
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
         try self.applyMedia(media.0, to: self.mainPlayer)
         self.currentURL = originalURL
         try self.applyMedia(media.1, to: self.stemVocals)
         try self.applyMedia(media.2, to: self.stemInstrumental)
+        self.stemsLoadTask = nil
         
         self.aiStartOffset = max(0, startOffset)
         self.mode = .aiStems
@@ -397,10 +499,15 @@ final class AudioKitPlayback {
         self.stemVocals.volume = 0
         self.stemInstrumental.volume = 0
         self.synchronizedPlay(mainPos: mainPos, stemPos: stemPos)
+      } catch is CancellationError {
+        guard self.primaryLoadGeneration == loadGeneration else { return }
+        self.stemsLoadTask = nil
       } catch {
-        guard self.suppressionToken == token else { return }
-        self.stemVocals.stop()
-        self.stemVocals.volume = 0
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
+        self.stemsLoadTask = nil
+        self.stopAllStems(releasingMedia: true)
         self.onPlaybackError?(error)
       }
     }
@@ -414,18 +521,26 @@ final class AudioKitPlayback {
     _paused = false
     suppressionToken &+= 1
     let token = suppressionToken
+    cancelPrimaryLoadTasks()
+    let loadGeneration = primaryLoadGeneration
     resetCrossfadePlayback()
-    stopAllStems()
+    stopAllStems(releasingMedia: true)
+    let loadTask = Task.detached(priority: .userInitiated) {
+      let v = try Self.loadMedia(url: vocalsURL, intent: .immediatePlayback)
+      try Task.checkCancellation()
+      let i = try Self.loadMedia(url: instrumentsURL, intent: .immediatePlayback)
+      return (v, i)
+    }
+    switchToStemsLoadTask = loadTask
     Task {
       do {
-        let media = try await Task.detached(priority: .userInitiated) {
-          let v = try Self.loadMedia(url: vocalsURL)
-          let i = try Self.loadMedia(url: instrumentsURL)
-          return (v, i)
-        }.value
-        guard self.suppressionToken == token else { return }
+        let media = try await loadTask.value
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
         try self.applyMedia(media.0, to: self.stemVocals)
         try self.applyMedia(media.1, to: self.stemInstrumental)
+        self.switchToStemsLoadTask = nil
         
         self.aiStartOffset = max(0, startOffset)
         self.mode = .aiStems
@@ -448,10 +563,15 @@ final class AudioKitPlayback {
         self.stemVocals.volume = 0
         self.stemInstrumental.volume = 0
         self.synchronizedPlay(mainPos: mainPos, stemPos: stemPos)
+      } catch is CancellationError {
+        guard self.primaryLoadGeneration == loadGeneration else { return }
+        self.switchToStemsLoadTask = nil
       } catch {
-        guard self.suppressionToken == token else { return }
-        self.stemVocals.stop()
-        self.stemVocals.volume = 0
+        guard self.suppressionToken == token, self.primaryLoadGeneration == loadGeneration else {
+          return
+        }
+        self.switchToStemsLoadTask = nil
+        self.stopAllStems(releasingMedia: true)
         self.onPlaybackError?(error)
       }
     }
@@ -490,11 +610,15 @@ final class AudioKitPlayback {
     aiStartOffset = 0
   }
 
-  private func stopAllStems() {
+  private func stopAllStems(releasingMedia: Bool = false) {
     stemVocals.stop()
     stemInstrumental.stop()
     stemVocals.volume = 0
     stemInstrumental.volume = 0
+    if releasingMedia {
+      releasePlayerMedia(stemVocals)
+      releasePlayerMedia(stemInstrumental)
+    }
   }
 
   func setStemVolumes(vocals: Float, instrumental: Float) {
@@ -519,9 +643,6 @@ final class AudioKitPlayback {
     setInstrumentalEQGain(dB: 0)
   }
 
-  // MARK: - Playback state
-
-  /// Update the current file URL without interrupting playback (progressive download complete)
   func switchToFinalFile(url: URL) {
     currentURL = url
   }
@@ -568,9 +689,10 @@ final class AudioKitPlayback {
     DebugLogger.log("AudioKit stop", category: .playback)
     _paused = false
     suppressionToken &+= 1
+    cancelPrimaryLoadTasks()
     resetCrossfadePlayback()
-    mainPlayer.stop()
-    stopAllStems()
+    releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
+    stopAllStems(releasingMedia: true)
     currentURL = nil
     aiStartOffset = 0
     mode = .single
@@ -615,18 +737,39 @@ final class AudioKitPlayback {
     mainMixer.volume = AUValue(max(0, min(1, v)))
   }
 
-  // MARK: - Crossfade
-
   func preloadCrossfade(url: URL) {
     guard !isCrossfading else { return }
+    guard preloadedCrossfadeURL != url, crossfadePreloadURL != url else { return }
+    crossfadePreloadTask?.cancel()
+    crossfadeLoadGeneration &+= 1
+    let loadGeneration = crossfadeLoadGeneration
+    crossfadePreloadURL = url
+    let loadTask = Task.detached(priority: .utility) {
+      try Self.loadMedia(url: url, intent: .prefetch)
+    }
+    crossfadePreloadTask = loadTask
     Task {
       do {
-        let media = try await Task.detached(priority: .userInitiated) { try Self.loadMedia(url: url) }.value
+        let media = try await loadTask.value
+        guard self.crossfadeLoadGeneration == loadGeneration else { return }
         try self.applyMedia(media, to: self.crossfadePlayer)
+        self.preparedCrossfadeMedia = media
+        self.crossfadePreloadTask = nil
+        self.crossfadePreloadURL = nil
         self.preloadedCrossfadeURL = url
         self.crossfadePlayer.volume = 0
-      } catch {
+      } catch is CancellationError {
+        guard self.crossfadeLoadGeneration == loadGeneration else { return }
+        self.crossfadePreloadTask = nil
+        self.crossfadePreloadURL = nil
         self.preloadedCrossfadeURL = nil
+        self.preparedCrossfadeMedia = nil
+      } catch {
+        guard self.crossfadeLoadGeneration == loadGeneration else { return }
+        self.crossfadePreloadTask = nil
+        self.crossfadePreloadURL = nil
+        self.preloadedCrossfadeURL = nil
+        self.preparedCrossfadeMedia = nil
       }
     }
   }
@@ -640,10 +783,12 @@ final class AudioKitPlayback {
     crossfadeTimer?.invalidate()
     crossfadeTimer = nil
     preloadedCrossfadeURL = nil
+    preparedCrossfadeMedia = nil
     if isCrossfading {
       isCrossfading = false
       if !alreadyPreloaded {
         crossfadePlayer.stop()
+        crossfadePlayer.playerNode.reset()
         crossfadePlayer.volume = 0
       }
       if mode == .single {
@@ -657,14 +802,19 @@ final class AudioKitPlayback {
     }
 
     let token = suppressionToken
+    crossfadeFinalizeTask?.cancel()
+    crossfadeLoadGeneration &+= 1
+    let loadGeneration = crossfadeLoadGeneration
     Task {
       do {
-        if !alreadyPreloaded {
-          let media = try await Task.detached(priority: .userInitiated) { try Self.loadMedia(url: url) }.value
-          guard self.suppressionToken == token else { return }
-          try self.applyMedia(media, to: self.crossfadePlayer)
+        try await self.ensureCrossfadePrepared(
+          for: url,
+          token: token,
+          loadGeneration: loadGeneration
+        )
+        guard self.suppressionToken == token, self.crossfadeLoadGeneration == loadGeneration else {
+          return
         }
-        guard self.suppressionToken == token else { return }
         
         self.crossfadeDuration = max(0.5, duration)
         self.crossfadeElapsed = 0
@@ -680,13 +830,13 @@ final class AudioKitPlayback {
         self.startEngineIfNeeded()
         self.crossfadePlayer.play()
 
-        let interval: TimeInterval = 1.0 / 60.0
+        let interval = Self.transitionTimerInterval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
           guard self != nil else {
             timer.invalidate()
             return
           }
-          Task { @MainActor [weak self] in
+          MainActor.assumeIsolated {
             guard let self else { return }
             self.crossfadeElapsed += interval
             let t = Float(min(1.0, self.crossfadeElapsed / self.crossfadeDuration))
@@ -719,27 +869,32 @@ final class AudioKitPlayback {
         }
         self.crossfadeTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+      } catch is CancellationError {
+        guard self.crossfadeLoadGeneration == loadGeneration else { return }
+        self.crossfadePreloadTask = nil
       } catch {
-        guard self.suppressionToken == token else { return }
+        guard self.suppressionToken == token, self.crossfadeLoadGeneration == loadGeneration else {
+          return
+        }
+        self.crossfadePreloadTask = nil
         self.isCrossfading = false
-        self.crossfadePlayer.stop()
+        self.releasePlayerMedia(self.crossfadePlayer)
         self.onPlaybackError?(error)
       }
     }
   }
 
   func cancelCrossfade() {
+    cancelCrossfadeLoadTasks()
     crossfadeTimer?.invalidate()
     crossfadeTimer = nil
     preloadedCrossfadeURL = nil
     guard isCrossfading else {
-      crossfadePlayer.stop()
-      crossfadePlayer.volume = 0
+      releasePlayerMedia(crossfadePlayer)
       return
     }
     isCrossfading = false
-    crossfadePlayer.stop()
-    crossfadePlayer.volume = 0
+    releasePlayerMedia(crossfadePlayer)
     if mode == .aiStems {
       mainPlayer.volume = AUValue(crossfadeStartMainVol)
       setStemVolumes(
@@ -757,53 +912,171 @@ final class AudioKitPlayback {
 
     suppressionToken &+= 1
     let token = suppressionToken
-    mainPlayer.stop()
+    cancelCrossfadeLoadTasks()
+    releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
     if mode == .aiStems {
-      stopAllStems()
+      stopAllStems(releasingMedia: true)
     }
 
     crossfadePlayer.volume = 1.0
 
     if let url = pendingCrossfadeURL {
-      Task {
-        do {
-          let media = try await Task.detached(priority: .userInitiated) { try Self.loadMedia(url: url) }.value
-          guard self.suppressionToken == token else { return }
-          let resumeTime = self.crossfadePlayer.currentTime
-          try self.applyMedia(media, to: self.mainPlayer)
-          self.mode = .single
-          self.aiStartOffset = 0
-          self.stopAllStems()
-          self.mainPlayer.volume = 1.0
-          self.resetInstrumentalEQ()
-          self.safePlay(self.mainPlayer, from: resumeTime)
-          self.currentURL = url
-          self.crossfadePlayer.stop()
-          self.crossfadePlayer.volume = 0
-          self.pendingCrossfadeURL = nil
-          self.onCrossfadeCompleted?()
-        } catch {
-          guard self.suppressionToken == token else { return }
-          self.crossfadePlayer.stop()
-          self.crossfadePlayer.volume = 0
-          self.onPlaybackError?(error)
+      let resumeTime = crossfadePlayer.currentTime
+      let preparedMedia = preparedCrossfadeMedia
+      do {
+        if let preparedMedia {
+          try applyMedia(preparedMedia, to: mainPlayer)
+        } else {
+          crossfadeLoadGeneration &+= 1
+          let loadGeneration = crossfadeLoadGeneration
+          let loadTask = Task.detached(priority: .utility) {
+            try Self.loadMedia(url: url, intent: .immediatePlayback)
+          }
+          crossfadeFinalizeTask = loadTask
+          Task {
+            do {
+              let media = try await loadTask.value
+              guard self.suppressionToken == token,
+                self.crossfadeLoadGeneration == loadGeneration
+              else { return }
+              try self.completeCrossfadeHandoff(media: media, url: url, resumeTime: resumeTime)
+            } catch is CancellationError {
+              guard self.crossfadeLoadGeneration == loadGeneration else { return }
+              self.crossfadeFinalizeTask = nil
+            } catch {
+              guard self.suppressionToken == token,
+                self.crossfadeLoadGeneration == loadGeneration
+              else { return }
+              self.crossfadeFinalizeTask = nil
+              self.releasePlayerMedia(self.crossfadePlayer)
+              self.onPlaybackError?(error)
+            }
+          }
+          return
         }
+        try completeCrossfadeHandoff(media: preparedMedia, url: url, resumeTime: resumeTime)
+      } catch {
+        releasePlayerMedia(crossfadePlayer)
+        onPlaybackError?(error)
       }
     } else {
-      crossfadePlayer.stop()
-      crossfadePlayer.volume = 0
+      releasePlayerMedia(crossfadePlayer)
       pendingCrossfadeURL = nil
       onCrossfadeCompleted?()
+    }
+  }
+
+  private func cancelPrimaryLoadTasks() {
+    primaryLoadGeneration &+= 1
+    singleLoadTask?.cancel()
+    stemsLoadTask?.cancel()
+    switchToStemsLoadTask?.cancel()
+    singleLoadTask = nil
+    stemsLoadTask = nil
+    switchToStemsLoadTask = nil
+  }
+
+  private func cancelCrossfadeLoadTasks() {
+    crossfadeLoadGeneration &+= 1
+    crossfadePreloadTask?.cancel()
+    crossfadeFinalizeTask?.cancel()
+    crossfadePreloadTask = nil
+    crossfadeFinalizeTask = nil
+    crossfadePreloadURL = nil
+    preparedCrossfadeMedia = nil
+  }
+
+  private func releasePlayerMedia(_ player: AudioPlayer, resetVolumeTo volume: AUValue = 0) {
+    player.stop()
+    player.playerNode.reset()
+    player.volume = volume
+    if let buffer = Self.silenceBuffer {
+      player.load(buffer: buffer)
     }
   }
 
   private var pendingCrossfadeURL: URL?
 
   private var preloadedCrossfadeURL: URL?
+  private var crossfadePreloadURL: URL?
 
   private var crossfadeStartMainVol: Float = 1.0
   private var crossfadeStartVocalsVol: Float = 0
   private var crossfadeStartInstrumentalVol: Float = 0
+
+  private func ensureCrossfadePrepared(
+    for url: URL,
+    token: UInt64,
+    loadGeneration: UInt64
+  ) async throws {
+    if preloadedCrossfadeURL == url { return }
+
+    if crossfadePreloadURL == url, let existingTask = crossfadePreloadTask {
+      let media = try await existingTask.value
+      guard suppressionToken == token, crossfadeLoadGeneration == loadGeneration else { return }
+      try applyMedia(media, to: crossfadePlayer)
+      preparedCrossfadeMedia = media
+      crossfadePreloadTask = nil
+      crossfadePreloadURL = nil
+      preloadedCrossfadeURL = url
+      crossfadePlayer.volume = 0
+      return
+    }
+
+    crossfadePreloadTask?.cancel()
+    crossfadePreloadURL = url
+    let loadTask = Task.detached(priority: .userInitiated) {
+      try Self.loadMedia(url: url, intent: .prefetch)
+    }
+    crossfadePreloadTask = loadTask
+    let media = try await loadTask.value
+    guard suppressionToken == token, crossfadeLoadGeneration == loadGeneration else { return }
+    try applyMedia(media, to: crossfadePlayer)
+    preparedCrossfadeMedia = media
+    crossfadePreloadTask = nil
+    crossfadePreloadURL = nil
+    preloadedCrossfadeURL = url
+    crossfadePlayer.volume = 0
+  }
+
+  private func completeCrossfadeHandoff(
+    media: LoadedMedia?,
+    url: URL,
+    resumeTime: TimeInterval
+  ) throws {
+    if let media {
+      try applyMedia(media, to: mainPlayer)
+    }
+    crossfadeFinalizeTask = nil
+    preparedCrossfadeMedia = nil
+    mode = .single
+    aiStartOffset = 0
+    stopAllStems(releasingMedia: true)
+    mainPlayer.volume = 1.0
+    resetInstrumentalEQ()
+    safePlay(mainPlayer, from: resumeTime)
+    currentURL = url
+    releasePlayerMedia(crossfadePlayer)
+    pendingCrossfadeURL = nil
+    onCrossfadeCompleted?()
+  }
+
+  private static let silenceBuffer: AVAudioPCMBuffer? = {
+    guard
+      let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 44_100,
+        channels: 2,
+        interleaved: false
+      ),
+      let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_024)
+    else { return nil }
+    buffer.frameLength = 1_024
+    for channel in 0..<Int(format.channelCount) {
+      buffer.floatChannelData?[channel].assign(repeating: 0, count: Int(buffer.frameLength))
+    }
+    return buffer
+  }()
 }
 
 final class AVAudioUnitWrapperNode: Node {

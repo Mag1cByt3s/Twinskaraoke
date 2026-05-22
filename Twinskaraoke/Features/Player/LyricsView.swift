@@ -46,7 +46,12 @@ struct LyricsView: View {
                 currentTime: currentTime,
                 showTranslation: showTranslations,
                 nextLineTime: index + 1 < lyrics.count ? lyrics[index + 1].time : nil,
-                onSeek: onSeek
+                onSeek: { time in
+                  withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+                    proxy.scrollTo(line.id, anchor: .center)
+                  }
+                  onSeek(time)
+                }
               )
               .id(line.id)
             }
@@ -63,7 +68,7 @@ struct LyricsView: View {
               .frame(height: 60)
           }
         )
-        .onChange(of: currentIndex) { idx in
+        .onChange(of: currentIndex) { _, idx in
           if idx < 0 {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
               proxy.scrollTo("intro-dots", anchor: .center)
@@ -212,7 +217,7 @@ private struct LyricLineRow: View {
           VStack(alignment: .leading, spacing: isCurrent ? 6 : 3) {
             Text(line.text)
               .font(.system(size: isCurrent ? 30 : 23, weight: isCurrent ? .bold : .semibold))
-              .foregroundColor(lineColor)
+              .foregroundStyle(lineColor)
               .blur(radius: lineBlur)
               .multilineTextAlignment(.leading)
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -224,7 +229,7 @@ private struct LyricLineRow: View {
             {
               Text(translated)
                 .font(.system(size: isCurrent ? 18 : 15, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -244,10 +249,7 @@ private struct LyricLineRow: View {
     if isPast { return .primary.opacity(0.35) }
     return .primary.opacity(0.55)
   }
-  private var lineBlur: CGFloat {
-    guard isPast else { return 0 }
-    return min(CGFloat(distance) * 0.3, 1.2)
-  }
+  private var lineBlur: CGFloat { 0 }
   private var lineOpacity: Double {
     if isCurrent { return 1.0 }
     if distance <= 2 { return 1.0 }
@@ -262,19 +264,19 @@ extension LyricsView {
       VStack(spacing: 14) {
         Image(systemName: "exclamationmark.bubble")
           .font(.system(size: 34, weight: .regular))
-          .foregroundColor(.primary.opacity(0.6))
+          .foregroundStyle(.primary.opacity(0.6))
         Text("Couldn't load lyrics")
           .font(.system(size: 16, weight: .semibold))
-          .foregroundColor(.primary.opacity(0.85))
+          .foregroundStyle(.primary.opacity(0.85))
         Text("Check your connection and try again.")
           .font(.system(size: 13))
-          .foregroundColor(.primary.opacity(0.55))
+          .foregroundStyle(.primary.opacity(0.55))
           .multilineTextAlignment(.center)
         if let onRetry {
           Button(action: onRetry) {
             Text("Retry")
               .font(.system(size: 14, weight: .semibold))
-              .foregroundColor(.primary)
+              .foregroundStyle(.primary)
               .padding(.horizontal, 22)
               .padding(.vertical, 9)
               .background(
@@ -289,17 +291,17 @@ extension LyricsView {
       VStack(spacing: 12) {
         Image(systemName: "music.quarternote.3")
           .font(.system(size: 34, weight: .regular))
-          .foregroundColor(.primary.opacity(0.55))
+          .foregroundStyle(.primary.opacity(0.55))
         Text("No lyrics for this song")
           .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(.primary.opacity(0.75))
+          .foregroundStyle(.primary.opacity(0.75))
       }
     } else {
       VStack(spacing: 14) {
         LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
         Text("Loading lyrics")
           .font(.system(size: 14))
-          .foregroundColor(.primary.opacity(0.6))
+          .foregroundStyle(.primary.opacity(0.6))
       }
     }
   }

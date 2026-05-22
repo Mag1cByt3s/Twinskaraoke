@@ -186,3 +186,89 @@ nonisolated struct Media: Codable, Sendable {
 nonisolated struct SearchResponse: Codable, Sendable {
   let items: [Song]
 }
+
+nonisolated struct FavoriteSongEnvelope: Decodable, Sendable {
+  let song: Song?
+
+  enum CodingKeys: String, CodingKey { case song, songData, songDTO }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    if let decoded = try? container.decode(Song.self, forKey: .song) {
+      song = decoded
+    } else if let decoded = try? container.decode(Song.self, forKey: .songData) {
+      song = decoded
+    } else if let decoded = try? container.decode(Song.self, forKey: .songDTO) {
+      song = decoded
+    } else {
+      song = nil
+    }
+  }
+}
+
+nonisolated struct SongArrayContainer: Decodable, Sendable {
+  let songs: [Song]
+
+  enum CodingKeys: String, CodingKey {
+    case items, songListDTOs, songs, favorites
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    songs =
+      Self.decodeSongs(from: container, forKey: .songListDTOs)
+      ?? Self.decodeSongs(from: container, forKey: .items)
+      ?? Self.decodeSongs(from: container, forKey: .songs)
+      ?? Self.decodeSongs(from: container, forKey: .favorites)
+      ?? []
+  }
+
+  private static func decodeSongs(
+    from container: KeyedDecodingContainer<CodingKeys>,
+    forKey key: CodingKeys
+  ) -> [Song]? {
+    if let decoded = try? container.decode(LossyArray<Song>.self, forKey: key) {
+      return decoded.elements
+    }
+    if let decoded = try? container.decode([Song].self, forKey: key) {
+      return decoded
+    }
+    if let decoded = try? container.decode(LossyArray<FavoriteSongEnvelope>.self, forKey: key) {
+      let songs = decoded.elements.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    if let decoded = try? container.decode([FavoriteSongEnvelope].self, forKey: key) {
+      let songs = decoded.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    return nil
+  }
+}
+
+nonisolated enum SongPayloadDecoder {
+  static func decodeSongs(from data: Data?) -> [Song]? {
+    guard let data else { return nil }
+    let decoder = JSONDecoder()
+
+    if let wrapped = try? decoder.decode(SongArrayContainer.self, from: data),
+      !wrapped.songs.isEmpty
+    {
+      return wrapped.songs
+    }
+    if let list = (try? decoder.decode(LossyArray<Song>.self, from: data))?.elements, !list.isEmpty {
+      return list
+    }
+    if let list = try? decoder.decode([Song].self, from: data), !list.isEmpty {
+      return list
+    }
+    if let wrapped = try? decoder.decode(LossyArray<FavoriteSongEnvelope>.self, from: data) {
+      let songs = wrapped.elements.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    if let wrapped = try? decoder.decode([FavoriteSongEnvelope].self, from: data) {
+      let songs = wrapped.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    return nil
+  }
+}

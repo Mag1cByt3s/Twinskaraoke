@@ -13,16 +13,12 @@ struct PlayerArtworkView: View {
       .frame(width: size, height: size)
       .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
       .id(song.id)
-      .shadow(
-        color: .black.opacity(audioManager.isPlaying ? 0.45 : 0.22),
-        radius: audioManager.isPlaying ? 28 : 16,
-        y: audioManager.isPlaying ? 18 : 10
-      )
+      .amShadow(audioManager.isPlaying ? AM.Shadow.heroPlaying : AM.Shadow.heroIdle)
       .scaleEffect(audioManager.isPlaying ? 1.0 : 0.86)
       .animation(.spring(response: 0.5, dampingFraction: 0.78), value: audioManager.isPlaying)
       if audioManager.isBuffering {
         RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
-          .fill(Color.black.opacity(0.4))
+          .fill(Color.appArtworkOverlay)
           .frame(width: size, height: size)
         LoadingIndicator(size: 64)
       }

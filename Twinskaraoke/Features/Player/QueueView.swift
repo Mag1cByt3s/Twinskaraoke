@@ -6,7 +6,7 @@ struct QueueView: View {
   var body: some View {
     ZStack {
       LinearGradient(
-        colors: [Color(red: 0.10, green: 0.10, blue: 0.12), Color.black],
+        colors: [.appSheetGradientTop, .appSheetGradientBottom],
         startPoint: .top, endPoint: .bottom
       )
       .ignoresSafeArea()
@@ -14,14 +14,14 @@ struct QueueView: View {
         HStack {
           Text("Playing Next")
             .font(.system(size: 18, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
           Spacer()
           Button {
             dismiss()
           } label: {
             Image(systemName: "xmark")
               .font(.system(size: 16, weight: .semibold))
-              .foregroundColor(.white.opacity(0.85))
+              .foregroundColor(.appGlassForeground)
               .frame(width: 36, height: 36)
           }
           .modifier(GlassCircle())
@@ -66,11 +66,11 @@ struct QueueView: View {
             VStack(alignment: .leading, spacing: 2) {
               Text(current.title)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .lineLimit(1)
               Text(current.displayArtist)
                 .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(.secondary)
                 .lineLimit(1)
             }
             Spacer()
@@ -80,18 +80,19 @@ struct QueueView: View {
           }
           .padding(.horizontal, 20)
           .padding(.bottom, 14)
-          Divider()
-            .background(.white.opacity(0.12))
+          Rectangle()
+            .fill(Color.appDivider)
+            .frame(height: 0.5)
             .padding(.horizontal, 20)
         }
         if upNextSongs.isEmpty {
           VStack(spacing: 8) {
             Image(systemName: "music.note.list")
               .font(.system(size: 32))
-              .foregroundColor(.white.opacity(0.35))
+              .foregroundColor(.secondary.opacity(0.55))
             Text("No songs queued")
               .font(.system(size: 14))
-              .foregroundColor(.white.opacity(0.55))
+              .foregroundColor(.secondary)
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -121,7 +122,6 @@ struct QueueView: View {
         }
       }
     }
-    .preferredColorScheme(.dark)
   }
   private var upNextSongs: [Song] {
     guard let current = audioManager.currentSong,
@@ -141,11 +141,11 @@ struct QueueRow: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(song.title)
           .font(.system(size: 15, weight: .medium))
-          .foregroundColor(.white)
+          .foregroundColor(.primary)
           .lineLimit(1)
         Text(song.displayArtist)
           .font(.system(size: 13))
-          .foregroundColor(.white.opacity(0.6))
+          .foregroundColor(.secondary)
           .lineLimit(1)
       }
       Spacer()
@@ -161,7 +161,7 @@ struct QueueModeButton: View {
     Button(action: action) {
       Image(systemName: symbol)
         .font(.system(size: 16, weight: .semibold))
-        .foregroundColor(isActive ? .black : .white)
+        .foregroundColor(isActive ? .appControlActiveForeground : .primary)
         .frame(width: 38, height: 38)
         .modifier(QueueModeBackground(isActive: isActive))
     }
@@ -174,14 +174,14 @@ private struct QueueModeBackground: ViewModifier {
   func body(content: Content) -> some View {
     if #available(iOS 26.0, *) {
       if isActive {
-        content.background(Circle().fill(Color.white))
+        content.background(Circle().fill(Color.appControlActiveFill))
       } else {
         content.glassEffect(in: Circle())
       }
     } else {
       content.background(
         Circle()
-          .fill(isActive ? Color.white : Color.white.opacity(0.16))
+          .fill(isActive ? Color.appControlActiveFill : Color.appControlInactiveFill)
       )
     }
   }

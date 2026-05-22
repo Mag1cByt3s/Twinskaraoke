@@ -8,6 +8,7 @@ struct PlayerAmbientBackground: View {
   let artworkURL: URL?
   var isPlaying: Bool = true
   @State private var palette: ArtworkPalette = .placeholder
+  @State private var animationPhase: Bool = false
 
   var body: some View {
     ZStack {
@@ -21,6 +22,21 @@ struct PlayerAmbientBackground: View {
     .animation(.easeInOut(duration: 0.8), value: palette)
     .onAppear(perform: loadPalette)
     .onChange(of: artworkURL) { _ in loadPalette() }
+    .onChange(of: isPlaying) { playing in
+      if playing { startBreathing() }
+    }
+    .onAppear {
+      if isPlaying { startBreathing() }
+    }
+  }
+
+  private func startBreathing() {
+    withAnimation(
+      .easeInOut(duration: 6.0)
+      .repeatForever(autoreverses: true)
+    ) {
+      animationPhase = true
+    }
   }
 
   @ViewBuilder
@@ -37,10 +53,15 @@ struct PlayerAmbientBackground: View {
             .resizable()
             .aspectRatio(contentMode: .fill)
             .frame(width: geo.size.width, height: geo.size.height)
-            .scaleEffect(1.22)
             .blur(radius: 58)
             .saturation(1.05)
+            .scaleEffect(animationPhase && isPlaying ? 1.28 : 1.22)
+            .offset(
+              x: animationPhase && isPlaying ? 8 : -8,
+              y: animationPhase && isPlaying ? -6 : 6
+            )
             .clipped()
+            .drawingGroup()
             .transition(.opacity)
         } placeholder: {
           fallbackGradient
@@ -60,12 +81,12 @@ struct PlayerAmbientBackground: View {
           palette.secondary.opacity(0.22),
           palette.tertiary.opacity(0.28),
         ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
+        startPoint: animationPhase && isPlaying ? .topLeading : .top,
+        endPoint: animationPhase && isPlaying ? .bottomTrailing : .bottom
       )
 
       Rectangle()
-        .fill(Color.black.opacity(0.28))
+        .fill(Color.appAmbientWash)
     }
   }
 
@@ -73,9 +94,9 @@ struct PlayerAmbientBackground: View {
     ZStack {
       LinearGradient(
         colors: [
-          Color.black.opacity(0.52),
-          Color.black.opacity(0.18),
-          Color.black.opacity(0.58),
+          Color.appAmbientVignetteTop,
+          Color.appAmbientVignetteMid,
+          Color.appAmbientVignetteBottom,
         ],
         startPoint: .top,
         endPoint: .bottom
@@ -84,7 +105,7 @@ struct PlayerAmbientBackground: View {
       RadialGradient(
         colors: [
           Color.clear,
-          Color.black.opacity(0.14),
+          Color.appAmbientRadial,
         ],
         center: .center,
         startRadius: 140,
@@ -114,7 +135,7 @@ struct PlayerAmbientBackground: View {
     #endif
     let width = max(displaySize.width, 1) * scale
     let height = max(displaySize.height, 1) * scale
-    return CGSize(width: min(width, 1400), height: min(height, 1400))
+    return CGSize(width: min(width, 900), height: min(height, 900))
   }
 
   private func loadPalette() {
@@ -123,9 +144,11 @@ struct PlayerAmbientBackground: View {
       return
     }
     #if canImport(UIKit)
+      let pixelSize = NSValue(cgSize: CGSize(width: 96, height: 96))
       SDWebImageManager.shared.loadImage(
         with: url,
-        options: [.retryFailed],
+        options: [.retryFailed, .scaleDownLargeImages],
+        context: [.imageThumbnailPixelSize: pixelSize],
         progress: nil
       ) { image, _, _, _, _, _ in
         guard let image else { return }

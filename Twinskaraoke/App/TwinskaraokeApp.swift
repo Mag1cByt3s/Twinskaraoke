@@ -6,6 +6,8 @@ import SwiftUI
 
 @main
 struct TwinskaraokeApp: App {
+  @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
+
   init() {
     ImageCacheConfig.applyLimits()
     #if canImport(UIKit)
@@ -20,8 +22,12 @@ struct TwinskaraokeApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(resolvedColorScheme)
         .tint(.appAccent)
     }
+  }
+
+  private var resolvedColorScheme: ColorScheme? {
+    (AppearanceMode(rawValue: appearanceMode) ?? .system).colorScheme
   }
 }

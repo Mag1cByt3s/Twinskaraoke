@@ -3,7 +3,6 @@ import Accelerate
 import Foundation
 
 enum BPMDetector {
-
   static func detect(url: URL) async -> Double? {
     await withCheckedContinuation { continuation in
       DispatchQueue.global(qos: .utility).async {

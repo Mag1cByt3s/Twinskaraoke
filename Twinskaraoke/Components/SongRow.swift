@@ -57,11 +57,11 @@ struct SongRow: View {
         }
         if isCurrentSong {
           RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
-            .fill(Color.black.opacity(0.4))
+            .fill(Color.appArtworkOverlay)
             .frame(width: size.artSize, height: size.artSize)
           EqualizerBars(isAnimating: audioManager.isPlaying)
             .frame(width: size.indicatorSize, height: size.indicatorSize)
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
         }
       }
       VStack(alignment: .leading, spacing: 2) {

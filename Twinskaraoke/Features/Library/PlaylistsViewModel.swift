@@ -61,34 +61,9 @@ class PlaylistsViewModel: ObservableObject {
     }
     GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      guard let data else { return }
-      if let decoded = try? JSONDecoder().decode([Song].self, from: data) {
+      if let decoded = SongPayloadDecoder.decodeSongs(from: data) {
         DispatchQueue.main.async { self?.favoriteSongs = decoded }
-        return
-      }
-      if let wrapped = try? JSONDecoder().decode([FavoriteSongEnvelope].self, from: data) {
-        DispatchQueue.main.async {
-          self?.favoriteSongs = wrapped.compactMap { $0.song }
-        }
       }
     }.resume()
-  }
-}
-
-private struct FavoriteSongEnvelope: Decodable {
-  let song: Song?
-
-  enum CodingKeys: String, CodingKey { case song, songData, songDTO }
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    if let decoded = try? container.decode(Song.self, forKey: .song) {
-      song = decoded
-    } else if let decoded = try? container.decode(Song.self, forKey: .songData) {
-      song = decoded
-    } else if let decoded = try? container.decode(Song.self, forKey: .songDTO) {
-      song = decoded
-    } else {
-      song = nil
-    }
   }
 }

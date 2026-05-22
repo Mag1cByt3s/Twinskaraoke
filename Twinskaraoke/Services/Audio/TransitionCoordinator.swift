@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 final class TransitionCoordinator {
-
   private struct BPMCacheEntry: Codable {
     let bpm: Double
     let updatedAt: TimeInterval
@@ -86,6 +85,10 @@ final class TransitionCoordinator {
     aiEffectActive: Bool,
     autoplayEnabled: Bool
   ) {
+    guard autoplayEnabled else {
+      if case .idle = state {} else { reset() }
+      return
+    }
     guard totalDuration > 0, let currentSong else { return }
     guard autoMixEnabled || crossfadeEnabled else {
       if case .idle = state {} else { reset() }
@@ -141,12 +144,19 @@ final class TransitionCoordinator {
         await self.predownload(song: nextSong, from: remoteURL)
       }
 
-      async let outBPMResult = self.detectBPM(for: currentSong, fileURL: currentURL)
       let nextFileURL = self.audioFileURL(for: nextSong)
-      async let inBPMResult = self.detectBPM(for: nextSong, fileURL: nextFileURL)
-
-      let outBPM = await outBPMResult
-      let inBPM = await inBPMResult
+      let shouldAnalyzeBPM = autoMixEnabled && !aiEffectActive
+      let outBPM: Double?
+      let inBPM: Double?
+      if shouldAnalyzeBPM {
+        async let outBPMResult = self.detectBPM(for: currentSong, fileURL: currentURL)
+        async let inBPMResult = self.detectBPM(for: nextSong, fileURL: nextFileURL)
+        outBPM = await outBPMResult
+        inBPM = await inBPMResult
+      } else {
+        outBPM = nil
+        inBPM = nil
+      }
 
       if Task.isCancelled { return }
 
@@ -185,7 +195,9 @@ final class TransitionCoordinator {
         guard let self else { return }
         guard case .preparing(let s) = self.state, s.id == nextSong.id else { return }
         self.state = .ready(plan: plan)
-        self.audioKit?.preloadCrossfade(url: fileURL)
+        if !aiEffectActive {
+          self.audioKit?.preloadCrossfade(url: fileURL)
+        }
       }
     }
   }

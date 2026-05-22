@@ -2,8 +2,6 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// Loads the first song's artwork for a playlist when no mosaic cover is available.
-/// Used so personal (user-created) playlists show actual cover art instead of a placeholder.
 @MainActor
 final class PlaylistCoverLoader: ObservableObject {
   @Published var imageURL: URL?

@@ -9,7 +9,7 @@ struct GlassXButton: View {
     Button(action: action) {
       Image(systemName: "xmark")
         .font(.system(size: iconSize, weight: .semibold))
-        .foregroundColor(.white.opacity(0.85))
+        .foregroundColor(.appGlassForeground)
         .frame(width: size, height: size)
     }
     .modifier(GlassCircle())
@@ -27,7 +27,7 @@ struct GlassCheckmarkButton: View {
     Button(action: action) {
       Image(systemName: "checkmark")
         .font(.system(size: iconSize, weight: .semibold))
-        .foregroundColor(.white.opacity(isEnabled ? 0.85 : 0.3))
+        .foregroundColor(isEnabled ? .appGlassForeground : .secondary.opacity(0.5))
         .frame(width: size, height: size)
     }
     .disabled(!isEnabled)

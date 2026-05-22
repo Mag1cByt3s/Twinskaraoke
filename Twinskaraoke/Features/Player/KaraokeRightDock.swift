@@ -51,7 +51,6 @@ struct KaraokeRightDock: View {
       }
     } label: {
       ZStack {
-        // Progress ring when AI separation is running
         if isProcessing {
           Circle()
             .trim(from: 0, to: processingRingFraction)

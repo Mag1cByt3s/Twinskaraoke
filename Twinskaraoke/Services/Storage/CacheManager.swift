@@ -6,13 +6,9 @@ import SDWebImageSwiftUI
 final class CacheManager: ObservableObject {
   static let shared = CacheManager()
 
-  /// Image cache limit: 2 GB
   static let imageCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
-  /// Music cache limit (original audio + AI stems): 4 GB
   static let musicCacheLimit: UInt64 = 4 * 1024 * 1024 * 1024
-  /// Lyrics cache limit: 2 GB
   static let lyricsCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
-  /// Maximum cache age: 6 months
   static let maxCacheAge: TimeInterval = 6 * 30 * 24 * 3600
 
   @Published private(set) var imageCacheSize: UInt64 = 0
@@ -27,8 +23,6 @@ final class CacheManager: ObservableObject {
     enforceAllLimits()
     DebugLogger.log("CacheManager initialized", category: .cache)
   }
-
-  // MARK: - Public API
 
   func enforceAllLimits() {
     enforceImageCacheLimits()
@@ -56,7 +50,6 @@ final class CacheManager: ObservableObject {
       sdCache.deleteOldFiles(completionBlock: nil)
     }
 
-    // Also check custom image cache directories if any
     let imageCacheDir = Self.imageCacheDirectory
     evictOldestFiles(in: imageCacheDir, limit: Self.imageCacheLimit, label: "image")
 
@@ -80,14 +73,11 @@ final class CacheManager: ObservableObject {
 
     var prunedCount = 0
 
-    // Prune music cache
     let musicDir = AudioPlayerManager.audioCacheDir
     prunedCount += pruneOldSongDirectories(in: musicDir, olderThan: cutoff)
 
-    // Prune lyrics cache
     prunedCount += pruneOldFiles(in: LyricsCacheStore.cacheDirectory, olderThan: cutoff)
 
-    // Prune SDWebImage cache (it has its own expiry, but we enforce 6-month hard limit)
     SDImageCache.shared.deleteOldFiles(completionBlock: nil)
 
     DebugLogger.log("Pruned \(prunedCount) expired cache entries", category: .cache)
@@ -95,7 +85,6 @@ final class CacheManager: ObservableObject {
   }
 
   func recordAccess(for url: URL) {
-    // Touch the file's access date so LRU eviction works correctly
     AudioCacheStore.touch(url)
   }
 
@@ -125,13 +114,9 @@ final class CacheManager: ObservableObject {
     DebugLogger.log("Lyrics cache cleared", category: .cache)
   }
 
-  // MARK: - Size Formatting
-
   func formattedImageCacheSize() -> String { formatBytes(imageCacheSize) }
   func formattedMusicCacheSize() -> String { formatBytes(musicCacheSize) }
   func formattedLyricsCacheSize() -> String { formatBytes(lyricsCacheSize) }
-
-  // MARK: - Private
 
   private static var imageCacheDirectory: URL {
     let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -180,7 +165,6 @@ final class CacheManager: ObservableObject {
       "\(label) cache \(formatBytes(currentSize)) > limit \(formatBytes(limit)), evicting oldest",
       category: .cache)
 
-    // Collect files sorted by modification date (oldest first)
     let sortedFiles = filesOrderedByDate(in: directory)
 
     var evicted = 0

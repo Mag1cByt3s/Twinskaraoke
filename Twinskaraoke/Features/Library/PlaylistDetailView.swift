@@ -257,74 +257,7 @@ class PlaylistDetailViewModel: ObservableObject {
     }.resume()
   }
   private static func decodeSongs(from data: Data?) -> [Song]? {
-    guard let data = data else { return nil }
-    let decoder = JSONDecoder()
-    if let wrapped = try? decoder.decode(PlaylistSongsResponse.self, from: data),
-      !wrapped.songs.isEmpty
-    {
-      return wrapped.songs
-    }
-    if let playlist = try? decoder.decode(Playlist.self, from: data),
-      let list = playlist.songListDTOs, !list.isEmpty
-    {
-      return list
-    }
-    if let list = (try? decoder.decode(LossyArray<Song>.self, from: data))?.elements, !list.isEmpty {
-      return list
-    }
-    if let wrapped = try? decoder.decode([FavoriteSongEnvelope].self, from: data) {
-      let unwrapped = wrapped.compactMap { $0.song }
-      if !unwrapped.isEmpty { return unwrapped }
-    }
-    return nil
-  }
-}
-
-private struct FavoriteSongEnvelope: Decodable {
-  let song: Song?
-
-  enum CodingKeys: String, CodingKey { case song, songData, songDTO }
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    if let decoded = try? container.decode(Song.self, forKey: .song) {
-      song = decoded
-    } else if let decoded = try? container.decode(Song.self, forKey: .songData) {
-      song = decoded
-    } else if let decoded = try? container.decode(Song.self, forKey: .songDTO) {
-      song = decoded
-    } else {
-      song = nil
-    }
-  }
-}
-
-private struct PlaylistSongsResponse: Codable {
-  let songs: [Song]
-
-  enum CodingKeys: String, CodingKey {
-    case items, songListDTOs, songs
-  }
-  init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    if let v = try? c.decode(LossyArray<Song>.self, forKey: .songListDTOs) {
-      songs = v.elements
-    } else if let v = try? c.decode(LossyArray<Song>.self, forKey: .items) {
-      songs = v.elements
-    } else if let v = try? c.decode(LossyArray<Song>.self, forKey: .songs) {
-      songs = v.elements
-    } else if let v = try? c.decode([Song].self, forKey: .songListDTOs) {
-      songs = v
-    } else if let v = try? c.decode([Song].self, forKey: .items) {
-      songs = v
-    } else if let v = try? c.decode([Song].self, forKey: .songs) {
-      songs = v
-    } else {
-      songs = []
-    }
-  }
-  func encode(to encoder: Encoder) throws {
-    var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(songs, forKey: .songs)
+    SongPayloadDecoder.decodeSongs(from: data)
   }
 }
 

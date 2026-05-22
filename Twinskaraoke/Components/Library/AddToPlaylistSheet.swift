@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Sheet for picking a playlist to add a song to.
 struct AddToPlaylistSheet: View {
   let song: Song
   @Environment(\.dismiss) private var dismiss

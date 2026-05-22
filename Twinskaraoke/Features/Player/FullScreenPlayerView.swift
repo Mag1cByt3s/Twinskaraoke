@@ -328,5 +328,4 @@ struct FullScreenPlayerView: View {
     .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.7))
     .disabled(lyricsViewModel.isLoading || lyricsViewModel.hasNoLyrics)
   }
-
 }

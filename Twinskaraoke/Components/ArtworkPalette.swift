@@ -10,10 +10,10 @@ struct ArtworkPalette: Equatable {
   var tertiary: Color
   var quaternary: Color
   static let placeholder = ArtworkPalette(
-    primary: Color(red: 0.14, green: 0.16, blue: 0.22),
-    secondary: Color(red: 0.10, green: 0.12, blue: 0.18),
-    tertiary: Color(red: 0.18, green: 0.10, blue: 0.20),
-    quaternary: Color(red: 0.08, green: 0.08, blue: 0.14)
+    primary: .appPlaceholderPrimary,
+    secondary: .appPlaceholderSecondary,
+    tertiary: .appPlaceholderTertiary,
+    quaternary: .appPlaceholderQuaternary
   )
   #if canImport(UIKit)
     init(image: UIImage) {

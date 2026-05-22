@@ -7,7 +7,7 @@ struct RadioQueueView: View {
   var body: some View {
     ZStack {
       LinearGradient(
-        colors: [Color(red: 0.10, green: 0.10, blue: 0.12), Color.black],
+        colors: [.appSheetGradientTop, .appSheetGradientBottom],
         startPoint: .top, endPoint: .bottom
       )
       .ignoresSafeArea()
@@ -30,7 +30,10 @@ struct RadioQueueView: View {
                 VStack(spacing: 0) {
                   ForEach(Array(history.prefix(20).enumerated()), id: \.offset) { _, item in
                     row(song: item.song, isCurrent: false)
-                    Divider().background(.white.opacity(0.08)).padding(.leading, 64)
+                    Rectangle()
+                      .fill(Color.appDivider)
+                      .frame(height: 0.5)
+                      .padding(.leading, 64)
                   }
                 }
               }
@@ -41,18 +44,17 @@ struct RadioQueueView: View {
         }
       }
     }
-    .preferredColorScheme(.dark)
   }
   private var header: some View {
     HStack {
       VStack(alignment: .leading, spacing: 2) {
         Text(radio.nowPlaying?.station.name ?? "Radio")
           .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(.white)
+          .foregroundColor(.primary)
         if let listeners = radio.nowPlaying?.listeners {
           Text("\(listeners.unique) listening")
             .font(.system(size: 12))
-            .foregroundColor(.white.opacity(0.55))
+            .foregroundColor(.secondary)
         }
       }
       Spacer()
@@ -61,7 +63,7 @@ struct RadioQueueView: View {
       } label: {
         Image(systemName: "xmark")
           .font(.system(size: 16, weight: .semibold))
-          .foregroundColor(.white.opacity(0.85))
+          .foregroundColor(.appGlassForeground)
           .frame(width: 36, height: 36)
       }
       .modifier(GlassCircle())
@@ -78,7 +80,7 @@ struct RadioQueueView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title)
         .font(.system(size: 13, weight: .semibold))
-        .foregroundColor(.white.opacity(0.55))
+        .foregroundColor(.secondary)
         .textCase(.uppercase)
       content()
     }
@@ -90,18 +92,18 @@ struct RadioQueueView: View {
           LoadingImage(url: url, cornerRadius: 6)
         } else {
           RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(Color.white.opacity(0.1))
+            .fill(Color.appControlInactiveFill)
         }
       }
       .frame(width: 48, height: 48)
       VStack(alignment: .leading, spacing: 2) {
         Text(song.title ?? song.text ?? "")
           .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(isCurrent ? .appAccent : .white)
+          .foregroundColor(isCurrent ? .appAccent : .primary)
           .lineLimit(1)
         Text(song.artist ?? "")
           .font(.system(size: 13))
-          .foregroundColor(.white.opacity(0.55))
+          .foregroundColor(.secondary)
           .lineLimit(1)
       }
       Spacer()

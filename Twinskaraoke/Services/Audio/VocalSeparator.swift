@@ -30,7 +30,6 @@ nonisolated struct CachedStems {
   let vocals: URL
   let instruments: URL
   let startOffset: TimeInterval
-  /// Whether these stems are temporary (real-time mode, should not persist)
   let isTemporary: Bool
 
   init(vocals: URL, instruments: URL, startOffset: TimeInterval, isTemporary: Bool = false) {
@@ -134,8 +133,6 @@ final class VocalSeparator: ObservableObject {
     AudioCacheStore.readStartOffset(for: songID)
   }
 
-  // MARK: - Full Separation (cached, for auto-analyze mode)
-
   func separate(
     forSongID songID: String, sourceURL: URL, initiatedByBackground: Bool = false
   ) async throws -> CachedStems {
@@ -189,7 +186,6 @@ final class VocalSeparator: ObservableObject {
     }
     activeTask = task
     _ = try await task.value
-    // Enforce cache limits after new stems are written
     CacheManager.shared.enforceMusicCacheLimits()
     guard let stems = cachedStems(forSongID: songID) else {
       throw VocalSeparatorError.unavailable
@@ -198,9 +194,6 @@ final class VocalSeparator: ObservableObject {
     return stems
   }
 
-  // MARK: - Real-Time Partial Separation (no persistent cache)
-
-  /// Processes only from `fromTime` forward. Writes to temporary directory, not persistent cache.
   func separateRealTime(
     forSongID songID: String, sourceURL: URL, fromTime: TimeInterval
   ) async throws -> CachedStems {
@@ -266,7 +259,6 @@ final class VocalSeparator: ObservableObject {
     activeTask = task
     _ = try await task.value
 
-    // Verify output files exist
     guard FileManager.default.fileExists(atPath: vocalsURL.path),
       FileManager.default.fileExists(atPath: instrumentsURL.path)
     else {
@@ -276,7 +268,6 @@ final class VocalSeparator: ObservableObject {
     DebugLogger.log(
       "Real-time separation complete for \(songID), offset=\(normalizedStart)",
       category: .separation)
-    // Only set offset when source was trimmed (matching full-separation behavior)
     let offset = normalizedStart > 1.0 ? normalizedStart : 0
     return CachedStems(
       vocals: vocalsURL,
@@ -285,9 +276,6 @@ final class VocalSeparator: ObservableObject {
       isTemporary: true)
   }
 
-  // MARK: - Background Analysis (auto-analyze mode)
-
-  /// Starts background separation without blocking playback. Results go to persistent cache.
   func analyzeInBackground(songID: String, sourceURL: URL) {
     guard isAvailable else { return }
     guard cachedStems(forSongID: songID) == nil else {
@@ -296,7 +284,6 @@ final class VocalSeparator: ObservableObject {
         category: .ai)
       return
     }
-    // Don't start if already processing this song
     guard processingSongID != songID else { return }
 
     DebugLogger.log("Starting background analysis for \(songID)", category: .ai)
@@ -336,8 +323,6 @@ final class VocalSeparator: ObservableObject {
     DebugLogger.log("Background analysis cancelled", category: .ai)
   }
 
-  // MARK: - Cleanup
-
   func cancel() {
     let old = activeTask
     activeTask = nil
@@ -356,7 +341,6 @@ final class VocalSeparator: ObservableObject {
     DebugLogger.log("Stems cache cleared", category: .cache)
   }
 
-  /// Cleans up temporary real-time stems
   func cleanupRealtimeTemp() {
     let dir = Self.realtimeTempDir
     if let entries = try? FileManager.default.contentsOfDirectory(
@@ -368,8 +352,6 @@ final class VocalSeparator: ObservableObject {
     }
     DebugLogger.log("Real-time temp files cleaned up", category: .separation)
   }
-
-  // MARK: - Internal
 
   private func updateProgress(songID: String, fraction: Float) {
     if processingSongID == songID { progressFraction = fraction }
@@ -398,7 +380,6 @@ final class VocalSeparator: ObservableObject {
     } else {
       duration = asset.duration
     }
-    // Guard against start >= duration (crashes CMTimeRange)
     let safeStartSeconds = min(startSeconds, max(0, duration.seconds - 0.5))
     let safeStart = safeStartSeconds < startSeconds
       ? CMTime(seconds: safeStartSeconds, preferredTimescale: 600) : start

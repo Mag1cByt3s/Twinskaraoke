@@ -18,7 +18,7 @@ struct QRApproveView: View {
   var body: some View {
     NavigationStack {
       ZStack {
-        Color.black.ignoresSafeArea()
+        Color(.systemBackground).ignoresSafeArea()
         content
       }
       .navigationBarTitleDisplayMode(.inline)
@@ -26,7 +26,7 @@ struct QRApproveView: View {
         ToolbarItem(placement: .principal) {
           Text("Sign in on web")
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
         }
         ToolbarItem(placement: .cancellationAction) {
           GlassXButton(action: { dismiss() })
@@ -39,7 +39,6 @@ struct QRApproveView: View {
         }
       }
       .toolbarBackground(.hidden, for: .navigationBar)
-      .toolbarColorScheme(.dark, for: .navigationBar)
     }
     .task { await checkPermission() }
   }
@@ -67,18 +66,18 @@ struct QRApproveView: View {
   private var scanner: some View {
     switch permission {
     case .unknown:
-      ProgressView().tint(.white)
+      ProgressView().tint(.appAccent)
     case .denied:
       VStack(spacing: 16) {
         Image(systemName: "video.slash")
           .font(.system(size: 56))
-          .foregroundStyle(.white.opacity(0.7))
+          .foregroundStyle(.secondary)
         Text("Camera access is off")
           .font(.title3.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(.primary)
         Text("Enable camera access in Settings to scan a sign-in code.")
           .font(.subheadline)
-          .foregroundStyle(.white.opacity(0.7))
+          .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
         Button("Open Settings") {
           if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -98,10 +97,10 @@ struct QRApproveView: View {
           Spacer()
           Text("Point at the QR code shown on neurokaraoke.com")
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
-            .background(.black.opacity(0.55), in: Capsule())
+            .background(Color.appGlassFillStrong, in: Capsule())
             .padding(.bottom, 40)
         }
       }
@@ -111,7 +110,7 @@ struct QRApproveView: View {
     GeometryReader { proxy in
       let side = min(proxy.size.width, proxy.size.height) * 0.7
       RoundedRectangle(cornerRadius: 24, style: .continuous)
-        .strokeBorder(.white.opacity(0.85), lineWidth: 3)
+        .strokeBorder(.primary.opacity(0.85), lineWidth: 3)
         .frame(width: side, height: side)
         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
     }
@@ -125,12 +124,12 @@ struct QRApproveView: View {
       VStack(spacing: 8) {
         Text("Sign in on web?")
           .font(.title2.weight(.bold))
-          .foregroundStyle(.white)
+          .foregroundStyle(.primary)
         Text(
           "Approving will sign you in as \(auth.currentUsername ?? "yourself") on the device showing this QR code."
         )
         .font(.subheadline)
-        .foregroundStyle(.white.opacity(0.75))
+        .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
       }
       VStack(spacing: 10) {
@@ -155,7 +154,7 @@ struct QRApproveView: View {
         } label: {
           Text("Cancel")
             .font(.system(size: 16, weight: .medium))
-            .foregroundStyle(.white.opacity(0.85))
+            .foregroundStyle(.primary.opacity(0.85))
             .frame(maxWidth: .infinity)
             .frame(height: 44)
         }
@@ -166,10 +165,10 @@ struct QRApproveView: View {
     .frame(maxWidth: 380)
     .background(
       RoundedRectangle(cornerRadius: 22, style: .continuous)
-        .fill(Color.white.opacity(0.06))
+        .fill(Color.appGlassFill)
         .overlay(
           RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .stroke(.white.opacity(0.12), lineWidth: 1))
+            .stroke(Color.appDivider, lineWidth: 1))
     )
     .padding(.horizontal, 24)
   }
@@ -182,11 +181,11 @@ struct QRApproveView: View {
         .foregroundStyle(tint)
       Text(title)
         .font(.title2.weight(.bold))
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
       if let subtitle {
         Text(subtitle)
           .font(.subheadline)
-          .foregroundStyle(.white.opacity(0.75))
+          .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
       }
       Button {
