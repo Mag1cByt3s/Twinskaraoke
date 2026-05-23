@@ -180,7 +180,7 @@ final class AudioKitPlayback {
         if file.processingFormat.channelCount == 2 {
           return (file, nil)
         }
-        if let stereo = AudioKitPlayback.convertToStereo(file: file) {
+        if let stereo = AudioKitPlayback.convertToStereo(file: file, sourceURL: url, intent: intent) {
           return (nil, stereo)
         }
       }
@@ -191,7 +191,7 @@ final class AudioKitPlayback {
         if file.processingFormat.channelCount == 2 {
           return (file, nil)
         }
-        if let stereo = AudioKitPlayback.convertToStereo(file: file) {
+        if let stereo = AudioKitPlayback.convertToStereo(file: file, sourceURL: url, intent: intent) {
           return (nil, stereo)
         }
       }
@@ -315,9 +315,19 @@ final class AudioKitPlayback {
     return buffer.frameLength > 0 ? buffer : nil
   }
 
-  nonisolated private static func convertToStereo(file: AVAudioFile) -> AVAudioPCMBuffer? {
+  nonisolated private static func convertToStereo(
+    file: AVAudioFile,
+    sourceURL: URL,
+    intent: MediaLoadIntent
+  ) -> AVAudioPCMBuffer? {
     let srcFormat = file.processingFormat
     guard srcFormat.channelCount == 1 else { return nil }
+    guard shouldDecodeEntireFileToBuffer(url: sourceURL, intent: intent) else {
+      DebugLogger.log(
+        "Skipping mono expansion for \(sourceURL.lastPathComponent) due to memory budget",
+        category: .playback)
+      return nil
+    }
     let frameCount = AVAudioFrameCount(file.length)
     guard frameCount > 0 else { return nil }
     guard let monoBuf = AVAudioPCMBuffer(pcmFormat: srcFormat, frameCapacity: frameCount)
@@ -674,7 +684,6 @@ final class AudioKitPlayback {
 
   func resume() {
     _paused = false
-    suppressionToken &+= 1
     startEngineIfNeeded()
     if mode == .aiStems {
       mainPlayer.play()
@@ -779,11 +788,16 @@ final class AudioKitPlayback {
       "Crossfade begin: \(url.lastPathComponent), duration=\(duration), ramp=\(ramp)",
       category: .playback)
     let alreadyPreloaded = (preloadedCrossfadeURL == url)
+    let retainedPreparedMedia = alreadyPreloaded ? preparedCrossfadeMedia : nil
 
     crossfadeTimer?.invalidate()
     crossfadeTimer = nil
-    preloadedCrossfadeURL = nil
-    preparedCrossfadeMedia = nil
+    if !alreadyPreloaded {
+      preloadedCrossfadeURL = nil
+      preparedCrossfadeMedia = nil
+    } else {
+      preparedCrossfadeMedia = retainedPreparedMedia
+    }
     if isCrossfading {
       isCrossfading = false
       if !alreadyPreloaded {
@@ -808,39 +822,28 @@ final class AudioKitPlayback {
     Task {
       do {
         try await self.ensureCrossfadePrepared(
-          for: url,
-          token: token,
-          loadGeneration: loadGeneration
-        )
+          for: url, token: token, loadGeneration: loadGeneration)
         guard self.suppressionToken == token, self.crossfadeLoadGeneration == loadGeneration else {
           return
         }
-        
         self.crossfadeDuration = max(0.5, duration)
         self.crossfadeElapsed = 0
         self.crossfadeRamp = ramp
         self.isCrossfading = true
         self.pendingCrossfadeURL = url
-
         self.crossfadeStartMainVol = Float(self.mainPlayer.volume)
         self.crossfadeStartVocalsVol = Float(self.stemVocals.volume)
         self.crossfadeStartInstrumentalVol = Float(self.stemInstrumental.volume)
-
         self.crossfadePlayer.volume = 0
         self.startEngineIfNeeded()
         self.crossfadePlayer.play()
-
         let interval = Self.transitionTimerInterval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
-          guard self != nil else {
-            timer.invalidate()
-            return
-          }
+          guard self != nil else { timer.invalidate(); return }
           MainActor.assumeIsolated {
             guard let self else { return }
             self.crossfadeElapsed += interval
             let t = Float(min(1.0, self.crossfadeElapsed / self.crossfadeDuration))
-
             let outVol: Float
             let inVol: Float
             switch self.crossfadeRamp {
@@ -851,7 +854,6 @@ final class AudioKitPlayback {
               outVol = 1.0 - t
               inVol = t
             }
-
             if self.mode == .aiStems {
               self.mainPlayer.volume = AUValue(max(0, self.crossfadeStartMainVol * outVol))
               self.stemVocals.volume = AUValue(max(0, self.crossfadeStartVocalsVol * outVol))
@@ -861,7 +863,6 @@ final class AudioKitPlayback {
               self.mainPlayer.volume = AUValue(max(0, outVol))
             }
             self.crossfadePlayer.volume = AUValue(max(0, inVol))
-
             if t >= 1.0 {
               self.finalizeCrossfade()
             }
@@ -912,6 +913,7 @@ final class AudioKitPlayback {
 
     suppressionToken &+= 1
     let token = suppressionToken
+    let preparedMedia = preparedCrossfadeMedia
     cancelCrossfadeLoadTasks()
     releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
     if mode == .aiStems {
@@ -922,10 +924,10 @@ final class AudioKitPlayback {
 
     if let url = pendingCrossfadeURL {
       let resumeTime = crossfadePlayer.currentTime
-      let preparedMedia = preparedCrossfadeMedia
       do {
         if let preparedMedia {
-          try applyMedia(preparedMedia, to: mainPlayer)
+          let handoffMedia = try Self.handoffMedia(from: preparedMedia, sourceURL: url)
+          try completeCrossfadeHandoff(media: handoffMedia, url: url, resumeTime: resumeTime)
         } else {
           crossfadeLoadGeneration &+= 1
           let loadGeneration = crossfadeLoadGeneration
@@ -954,7 +956,6 @@ final class AudioKitPlayback {
           }
           return
         }
-        try completeCrossfadeHandoff(media: preparedMedia, url: url, resumeTime: resumeTime)
       } catch {
         releasePlayerMedia(crossfadePlayer)
         onPlaybackError?(error)
@@ -1059,6 +1060,18 @@ final class AudioKitPlayback {
     releasePlayerMedia(crossfadePlayer)
     pendingCrossfadeURL = nil
     onCrossfadeCompleted?()
+  }
+
+  private static func handoffMedia(
+    from preparedMedia: LoadedMedia,
+    sourceURL: URL
+  ) throws -> LoadedMedia {
+    if preparedMedia.1 != nil {
+      return preparedMedia
+    }
+    // AVAudioFile-backed preload state is consumed by the crossfade player.
+    // Reload a fresh media source for the new main player to avoid silent handoff at EOF.
+    return try loadMedia(url: sourceURL, intent: .immediatePlayback)
   }
 
   private static let silenceBuffer: AVAudioPCMBuffer? = {

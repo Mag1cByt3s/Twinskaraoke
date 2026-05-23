@@ -5,6 +5,7 @@ import MediaPlayer
 import SwiftUI
 
 #if canImport(UIKit)
+  import SDWebImage
   import UIKit
 #endif
 
@@ -372,7 +373,7 @@ class AudioPlayerManager: ObservableObject {
   private var originalQueue: [Song] = []
   private var cancellables = Set<AnyCancellable>()
   private var artworkURL: URL?
-  private var artworkTask: URLSessionDataTask?
+  private var artworkTask: (any SDWebImageOperation)?
   private var downloadSession: AudioDownloadSession?
   private var currentPlaybackURL: URL?
   private var instrumentalTask: Task<Void, Never>?
@@ -441,6 +442,7 @@ class AudioPlayerManager: ObservableObject {
       guard let self, !self.isRadioMode else { return }
       guard self.isPlaying else { return }
       guard !self.audioKit.isCrossfading else { return }
+      guard self.quickCutTimer == nil else { return }
       guard !self.suppressTransitionAfterSeek else { return }
       guard !self.isPlaybackEndedCallbackSuppressed else {
         DebugLogger.log("Ignoring suppressed playback-ended callback", category: .playback)
@@ -1739,13 +1741,20 @@ class AudioPlayerManager: ObservableObject {
         applyArtwork(cached, for: songID)
         return
       }
-    #endif
-    let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-      guard let self = self, let data = data,
-        self.currentSong?.id == songID
-      else { return }
-      #if canImport(UIKit)
-        guard let image = UIImage(data: data) else { return }
+      let pixelSize = NSValue(
+        cgSize: CGSize(
+          width: AudioPlayerManager.artworkMaxPixel,
+          height: AudioPlayerManager.artworkMaxPixel
+        )
+      )
+      artworkTask = SDWebImageManager.shared.loadImage(
+        with: url,
+        options: [.retryFailed, .scaleDownLargeImages],
+        context: [.imageThumbnailPixelSize: pixelSize],
+        progress: nil
+      ) { [weak self] image, _, _, _, _, _ in
+        guard let self, self.currentSong?.id == songID else { return }
+        guard let image else { return }
         let squareImage = image.croppedToSquare().downscaled(
           maxPixel: AudioPlayerManager.artworkMaxPixel)
         let cost = Int(
@@ -1753,10 +1762,8 @@ class AudioPlayerManager: ObservableObject {
             * squareImage.scale * 4)
         AudioPlayerManager.artworkCache.setObject(squareImage, forKey: url as NSURL, cost: cost)
         self.applyArtwork(squareImage, for: songID)
-      #endif
-    }
-    artworkTask = task
-    task.resume()
+      }
+    #endif
   }
   #if canImport(UIKit)
     private func applyArtwork(_ image: UIImage, for songID: String?) {
@@ -1902,6 +1909,11 @@ class AudioPlayerManager: ObservableObject {
         duration: plan.fadeDuration,
         ramp: plan.rampStyle
       )
+      let timeout = plan.fadeDuration + 3.0
+      DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+        guard let self, self.transitionCoordinator.state.isCrossfading else { return }
+        self.transitionCoordinatorDidFinish()
+      }
     }
   }
 

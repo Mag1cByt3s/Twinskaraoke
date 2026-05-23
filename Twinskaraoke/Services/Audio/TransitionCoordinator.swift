@@ -113,7 +113,7 @@ final class TransitionCoordinator {
       break
 
     case .ready(let plan):
-      if remaining <= plan.fadeDuration + 0.5 {
+      if remaining <= plan.fadeDuration + 0.1 {
         state = .crossfading(plan: plan)
         onBeginTransition?(plan)
       }
@@ -322,6 +322,7 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   private var fileHandle: FileHandle?
   private var task: URLSessionDataTask?
   private var session: URLSession?
+  private var didComplete = false
   var onCompletion: (() -> Void)?
 
   init(songID: String) {
@@ -335,7 +336,7 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   func start(from remoteURL: URL) {
     self.remoteURL = remoteURL
     if AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remoteURL) != nil {
-      onCompletion?()
+      finish()
       return
     }
     try? FileManager.default.removeItem(at: partialURL)
@@ -356,7 +357,11 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     task?.cancel()
     session?.invalidateAndCancel()
     fileHandle?.closeFile()
+    fileHandle = nil
+    task = nil
+    session = nil
     try? FileManager.default.removeItem(at: partialURL)
+    finish()
   }
 
   func urlSession(
@@ -375,6 +380,8 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     fileHandle?.closeFile()
     fileHandle = nil
     session.invalidateAndCancel()
+    self.task = nil
+    self.session = nil
     if error == nil,
       let http = task.response as? HTTPURLResponse, (200...299).contains(http.statusCode)
     {
@@ -384,6 +391,18 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     } else {
       try? FileManager.default.removeItem(at: partialURL)
     }
-    DispatchQueue.main.async { [weak self] in self?.onCompletion?() }
+    finish()
+  }
+
+  private func finish() {
+    guard !didComplete else { return }
+    didComplete = true
+    let completion = onCompletion
+    onCompletion = nil
+    if Thread.isMainThread {
+      completion?()
+    } else {
+      DispatchQueue.main.async { completion?() }
+    }
   }
 }
