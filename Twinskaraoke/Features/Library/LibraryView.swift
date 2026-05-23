@@ -82,6 +82,11 @@ struct LibraryView: View {
       }
       .listStyle(.insetGrouped)
       .navigationTitle("Library")
+      .refreshable {
+        favorites.loadIfNeeded()
+        viewModel.fetchPlaylists()
+        viewModel.fetchFavoriteSongs()
+      }
       .navigationDestination(for: Playlist.self) { playlist in
         PlaylistDetailView(playlist: playlist)
       }
@@ -90,7 +95,7 @@ struct LibraryView: View {
         viewModel.fetchPlaylists()
         viewModel.fetchFavoriteSongs()
       }
-      .onChange(of: favorites.favoriteIDs) { _ in
+      .onChange(of: favorites.favoriteIDs) { _, _ in
         viewModel.fetchFavoriteSongs()
       }
     }
@@ -198,7 +203,7 @@ struct PlaylistsGridScreen: View {
       }
     }
     .task { userManager.loadIfNeeded() }
-    .onChange(of: favorites.favoriteIDs) { _ in
+    .onChange(of: favorites.favoriteIDs) { _, _ in
       viewModel.fetchFavoriteSongs()
     }
     .sheet(isPresented: $showCreateSheet) {

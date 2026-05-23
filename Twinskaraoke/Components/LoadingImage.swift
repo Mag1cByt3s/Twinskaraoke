@@ -89,7 +89,7 @@ struct LoadingImage: View {
       .frame(width: geo.size.width, height: geo.size.height)
     }
     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    .onChange(of: url) { _ in fullLoaded = false }
+    .onChange(of: url) { fullLoaded = false }
   }
   private func thumbnailPixelSize(for displaySize: CGSize) -> CGSize {
     #if canImport(UIKit)

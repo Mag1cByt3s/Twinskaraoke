@@ -53,7 +53,7 @@ struct SearchView: View {
         placement: .navigationBarDrawer(displayMode: .always),
         prompt: "Songs, Artists, Lyrics, and More"
       )
-      .onChange(of: audioManager.currentSong?.id) { currentSongID in
+      .onChange(of: audioManager.currentSong?.id) { _, currentSongID in
         guard currentSongID == pendingSongID else { return }
         pendingSongID = nil
       }
@@ -191,6 +191,10 @@ private struct BrowseCategoriesView: View {
       }
       .padding(.top, AM.Spacing.s)
       .padding(.bottom, AM.Spacing.l)
+    }
+    .refreshable {
+      genresVM.loadIfNeeded()
+      topChartVM.loadIfNeeded()
     }
     .onAppear {
       genresVM.loadIfNeeded()

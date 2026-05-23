@@ -21,8 +21,8 @@ struct PlayerAmbientBackground: View {
     .animation(.easeInOut(duration: 0.4), value: artworkURL)
     .animation(.easeInOut(duration: 0.8), value: palette)
     .onAppear(perform: loadPalette)
-    .onChange(of: artworkURL) { _ in loadPalette() }
-    .onChange(of: isPlaying) { playing in
+    .onChange(of: artworkURL) { loadPalette() }
+    .onChange(of: isPlaying) { _, playing in
       if playing { startBreathing() }
     }
     .onAppear {

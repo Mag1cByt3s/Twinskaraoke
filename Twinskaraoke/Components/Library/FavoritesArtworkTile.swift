@@ -63,7 +63,7 @@ private struct PersonalPlaylistCover: View {
         loader.load(playlistID: playlist.id)
       }
     }
-    .onChange(of: playlist.id) { newID in
+    .onChange(of: playlist.id) { _, newID in
       loader.load(playlistID: newID)
     }
   }

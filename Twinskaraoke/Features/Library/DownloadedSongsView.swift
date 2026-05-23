@@ -56,8 +56,9 @@ struct DownloadedSongsView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(scrollOffset < -180 ? .visible : .hidden, for: .navigationBar)
     .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
+    .refreshable { refresh() }
     .onAppear { refresh() }
-    .onChange(of: downloads.downloadedIDs) { _ in refresh() }
+    .onChange(of: downloads.downloadedIDs) { refresh() }
   }
   private var emptyState: some View {
     VStack(spacing: 8) {

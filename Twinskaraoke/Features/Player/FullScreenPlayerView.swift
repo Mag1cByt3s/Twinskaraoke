@@ -59,7 +59,7 @@ struct FullScreenPlayerView: View {
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
     }
-    .onChange(of: audioManager.currentSong?.id) { newId in
+    .onChange(of: audioManager.currentSong?.id) { _, newId in
       showTranslatedLyrics = false
       showKaraokeControls = false
       if showLyrics, !audioManager.isRadioMode, let id = newId {
@@ -73,18 +73,18 @@ struct FullScreenPlayerView: View {
         }
       }
     }
-    .onChange(of: audioManager.upcomingSong?.id) { upcomingId in
+    .onChange(of: audioManager.upcomingSong?.id) { _, upcomingId in
       if showLyrics, !audioManager.isRadioMode, let id = upcomingId {
         upcomingLyricsViewModel.fetch(songID: id)
       }
     }
-    .onChange(of: audioManager.isRadioMode) { isRadio in
+    .onChange(of: audioManager.isRadioMode) { _, isRadio in
       if isRadio { showLyrics = false }
     }
-    .onChange(of: audioManager.showFullScreen) { isShown in
+    .onChange(of: audioManager.showFullScreen) { _, isShown in
       if !isShown { dismiss() }
     }
-    .onChange(of: audioManager.aiEnabled) { enabled in
+    .onChange(of: audioManager.aiEnabled) { _, enabled in
       if !enabled {
         showKaraokeControls = false
       }

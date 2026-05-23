@@ -68,6 +68,7 @@ struct PlaylistDetailView: View {
       }
     }
     .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
+    .refreshable { loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs) }
     .onAppear {
       if loader.songs == nil {
         showSongArtwork = PlaylistArtworkPreference.defaultValue(songCount: playlist.songCount)
@@ -75,7 +76,7 @@ struct PlaylistDetailView: View {
       loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
       RecentlyPlayedStore.shared.record(playlist)
     }
-    .onChange(of: favorites.favoriteIDs) { _ in
+    .onChange(of: favorites.favoriteIDs) { _, _ in
       guard playlist.isFavorites else { return }
       loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
     }

@@ -29,7 +29,7 @@ struct EqualizerBars: View {
       startDate = Date()
     }
     .onDisappear { isVisible = false }
-    .onChange(of: isAnimating) { new in
+    .onChange(of: isAnimating) { _, new in
       if new { startDate = Date() }
     }
   }
