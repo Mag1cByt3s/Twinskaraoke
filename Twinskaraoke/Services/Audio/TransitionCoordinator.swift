@@ -114,6 +114,9 @@ final class TransitionCoordinator {
 
     case .ready(let plan):
       if remaining <= plan.fadeDuration + 0.1 {
+        DebugLogger.log(
+          "Transition ready -> crossfading for next=\(plan.nextSong.id), remaining=\(remaining), fade=\(plan.fadeDuration), ramp=\(plan.rampStyle)",
+          category: .playback)
         state = .crossfading(plan: plan)
         onBeginTransition?(plan)
       }
@@ -128,6 +131,9 @@ final class TransitionCoordinator {
     autoMixEnabled: Bool, crossfadeSeconds: Double,
     aiEffectActive: Bool
   ) {
+    DebugLogger.log(
+      "Preparing transition current=\(currentSong.id) next=\(nextSong.id), autoMix=\(autoMixEnabled), crossfadeSeconds=\(crossfadeSeconds), aiEffectActive=\(aiEffectActive)",
+      category: .playback)
     state = .preparing(nextSong: nextSong)
     onUpcomingSongDetermined?(nextSong)
 
@@ -141,6 +147,9 @@ final class TransitionCoordinator {
       let nextURL = self.audioFileURL(for: nextSong)
 
       if nextURL == nil, let remoteURL = nextSong.audioURL {
+        DebugLogger.log(
+          "Predownloading next transition track \(nextSong.id) from \(remoteURL.lastPathComponent)",
+          category: .playback)
         await self.predownload(song: nextSong, from: remoteURL)
       }
 
@@ -190,10 +199,15 @@ final class TransitionCoordinator {
         fadeDuration: fadeDuration,
         rampStyle: rampStyle
       )
+      let outBPMText = outBPM.map { String(format: "%.2f", $0) } ?? "nil"
+      let inBPMText = inBPM.map { String(format: "%.2f", $0) } ?? "nil"
 
       await MainActor.run { [weak self] in
         guard let self else { return }
         guard case .preparing(let s) = self.state, s.id == nextSong.id else { return }
+        DebugLogger.log(
+          "Transition prepared next=\(nextSong.id), file=\(fileURL.lastPathComponent), outBPM=\(outBPMText), inBPM=\(inBPMText), fade=\(fadeDuration), ramp=\(rampStyle)",
+          category: .playback)
         self.state = .ready(plan: plan)
         if !aiEffectActive {
           self.audioKit?.preloadCrossfade(url: fileURL)
@@ -252,6 +266,9 @@ final class TransitionCoordinator {
       let session = PredownloadSession(songID: song.id)
       self.predownloadSession = session
       session.onCompletion = { [weak self] in
+        DebugLogger.log(
+          "Predownload finished for next transition track \(song.id)",
+          category: .playback)
         self?.predownloadSession = nil
         continuation.resume()
       }
@@ -260,12 +277,26 @@ final class TransitionCoordinator {
   }
 
   func reset() {
+    DebugLogger.log("Transition coordinator reset from \(stateDescription(state))", category: .playback)
     bpmTask?.cancel()
     bpmTask = nil
     predownloadSession?.cancel()
     predownloadSession = nil
     state = .idle
     onUpcomingSongDetermined?(nil)
+  }
+
+  private func stateDescription(_ state: State) -> String {
+    switch state {
+    case .idle:
+      return "idle"
+    case .preparing(let song):
+      return "preparing(\(song.id))"
+    case .ready(let plan):
+      return "ready(\(plan.nextSong.id), fade=\(plan.fadeDuration))"
+    case .crossfading(let plan):
+      return "crossfading(\(plan.nextSong.id), fade=\(plan.fadeDuration))"
+    }
   }
 
   private static func loadBPMCache() -> [String: BPMCacheEntry] {
@@ -336,9 +367,11 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   func start(from remoteURL: URL) {
     self.remoteURL = remoteURL
     if AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remoteURL) != nil {
+      DebugLogger.log("Predownload cache hit for \(songID)", category: .playback)
       finish()
       return
     }
+    DebugLogger.log("Predownload start for \(songID) from \(remoteURL.lastPathComponent)", category: .playback)
     try? FileManager.default.removeItem(at: partialURL)
     FileManager.default.createFile(atPath: partialURL.path, contents: nil)
     fileHandle = try? FileHandle(forWritingTo: partialURL)
@@ -354,6 +387,7 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   }
 
   func cancel() {
+    DebugLogger.log("Predownload cancelled for \(songID)", category: .playback)
     task?.cancel()
     session?.invalidateAndCancel()
     fileHandle?.closeFile()
@@ -385,10 +419,14 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     if error == nil,
       let http = task.response as? HTTPURLResponse, (200...299).contains(http.statusCode)
     {
+      DebugLogger.log("Predownload completed for \(songID) with HTTP \(http.statusCode)", category: .playback)
       try? FileManager.default.removeItem(at: finalURL)
       try? FileManager.default.moveItem(at: partialURL, to: finalURL)
       AudioCacheStore.writeMainSourceURL(remoteURL, for: songID)
     } else {
+      DebugLogger.log(
+        "Predownload failed for \(songID): \(error?.localizedDescription ?? "bad response")",
+        category: .playback)
       try? FileManager.default.removeItem(at: partialURL)
     }
     finish()

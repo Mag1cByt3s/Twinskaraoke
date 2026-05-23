@@ -749,6 +749,7 @@ final class AudioKitPlayback {
   func preloadCrossfade(url: URL) {
     guard !isCrossfading else { return }
     guard preloadedCrossfadeURL != url, crossfadePreloadURL != url else { return }
+    DebugLogger.log("Preloading crossfade media for \(url.lastPathComponent)", category: .playback)
     crossfadePreloadTask?.cancel()
     crossfadeLoadGeneration &+= 1
     let loadGeneration = crossfadeLoadGeneration
@@ -767,27 +768,34 @@ final class AudioKitPlayback {
         self.crossfadePreloadURL = nil
         self.preloadedCrossfadeURL = url
         self.crossfadePlayer.volume = 0
+        DebugLogger.log(
+          "Crossfade preload ready for \(url.lastPathComponent): \(Self.describeMedia(media))",
+          category: .playback)
       } catch is CancellationError {
         guard self.crossfadeLoadGeneration == loadGeneration else { return }
         self.crossfadePreloadTask = nil
         self.crossfadePreloadURL = nil
         self.preloadedCrossfadeURL = nil
         self.preparedCrossfadeMedia = nil
+        DebugLogger.log("Crossfade preload cancelled for \(url.lastPathComponent)", category: .playback)
       } catch {
         guard self.crossfadeLoadGeneration == loadGeneration else { return }
         self.crossfadePreloadTask = nil
         self.crossfadePreloadURL = nil
         self.preloadedCrossfadeURL = nil
         self.preparedCrossfadeMedia = nil
+        DebugLogger.log(
+          "Crossfade preload failed for \(url.lastPathComponent): \(error)",
+          category: .playback)
       }
     }
   }
 
   func beginCrossfade(url: URL, duration: TimeInterval, ramp: RampStyle) {
-    DebugLogger.log(
-      "Crossfade begin: \(url.lastPathComponent), duration=\(duration), ramp=\(ramp)",
-      category: .playback)
     let alreadyPreloaded = (preloadedCrossfadeURL == url)
+    DebugLogger.log(
+      "Crossfade begin: \(url.lastPathComponent), duration=\(duration), ramp=\(ramp), alreadyPreloaded=\(alreadyPreloaded), mode=\(mode)",
+      category: .playback)
     let retainedPreparedMedia = alreadyPreloaded ? preparedCrossfadeMedia : nil
 
     crossfadeTimer?.invalidate()
@@ -837,6 +845,9 @@ final class AudioKitPlayback {
         self.crossfadePlayer.volume = 0
         self.startEngineIfNeeded()
         self.crossfadePlayer.play()
+        DebugLogger.log(
+          "Crossfade playback started for \(url.lastPathComponent), handoffSource=\(Self.describeMedia(self.preparedCrossfadeMedia))",
+          category: .playback)
         let interval = Self.transitionTimerInterval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
           guard self != nil else { timer.invalidate(); return }
@@ -873,6 +884,7 @@ final class AudioKitPlayback {
       } catch is CancellationError {
         guard self.crossfadeLoadGeneration == loadGeneration else { return }
         self.crossfadePreloadTask = nil
+        DebugLogger.log("Crossfade begin cancelled for \(url.lastPathComponent)", category: .playback)
       } catch {
         guard self.suppressionToken == token, self.crossfadeLoadGeneration == loadGeneration else {
           return
@@ -880,6 +892,7 @@ final class AudioKitPlayback {
         self.crossfadePreloadTask = nil
         self.isCrossfading = false
         self.releasePlayerMedia(self.crossfadePlayer)
+        DebugLogger.log("Crossfade begin failed for \(url.lastPathComponent): \(error)", category: .playback)
         self.onPlaybackError?(error)
       }
     }
@@ -914,6 +927,9 @@ final class AudioKitPlayback {
     suppressionToken &+= 1
     let token = suppressionToken
     let preparedMedia = preparedCrossfadeMedia
+    DebugLogger.log(
+      "Finalizing crossfade pending=\(pendingCrossfadeURL?.lastPathComponent ?? "nil"), prepared=\(Self.describeMedia(preparedMedia)), resumeTime=\(crossfadePlayer.currentTime)",
+      category: .playback)
     cancelCrossfadeLoadTasks()
     releasePlayerMedia(mainPlayer, resetVolumeTo: 1)
     if mode == .aiStems {
@@ -929,6 +945,9 @@ final class AudioKitPlayback {
           let handoffMedia = try Self.handoffMedia(from: preparedMedia, sourceURL: url)
           try completeCrossfadeHandoff(media: handoffMedia, url: url, resumeTime: resumeTime)
         } else {
+          DebugLogger.log(
+            "Crossfade handoff requires reload for \(url.lastPathComponent)",
+            category: .playback)
           crossfadeLoadGeneration &+= 1
           let loadGeneration = crossfadeLoadGeneration
           let loadTask = Task.detached(priority: .utility) {
@@ -941,16 +960,21 @@ final class AudioKitPlayback {
               guard self.suppressionToken == token,
                 self.crossfadeLoadGeneration == loadGeneration
               else { return }
+              DebugLogger.log(
+                "Crossfade reload complete for \(url.lastPathComponent): \(Self.describeMedia(media))",
+                category: .playback)
               try self.completeCrossfadeHandoff(media: media, url: url, resumeTime: resumeTime)
             } catch is CancellationError {
               guard self.crossfadeLoadGeneration == loadGeneration else { return }
               self.crossfadeFinalizeTask = nil
+              DebugLogger.log("Crossfade reload cancelled for \(url.lastPathComponent)", category: .playback)
             } catch {
               guard self.suppressionToken == token,
                 self.crossfadeLoadGeneration == loadGeneration
               else { return }
               self.crossfadeFinalizeTask = nil
               self.releasePlayerMedia(self.crossfadePlayer)
+              DebugLogger.log("Crossfade reload failed for \(url.lastPathComponent): \(error)", category: .playback)
               self.onPlaybackError?(error)
             }
           }
@@ -1013,6 +1037,7 @@ final class AudioKitPlayback {
     if preloadedCrossfadeURL == url { return }
 
     if crossfadePreloadURL == url, let existingTask = crossfadePreloadTask {
+      DebugLogger.log("Awaiting in-flight crossfade preload for \(url.lastPathComponent)", category: .playback)
       let media = try await existingTask.value
       guard suppressionToken == token, crossfadeLoadGeneration == loadGeneration else { return }
       try applyMedia(media, to: crossfadePlayer)
@@ -1021,11 +1046,15 @@ final class AudioKitPlayback {
       crossfadePreloadURL = nil
       preloadedCrossfadeURL = url
       crossfadePlayer.volume = 0
+      DebugLogger.log(
+        "Reused in-flight preload for \(url.lastPathComponent): \(Self.describeMedia(media))",
+        category: .playback)
       return
     }
 
     crossfadePreloadTask?.cancel()
     crossfadePreloadURL = url
+    DebugLogger.log("Loading crossfade media on demand for \(url.lastPathComponent)", category: .playback)
     let loadTask = Task.detached(priority: .userInitiated) {
       try Self.loadMedia(url: url, intent: .prefetch)
     }
@@ -1038,6 +1067,9 @@ final class AudioKitPlayback {
     crossfadePreloadURL = nil
     preloadedCrossfadeURL = url
     crossfadePlayer.volume = 0
+    DebugLogger.log(
+      "On-demand crossfade media ready for \(url.lastPathComponent): \(Self.describeMedia(media))",
+      category: .playback)
   }
 
   private func completeCrossfadeHandoff(
@@ -1057,6 +1089,9 @@ final class AudioKitPlayback {
     resetInstrumentalEQ()
     safePlay(mainPlayer, from: resumeTime)
     currentURL = url
+    DebugLogger.log(
+      "Crossfade handoff complete url=\(url.lastPathComponent), media=\(Self.describeMedia(media)), resumeTime=\(resumeTime), mainTime=\(mainPlayer.currentTime), mainDuration=\(mainPlayer.duration)",
+      category: .playback)
     releasePlayerMedia(crossfadePlayer)
     pendingCrossfadeURL = nil
     onCrossfadeCompleted?()
@@ -1067,11 +1102,26 @@ final class AudioKitPlayback {
     sourceURL: URL
   ) throws -> LoadedMedia {
     if preparedMedia.1 != nil {
+      DebugLogger.log(
+        "Crossfade handoff reusing prepared buffer for \(sourceURL.lastPathComponent)",
+        category: .playback)
       return preparedMedia
     }
     // AVAudioFile-backed preload state is consumed by the crossfade player.
     // Reload a fresh media source for the new main player to avoid silent handoff at EOF.
+    DebugLogger.log(
+      "Crossfade handoff reloading file-backed media for \(sourceURL.lastPathComponent)",
+      category: .playback)
     return try loadMedia(url: sourceURL, intent: .immediatePlayback)
+  }
+
+  private static func describeMedia(_ media: LoadedMedia?) -> String {
+    guard let media else { return "none" }
+    if media.0 != nil { return "file" }
+    if let buffer = media.1 {
+      return "buffer(\(buffer.frameLength)f)"
+    }
+    return "empty"
   }
 
   private static let silenceBuffer: AVAudioPCMBuffer? = {

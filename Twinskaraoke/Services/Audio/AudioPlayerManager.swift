@@ -1897,6 +1897,9 @@ class AudioPlayerManager: ObservableObject {
     #endif
     configureAudioSessionCategory()
     activateAudioSession()
+    DebugLogger.log(
+      "Transition begin next=\(plan.nextSong.id), file=\(plan.nextFileURL.lastPathComponent), fade=\(plan.fadeDuration), ramp=\(plan.rampStyle), streamMode=\(isStreamMode), aiEffectActive=\(anyAIEffectActive)",
+      category: .playback)
 
     if anyAIEffectActive {
       quickCutToNext(plan: plan)
@@ -1912,12 +1915,18 @@ class AudioPlayerManager: ObservableObject {
       let timeout = plan.fadeDuration + 3.0
       DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
         guard let self, self.transitionCoordinator.state.isCrossfading else { return }
+        DebugLogger.log(
+          "Transition timeout fallback fired for next=\(plan.nextSong.id), currentSong=\(self.currentSong?.id ?? "nil"), audioTime=\(self.audioKit.currentTime), isPlaying=\(self.isPlaying)",
+          category: .playback)
         self.transitionCoordinatorDidFinish()
       }
     }
   }
 
   private func quickCutToNext(plan: TransitionCoordinator.TransitionPlan) {
+    DebugLogger.log(
+      "Quick cut transition start next=\(plan.nextSong.id), fade=\(plan.fadeDuration)",
+      category: .playback)
     cancelQuickCutTimer(resetVolume: false)
     instrumentalTask?.cancel()
     instrumentalTask = nil
@@ -1949,6 +1958,7 @@ class AudioPlayerManager: ObservableObject {
           timer.invalidate()
           self.quickCutTimer = nil
           self.audioKit.setMasterVolume(1.0)
+          DebugLogger.log("Quick cut transition complete -> play(\(song.id))", category: .playback)
           self.transitionCoordinator.reset()
           self.play(song: song)
         }
@@ -1979,6 +1989,9 @@ class AudioPlayerManager: ObservableObject {
     upcomingSong = nil
     isPlaying = true
     isBuffering = false
+    DebugLogger.log(
+      "Transition complete next=\(song.id), audioURL=\(audioKit.currentURL?.lastPathComponent ?? "nil"), time=\(audioKit.currentTime), duration=\(audioKit.duration), playing=\(audioKit.isPlaying)",
+      category: .playback)
     updateNowPlayingInfo(reloadArtwork: true)
     transitionCoordinator.reset()
     if anyAIEffectActive {
