@@ -12,6 +12,14 @@ struct FullScreenPlayerView: View {
   @State private var showLyrics = false
   @State private var showKaraokeControls = false
   @State private var showTranslatedLyrics = false
+  @State private var showCoverArt = false
+  @State private var coverArtSaveStatus: CoverArtSaveStatus = .idle
+  @State private var easterEggImageURL: URL?
+  @State private var easterEggArtistName: String?
+  @State private var easterEggArtistLink: String?
+  @State private var coverArtArtistName: String?
+  @State private var coverArtArtistLink: String?
+  private enum CoverArtSaveStatus { case idle, saving, success, failed }
   @StateObject private var lyricsViewModel = LyricsViewModel()
   @StateObject private var upcomingLyricsViewModel = LyricsViewModel()
   var body: some View {
@@ -46,6 +54,23 @@ struct FullScreenPlayerView: View {
         .background(backgroundView(song: song))
       }
     }
+    .fullScreenCover(isPresented: $showCoverArt) {
+      if let song {
+        let isEasterEgg = easterEggImageURL != nil
+        ZoomableImageViewer(
+          url: easterEggImageURL ?? audioManager.displayImageURL(for: song),
+          lowResURL: nil,
+          onSave: { saveCoverArt(url: easterEggImageURL ?? audioManager.displayImageURL(for: song)) },
+          title: isEasterEgg ? easterEggArtistName : coverArtArtistName,
+          subtitle: isEasterEgg ? easterEggArtistLink : coverArtArtistLink
+        )
+        .onDisappear {
+          easterEggImageURL = nil
+          easterEggArtistName = nil
+          easterEggArtistLink = nil
+        }
+      }
+    }
     .sheet(isPresented: $showingQueue) {
       Group {
         if audioManager.isRadioMode {
@@ -62,6 +87,11 @@ struct FullScreenPlayerView: View {
     .onChange(of: audioManager.currentSong?.id) { _, newId in
       showTranslatedLyrics = false
       showKaraokeControls = false
+      coverArtArtistName = nil
+      coverArtArtistLink = nil
+      if let id = newId {
+        fetchCoverArtArtist(songID: id)
+      }
       if showLyrics, !audioManager.isRadioMode, let id = newId {
         if let prefetched = upcomingLyricsViewModel.lyrics.isEmpty
           ? nil : upcomingLyricsViewModel.lyrics,
@@ -89,7 +119,12 @@ struct FullScreenPlayerView: View {
         showKaraokeControls = false
       }
     }
-    .onAppear { favorites.loadIfNeeded() }
+    .onAppear {
+      favorites.loadIfNeeded()
+      if let id = audioManager.currentSong?.id {
+        fetchCoverArtArtist(songID: id)
+      }
+    }
   }
   @ViewBuilder
   private func musicLayout(song: Song, artSize: CGFloat) -> some View {
@@ -129,7 +164,7 @@ struct FullScreenPlayerView: View {
         } else {
           VStack(spacing: 0) {
             Spacer(minLength: 20)
-            PlayerArtworkView(song: song, size: artSize)
+            PlayerArtworkView(song: song, size: artSize, onTap: { handleCoverArtTap(song: song) })
             Spacer(minLength: 28)
             titleRow(song: song)
           }
@@ -327,5 +362,74 @@ struct FullScreenPlayerView: View {
     }
     .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.7))
     .disabled(lyricsViewModel.isLoading || lyricsViewModel.hasNoLyrics)
+  }
+
+  private func saveCoverArt(url: URL?) {
+    guard let url else { return }
+    URLSession.shared.dataTask(with: url) { data, _, _ in
+      DispatchQueue.main.async {
+        #if canImport(UIKit)
+          if let data, let image = UIImage(data: data) {
+            ImageSaver.shared.save(image: image) { _ in }
+          }
+        #endif
+      }
+    }.resume()
+  }
+
+  private func handleCoverArtTap(song: Song) {
+    guard DeveloperMode.shouldTriggerEasterEgg() else {
+      showCoverArt = true
+      return
+    }
+    let pageSize = 48
+    let urlString =
+      "\(StorageHost.api)/api/media/gallery?page=1&pageSize=\(pageSize)&search=&tag=Twins&sort=newest&hideWebM=false"
+    guard let apiURL = URL(string: urlString) else {
+      showCoverArt = true
+      return
+    }
+    var request = URLRequest(url: apiURL)
+    GuestIdentity.applyIfNeeded(to: &request)
+    URLSession.shared.dataTask(with: request) { data, _, _ in
+      DispatchQueue.main.async {
+        guard let data,
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let items = json["items"] as? [[String: Any]],
+          !items.isEmpty
+        else {
+          showCoverArt = true
+          return
+        }
+        let item = items.randomElement()!
+        if let path = item["absolutePath"] as? String {
+          easterEggImageURL = URL(string: StorageHost.images + path + "/quality=95")
+        } else if let urlStr = item["url"] as? String {
+          easterEggImageURL = URL(string: urlStr)
+        }
+        if let artist = item["artist"] as? [String: Any] {
+          easterEggArtistName = artist["name"] as? String
+          easterEggArtistLink = artist["socialLink"] as? String
+        }
+        showCoverArt = true
+      }
+    }.resume()
+  }
+
+  private func fetchCoverArtArtist(songID: String) {
+    guard let url = URL(string: "\(StorageHost.api)/api/songs/\(songID)") else { return }
+    var request = URLRequest(url: url)
+    GuestIdentity.applyIfNeeded(to: &request)
+    URLSession.shared.dataTask(with: request) { data, _, _ in
+      guard let data,
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let coverArt = json["coverArt"] as? [String: Any],
+        let artist = coverArt["artist"] as? [String: Any]
+      else { return }
+      DispatchQueue.main.async {
+        coverArtArtistName = artist["name"] as? String
+        coverArtArtistLink = artist["socialLink"] as? String
+      }
+    }.resume()
   }
 }

@@ -21,9 +21,12 @@ struct AboutView: View {
             .foregroundStyle(.secondary)
             .onTapGesture {
               versionTapCount += 1
-              if versionTapCount >= 10 {
-                versionTapCount = 0
+              if versionTapCount == 10 {
                 showEasterEgg = true
+              } else if versionTapCount >= 20 {
+                versionTapCount = 0
+                let newState = !DeveloperMode.isEnabled
+                DeveloperMode.isEnabled = newState
               }
             }
           Text("NEUROKARAOKE.COM • EVILKARAOKE.COM • TWINSKARAOKE.COM")

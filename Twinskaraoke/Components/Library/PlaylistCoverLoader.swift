@@ -35,30 +35,10 @@ final class PlaylistCoverLoader: ObservableObject {
        let url = playlist.imageURL {
       return url
     }
-    if let songs = try? decoder.decode([Song].self, from: data),
+    if let songs = SongPayloadDecoder.decodeSongs(from: data),
        let url = songs.first?.imageURL {
       return url
     }
-    if let wrapped = try? decoder.decode(PlaylistSongsResponse.self, from: data),
-       let url = wrapped.songs.first?.imageURL {
-      return url
-    }
     return nil
-  }
-}
-
-private struct PlaylistSongsResponse: Codable {
-  let songs: [Song]
-  enum CodingKeys: String, CodingKey { case items, songListDTOs, songs }
-  init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    if let v = try? c.decode([Song].self, forKey: .songListDTOs) { songs = v }
-    else if let v = try? c.decode([Song].self, forKey: .items) { songs = v }
-    else if let v = try? c.decode([Song].self, forKey: .songs) { songs = v }
-    else { songs = [] }
-  }
-  func encode(to encoder: Encoder) throws {
-    var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(songs, forKey: .songs)
   }
 }

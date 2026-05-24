@@ -39,13 +39,13 @@ struct PlaylistArtwork: View {
       } else if let url = playlist.imageURL {
         LoadingImage(url: url, cornerRadius: cornerRadius)
       } else {
-        PersonalPlaylistCover(playlist: playlist, cornerRadius: cornerRadius)
+        PlaylistCoverWithLoader(playlist: playlist, cornerRadius: cornerRadius)
       }
     }
   }
 }
 
-private struct PersonalPlaylistCover: View {
+private struct PlaylistCoverWithLoader: View {
   let playlist: Playlist
   let cornerRadius: CGFloat
   @StateObject private var loader = PlaylistCoverLoader()
@@ -59,9 +59,7 @@ private struct PersonalPlaylistCover: View {
       }
     }
     .onAppear {
-      if playlist.isPersonal {
-        loader.load(playlistID: playlist.id)
-      }
+      loader.load(playlistID: playlist.id)
     }
     .onChange(of: playlist.id) { _, newID in
       loader.load(playlistID: newID)

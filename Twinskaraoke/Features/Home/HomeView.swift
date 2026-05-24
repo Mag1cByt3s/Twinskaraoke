@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct HomeView: View {
@@ -18,7 +19,8 @@ struct HomeView: View {
                   title: "Top Picks",
                   playlists: viewModel.recentPlaylists,
                   isLoadingMore: viewModel.isLoadingMoreTopPicks,
-                  onAppearItem: { viewModel.loadMoreTopPicksIfNeeded(current: $0) }
+                  onAppearItem: { viewModel.loadMoreTopPicksIfNeeded(current: $0) },
+                  apiURL: { startIndex, pageSize in viewModel.topPicksURLForList(startIndex: startIndex, pageSize: pageSize) }
                 )
               }
               if !recentlyPlayed.playlists.isEmpty {
@@ -37,11 +39,6 @@ struct HomeView: View {
               if !viewModel.newReleases.isEmpty {
                 HomeSongSection(title: "New Releases", songs: viewModel.newReleases)
               }
-              HomePlaceholderSection(
-                title: "Stations for You",
-                tiles: HomePlaceholderTile.stations,
-                style: .station
-              )
               if !viewModel.trending.isEmpty {
                 HomeSongSection(title: "More to Explore", songs: viewModel.trending)
               }
@@ -64,9 +61,10 @@ struct PlaylistCarousel: View {
   let playlists: [Playlist]
   var isLoadingMore: Bool = false
   var onAppearItem: ((Playlist) -> Void)? = nil
+  var apiURL: ((Int, Int) -> String)? = nil
   var body: some View {
     VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader(title, destination: PlaylistListView(title: title, playlists: playlists))
+      AMSectionHeader(title, destination: PlaylistListView(title: title, playlists: playlists, apiURL: apiURL))
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
           ForEach(playlists) { playlist in
@@ -106,22 +104,38 @@ struct PlaylistCarousel: View {
 struct PlaylistListView: View {
   let title: String
   let playlists: [Playlist]
+  var apiURL: ((Int, Int) -> String)? = nil
   let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+  @StateObject private var loader = PlaylistListLoader()
+  private var allPlaylists: [Playlist] {
+    loader.playlists.isEmpty ? playlists : loader.playlists
+  }
   var body: some View {
     ScrollView {
       LazyVGrid(columns: cols, spacing: AM.Spacing.l) {
-        ForEach(playlists) { playlist in
+        ForEach(allPlaylists) { playlist in
           NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
             PlaylistGridCell(playlist: playlist)
           }
           .buttonStyle(PressableButtonStyle())
+          .onAppear { loader.loadMoreIfNeeded(current: playlist) }
         }
       }
       .padding(.horizontal, AM.Spacing.screenMargin)
       .padding(.vertical, AM.Spacing.m)
+      if loader.isLoadingMore {
+        LoadingIndicator(size: 32)
+          .frame(maxWidth: .infinity, alignment: .center)
+          .padding(.vertical, AM.Spacing.m)
+      }
     }
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      if let apiURL {
+        loader.bootstrap(initial: playlists, urlBuilder: apiURL)
+      }
+    }
   }
 }
 
@@ -171,30 +185,6 @@ struct HomeSongCard: View {
   }
 }
 
-struct HomePlaceholderTile: Identifiable {
-  let id = UUID()
-  let title: String
-  let subtitle: String
-  let gradient: [Color]
-  static let stations: [HomePlaceholderTile] = [
-    .init(
-      title: "Pop Station", subtitle: "Today's biggest hits",
-      gradient: [
-        Color(red: 0.90, green: 0.20, blue: 0.55), Color(red: 0.40, green: 0.05, blue: 0.30),
-      ]),
-    .init(
-      title: "Hip-Hop Station", subtitle: "Curated for you",
-      gradient: [
-        Color(red: 0.60, green: 0.30, blue: 0.95), Color(red: 0.20, green: 0.05, blue: 0.45),
-      ]),
-    .init(
-      title: "Chill Station", subtitle: "Easy listening",
-      gradient: [
-        Color(red: 0.10, green: 0.75, blue: 0.85), Color(red: 0.05, green: 0.30, blue: 0.45),
-      ]),
-  ]
-}
-
 private struct LatestSingleSection: View {
   let song: Song
   let context: [Song]
@@ -236,82 +226,6 @@ private struct LatestSingleSection: View {
       .buttonStyle(PressableButtonStyle())
       .padding(.horizontal, AM.Spacing.screenMargin)
     }
-  }
-}
-
-struct HomePlaceholderSection: View {
-  enum Style { case card, station }
-  let title: String
-  let tiles: [HomePlaceholderTile]
-  var style: Style = .card
-  var artworkOverride: ((HomePlaceholderTile) -> URL?)? = nil
-  var playlistForTile: ((HomePlaceholderTile) -> Playlist?)? = nil
-  var onTapTile: ((HomePlaceholderTile) -> Void)? = nil
-  var body: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader(title)
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
-          ForEach(tiles) { tile in
-            let artURL = artworkOverride?(tile) ?? nil
-            let playlist = playlistForTile?(tile) ?? nil
-            Group {
-              if let playlist {
-                NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-                  HomePlaceholderTileView(tile: tile, style: style, artworkURL: artURL)
-                }
-                .buttonStyle(PressableButtonStyle())
-              } else if let onTapTile {
-                Button {
-                  onTapTile(tile)
-                } label: {
-                  HomePlaceholderTileView(tile: tile, style: style, artworkURL: artURL)
-                }
-                .buttonStyle(PressableButtonStyle())
-              } else {
-                HomePlaceholderTileView(tile: tile, style: style, artworkURL: artURL)
-              }
-            }
-          }
-        }
-        .padding(.horizontal, AM.Spacing.screenMargin)
-      }
-    }
-  }
-}
-
-private struct HomePlaceholderTileView: View {
-  let tile: HomePlaceholderTile
-  let style: HomePlaceholderSection.Style
-  var artworkURL: URL? = nil
-  var body: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.s) {
-      ZStack(alignment: .bottomLeading) {
-        if let artworkURL {
-          LoadingImage(url: artworkURL, cornerRadius: 0, contentMode: .fill)
-        } else {
-          LinearGradient(colors: tile.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
-        if style == .station {
-          Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 28, weight: .medium))
-            .foregroundColor(.white.opacity(0.85))
-            .padding(AM.Spacing.m)
-        }
-      }
-      .frame(width: AM.Spacing.shelfTile, height: AM.Spacing.shelfTile)
-      .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
-      .amShadow(AM.Shadow.card)
-      Text(tile.title)
-        .font(AM.Font.tileTitle)
-        .foregroundColor(.primary)
-        .lineLimit(1)
-      Text(tile.subtitle)
-        .font(AM.Font.tileCaption)
-        .foregroundColor(.secondary)
-        .lineLimit(1)
-    }
-    .frame(width: AM.Spacing.shelfTile)
   }
 }
 
@@ -444,5 +358,69 @@ private struct BrowseScrollOffsetKey: PreferenceKey {
   static var defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
     value = nextValue()
+  }
+}
+
+final class PlaylistListLoader: ObservableObject {
+  @Published var playlists: [Playlist] = []
+  @Published var isLoadingMore = false
+  private var canLoadMore = true
+  private let pageSize = 25
+  private var urlBuilder: ((Int, Int) -> String)?
+
+  func bootstrap(initial: [Playlist], urlBuilder: @escaping (Int, Int) -> String) {
+    guard self.urlBuilder == nil else { return }
+    self.urlBuilder = urlBuilder
+    self.playlists = initial
+    self.canLoadMore = true
+  }
+
+  func loadMoreIfNeeded(current: Playlist) {
+    guard let idx = playlists.firstIndex(where: { $0.id == current.id }) else { return }
+    if idx >= playlists.count - 4 && !isLoadingMore && canLoadMore {
+      loadMore()
+    }
+  }
+
+  private func loadMore() {
+    guard let urlBuilder else { return }
+    isLoadingMore = true
+    let startIndex = playlists.count
+    let urlString = urlBuilder(startIndex, pageSize)
+    guard let url = URL(string: urlString) else {
+      isLoadingMore = false
+      return
+    }
+    var request = URLRequest(url: url)
+    if let token = UserDefaults.standard.string(forKey: "nk.token") {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    GuestIdentity.applyIfNeeded(to: &request)
+    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        let items = Self.decode(data: data)
+        if !items.isEmpty {
+          let existing = Set(self.playlists.map { $0.id })
+          self.playlists += items.filter { !existing.contains($0.id) }
+          self.canLoadMore = items.count >= self.pageSize
+        } else {
+          self.canLoadMore = false
+        }
+        self.isLoadingMore = false
+      }
+    }.resume()
+  }
+
+  private static func decode(data: Data?) -> [Playlist] {
+    guard let data else { return [] }
+    let decoder = JSONDecoder()
+    if let items = (try? decoder.decode(LossyArray<PlaylistListItem>.self, from: data))?.elements {
+      return items.map { $0.asPlaylist() }
+    }
+    if let items = try? decoder.decode([PlaylistListItem].self, from: data) {
+      return items.map { $0.asPlaylist() }
+    }
+    return []
   }
 }

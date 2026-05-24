@@ -138,11 +138,14 @@ struct ZoomableImageViewer: View {
   let url: URL?
   let lowResURL: URL?
   let onSave: () -> Void
+  var title: String?
+  var subtitle: String?
   @Environment(\.dismiss) private var dismiss
   @State private var scale: CGFloat = 1
   @State private var lastScale: CGFloat = 1
   @State private var offset: CGSize = .zero
   @State private var lastOffset: CGSize = .zero
+  @State private var showOverlay = true
   var body: some View {
     ZStack {
       Color.black.ignoresSafeArea()
@@ -191,32 +194,68 @@ struct ZoomableImageViewer: View {
             }
           }
         }
-      }
-      VStack {
-        HStack {
-          Button {
-            dismiss()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.system(size: 16, weight: .semibold))
-              .foregroundColor(.white.opacity(0.85))
-              .frame(width: 36, height: 36)
-          }
-          .modifier(GlassCircle())
-          Spacer()
-          Button {
-            onSave()
-          } label: {
-            Image(systemName: "square.and.arrow.down")
-              .font(.system(size: 16, weight: .semibold))
-              .foregroundColor(.white)
-              .frame(width: 36, height: 36)
-              .background(Color.black.opacity(0.4))
-              .clipShape(Circle())
+        .onTapGesture(count: 1) {
+          withAnimation(.easeInOut(duration: 0.25)) {
+            showOverlay.toggle()
           }
         }
-        .padding()
-        Spacer()
+      }
+      if showOverlay {
+        VStack {
+          HStack {
+            Button {
+              dismiss()
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 36, height: 36)
+            }
+            .modifier(GlassCircle())
+            Spacer()
+            Button {
+              onSave()
+            } label: {
+              Image(systemName: "square.and.arrow.down")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .background(Color.black.opacity(0.4))
+                .clipShape(Circle())
+            }
+          }
+          .padding()
+          Spacer()
+          if title != nil || subtitle != nil {
+            VStack(spacing: 4) {
+              if let title {
+                Text(title)
+                  .font(.system(size: 17, weight: .bold))
+                  .foregroundColor(.white)
+                  .lineLimit(2)
+                  .multilineTextAlignment(.center)
+              }
+              if let subtitle {
+                Text(subtitle)
+                  .font(.system(size: 14))
+                  .foregroundColor(.white.opacity(0.7))
+                  .lineLimit(1)
+              }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+              LinearGradient(
+                colors: [.clear, .black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+              )
+              .ignoresSafeArea()
+            )
+          }
+        }
+        .transition(.opacity)
       }
     }
     .statusBarHidden(true)

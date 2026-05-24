@@ -1113,8 +1113,6 @@ final class AudioKitPlayback {
         category: .playback)
       return try loadMedia(url: sourceURL, intent: .immediatePlayback)
     }
-    // AVAudioFile-backed preload state is consumed by the crossfade player.
-    // Reload a fresh media source for the new main player to avoid silent handoff at EOF.
     DebugLogger.log(
       "Crossfade handoff reloading file-backed media for \(sourceURL.lastPathComponent)",
       category: .playback)

@@ -7,7 +7,6 @@ struct SettingsView: View {
   @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
   @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @AppStorage("nk.debugLogging") private var debugLogging: Bool = false
   @State private var pendingAction: SettingsDestructiveAction?
   @State private var showAutoAnalyzeAlert = false
   var body: some View {
@@ -91,14 +90,13 @@ struct SettingsView: View {
           .tint(.appAccent)
       }
       storageSection
-      Section("Developer") {
-        Toggle("Debug Logging", isOn: $debugLogging)
-          .tint(.appAccent)
-        if debugLogging {
-          Button("Export Debug Logs") {
-            exportDebugLogs()
+      if DeveloperMode.isEnabled {
+        Section {
+          NavigationLink {
+            DeveloperMenuView()
+          } label: {
+            Text("Developer")
           }
-          .foregroundStyle(Color.appAccent)
         }
       }
     }
@@ -121,16 +119,16 @@ struct SettingsView: View {
       Text(action.message)
     }
     .alert(
-      "Auto-Analyze During Playback",
+      "Turn on auto-analyze during playback?",
       isPresented: $showAutoAnalyzeAlert
     ) {
-      Button("Enable") {
+      Button("Turn On") {
         audioManager.aiAutoAnalyze = true
       }
       Button("Cancel", role: .cancel) {}
     } message: {
       Text(
-        "Music is pre-analyzed in the background so you can instantly switch between karaoke modes without processing delay.\n\nUses additional battery and processing power during playback. Separated stems are cached within the 4 GB music cache limit."
+        "Songs will be analyzed in the background so karaoke modes can switch instantly during playback.\n\nThis uses more battery and processing power. Separated stems count toward the 4 GB music cache limit."
       )
     }
   }
@@ -327,20 +325,6 @@ struct SettingsView: View {
     }
   }
 
-  private func exportDebugLogs() {
-    #if canImport(UIKit)
-      let logs = DebugLogger.exportLogs()
-      let av = UIActivityViewController(activityItems: [logs], applicationActivities: nil)
-      if let windowScene = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .first(where: { $0.activationState == .foregroundActive }),
-        let root = windowScene.keyWindow?.rootViewController
-      {
-        root.present(av, animated: true)
-      }
-    #endif
-  }
-
   private var aiStrengthLabel: String {
     let s = audioManager.aiVocalStrength
     if s >= 0.99 { return "Maximum" }
@@ -498,22 +482,22 @@ private enum SettingsDestructiveAction {
     case .clearImageCache: return "Clear image cache?"
     case .clearMusicCache: return "Clear music cache?"
     case .clearLyricsCache: return "Clear lyrics cache?"
-    case .clearRecentlyPlayed: return "Clear recently played?"
+    case .clearRecentlyPlayed: return "Clear recently played history?"
     }
   }
   var message: String {
     switch self {
     case .removeDownloads:
-      return "All offline downloads will be deleted from this device."
+      return "All offline downloads on this device will be removed."
     case .clearImageCache:
-      return "Cached artwork and images will be removed. They will redownload as you use the app."
+      return "Cached artwork and images will be removed. They will download again as you use the app."
     case .clearMusicCache:
       return
-        "Cached audio files and AI stems will be removed. Songs will re-buffer as you play them."
+        "Cached audio files and AI stems will be removed. Songs may buffer again the next time you play them."
     case .clearLyricsCache:
-      return "Cached lyrics and translated lyrics will be removed."
+      return "Cached lyrics and lyric translations will be removed."
     case .clearRecentlyPlayed:
-      return "Your recently played history will be cleared."
+      return "Your recently played history will be removed from this device."
     }
   }
   var actionLabel: String {

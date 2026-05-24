@@ -56,9 +56,9 @@ final class CacheManager: ObservableObject {
     imageCacheSize = computeImageCacheSize()
   }
 
-  func enforceMusicCacheLimits() {
+  func enforceMusicCacheLimits(excluding songIDs: Set<String> = []) {
     let musicDir = AudioPlayerManager.audioCacheDir
-    evictOldestSongDirectories(in: musicDir, limit: Self.musicCacheLimit)
+    evictOldestSongDirectories(in: musicDir, limit: Self.musicCacheLimit, excluding: songIDs)
     musicCacheSize = computeMusicCacheSize()
   }
 
@@ -182,7 +182,7 @@ final class CacheManager: ObservableObject {
       category: .cache)
   }
 
-  private func evictOldestSongDirectories(in directory: URL, limit: UInt64) {
+  private func evictOldestSongDirectories(in directory: URL, limit: UInt64, excluding protectedIDs: Set<String> = []) {
     guard fm.fileExists(atPath: directory.path) else { return }
 
     var currentSize = directorySize(at: directory)
@@ -194,6 +194,7 @@ final class CacheManager: ObservableObject {
 
     for folder in songDirectoriesOrderedByDate(in: directory) {
       guard currentSize > limit else { break }
+      if protectedIDs.contains(folder.lastPathComponent) { continue }
       let size = directorySize(at: folder)
       try? fm.removeItem(at: folder)
       currentSize = currentSize > size ? currentSize - size : 0
@@ -223,7 +224,7 @@ final class CacheManager: ObservableObject {
     return count
   }
 
-  private func pruneOldSongDirectories(in directory: URL, olderThan cutoff: Date) -> Int {
+  private func pruneOldSongDirectories(in directory: URL, olderThan cutoff: Date, excluding protectedIDs: Set<String> = []) -> Int {
     guard fm.fileExists(atPath: directory.path) else { return 0 }
     guard
       let entries = try? fm.contentsOfDirectory(
@@ -236,6 +237,7 @@ final class CacheManager: ObservableObject {
 
     var count = 0
     for folder in entries {
+      if protectedIDs.contains(folder.lastPathComponent) { continue }
       guard let values = try? folder.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey]),
         values.isDirectory == true,
         let modified = values.contentModificationDate,

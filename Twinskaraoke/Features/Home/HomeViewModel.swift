@@ -19,7 +19,7 @@ final class HomeViewModel: ObservableObject {
   private var hasLoaded = false
   private var topPicksPage = 0
   private let topPicksPageSize = 12
-  private var topPicksSource: TopPicksSource = .publicPlaylists
+  private var topPicksSource: TopPicksSource = .setlists
 
   init() {
     fetchHomeData()
@@ -76,6 +76,15 @@ final class HomeViewModel: ObservableObject {
       loadMoreTopPicks()
     }
   }
+
+  func topPicksURLForList(startIndex: Int, pageSize: Int) -> String {
+    switch topPicksSource {
+    case .setlists:
+      return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(pageSize)&search=&sortBy=&sortDescending=True&isSetlist=True&year=0"
+    case .publicPlaylists:
+      return "\(StorageHost.api)/api/playlist/public?startIndex=\(startIndex)&pageSize=\(pageSize)&search=&sortBy=UpdatedAt&sortDescending=True"
+    }
+  }
   private func loadMoreTopPicks() {
     isLoadingMoreTopPicks = true
     let startIndex = topPicksPage * topPicksPageSize
@@ -97,16 +106,16 @@ final class HomeViewModel: ObservableObject {
     }
   }
   private func fetchTopPicks(startIndex: Int, completion: @escaping ([Playlist]?) -> Void) {
-    fetchData(urlString: topPicksURL(startIndex: startIndex, source: .publicPlaylists)) {
+    fetchData(urlString: topPicksURL(startIndex: startIndex, source: .setlists)) {
       [weak self] (response: LossyArray<PlaylistListItem>?) in
       let playlists = response?.elements.map { $0.asPlaylist() } ?? []
       if !playlists.isEmpty {
-        self?.topPicksSource = .publicPlaylists
+        self?.topPicksSource = .setlists
         completion(playlists)
       } else {
-        self?.topPicksSource = .setlists
+        self?.topPicksSource = .publicPlaylists
         self?.fetchData(
-          urlString: self?.topPicksURL(startIndex: startIndex, source: .setlists) ?? ""
+          urlString: self?.topPicksURL(startIndex: startIndex, source: .publicPlaylists) ?? ""
         ) { (fallback: LossyArray<PlaylistListItem>?) in
           completion(fallback?.elements.map { $0.asPlaylist() })
         }
@@ -117,7 +126,7 @@ final class HomeViewModel: ObservableObject {
   private func topPicksURL(startIndex: Int, source: TopPicksSource) -> String {
     switch source {
     case .publicPlaylists:
-      return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=False&isSetlist=False&year=0"
+      return "\(StorageHost.api)/api/playlist/public?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=UpdatedAt&sortDescending=True"
     case .setlists:
       return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=True&isSetlist=True&year=0"
     }

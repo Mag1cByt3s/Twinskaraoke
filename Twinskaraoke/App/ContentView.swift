@@ -11,10 +11,23 @@ struct ContentView: View {
 
 private struct PopupHostView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @State private var showCaptcha = false
   var body: some View {
     rootTabs
       .modifier(PopupModifier())
       .environmentObject(audioManager)
+      .onAppear {
+        if DeveloperMode.shouldTriggerEasterEgg() {
+          showCaptcha = true
+        }
+      }
+      .fullScreenCover(isPresented: $showCaptcha) {
+        CaptchaWebView(
+          url: URL(string: "https://twinskaraoke.evilneur.org")!,
+          onClose: { showCaptcha = false }
+        )
+        .ignoresSafeArea()
+      }
   }
   private var rootTabs: some View {
     TabView {

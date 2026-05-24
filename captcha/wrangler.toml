@@ -1,0 +1,9 @@
+name = "captcha"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+CF_TURNSTILE_SITEKEY = ""
+GOOGLE_RECAPTCHA_SITEKEY = ""
+CF_TURNSTILE_SECRET = ""
+GOOGLE_RECAPTCHA_SECRET = ""

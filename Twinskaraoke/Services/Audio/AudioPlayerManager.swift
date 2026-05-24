@@ -340,6 +340,7 @@ class AudioPlayerManager: ObservableObject {
     didSet {
       UserDefaults.standard.set(autoMixEnabled, forKey: "nk.autoMixEnabled")
       if autoMixEnabled && crossfadeEnabled { crossfadeEnabled = false }
+      if !autoMixEnabled && !crossfadeEnabled { cancelPendingTransitionWork() }
     }
   }
   @Published var crossfadeEnabled: Bool =
@@ -348,6 +349,7 @@ class AudioPlayerManager: ObservableObject {
     didSet {
       UserDefaults.standard.set(crossfadeEnabled, forKey: "nk.crossfadeEnabled")
       if crossfadeEnabled && autoMixEnabled { autoMixEnabled = false }
+      if !crossfadeEnabled && !autoMixEnabled { cancelPendingTransitionWork() }
     }
   }
   @Published var crossfadeSeconds: Double = AudioPlayerManager.loadCrossfadeSeconds() {
@@ -562,6 +564,18 @@ class AudioPlayerManager: ObservableObject {
     return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL)
   }
 
+  private func activeSongIDs() -> Set<String> {
+    var ids = Set<String>()
+    if let id = currentSong?.id { ids.insert(id) }
+    if let id = upcomingSong?.id { ids.insert(id) }
+    if let current = currentSong, let idx = queue.firstIndex(where: { $0.id == current.id }),
+      idx + 1 < queue.count
+    {
+      ids.insert(queue[idx + 1].id)
+    }
+    return ids
+  }
+
   private func activePlaybackTime(for song: Song? = nil) -> TimeInterval {
     if isStreamMode {
       let streamTime = streamPlayer?.currentTime().seconds ?? .nan
@@ -669,6 +683,7 @@ class AudioPlayerManager: ObservableObject {
     guard let stems = VocalSeparator.shared.cachedStems(forSongID: song.id) else { return }
 
     preparedStemSongID = song.id
+    guard audioKit.currentURL != nil else { return }
     switchActivePlaybackToStems(for: song, stems: stems, sourceURL: sourceURL)
     guard audioKit.mode == .aiStems else { return }
     applyAIMixVolumes()
@@ -903,7 +918,9 @@ class AudioPlayerManager: ObservableObject {
     reportPlayCount(for: song.id)
     enrichSongMetadataIfNeeded(for: song)
     if previousSongID != song.id {
-      scheduleIdleCacheCompression(excluding: Set([song.id]))
+      var excludeIDs = activeSongIDs()
+      excludeIDs.insert(song.id)
+      scheduleIdleCacheCompression(excluding: excludeIDs)
     }
     preparedStemSongID = nil
     if previousSongID != song.id && aiEnabled && aiAutoAnalyze {
@@ -989,14 +1006,15 @@ class AudioPlayerManager: ObservableObject {
       self.downloadSession = nil
       guard let url else { return }
       CacheManager.shared.recordAccess(for: url)
-      CacheManager.shared.enforceMusicCacheLimits()
+      let protectedIDs = self.activeSongIDs()
+      CacheManager.shared.enforceMusicCacheLimits(excluding: protectedIDs)
       guard let currentSong = self.currentSong, currentSong.id == songID else { return }
       guard
         let playableURL = AudioCacheStore.playableMainURL(
           for: songID,
           expectedRemoteURL: currentSong.audioURL)
       else { return }
-      if self.currentPlaybackURL?.path == songFiles.mainPartial.path {
+      if self.isStreamMode, self.currentPlaybackURL?.path != playableURL.path {
         let resumeAt = max(0, self.streamPlayer?.currentTime().seconds ?? 0)
         self.startStreamPlayback(url: playableURL, songID: songID, startAt: resumeAt)
       }
@@ -1334,6 +1352,8 @@ class AudioPlayerManager: ObservableObject {
     ) { [weak self] _ in
       guard let self, self.isStreamMode, !self.isRadioMode else { return }
       guard self.isPlaying else { return }
+      guard !self.audioKit.isCrossfading else { return }
+      guard self.quickCutTimer == nil else { return }
       guard !self.suppressTransitionAfterSeek else { return }
       guard !self.isPlaybackEndedCallbackSuppressed else { return }
       self.playNextOrRandom()
@@ -2036,7 +2056,9 @@ class AudioPlayerManager: ObservableObject {
     preparedStemSongID = nil
     if currentSong?.id != song.id {
       progress = 0
-      scheduleIdleCacheCompression(excluding: Set([song.id]))
+      var excludeIDs = activeSongIDs()
+      excludeIDs.insert(song.id)
+      scheduleIdleCacheCompression(excluding: excludeIDs)
       withAnimation(.easeInOut(duration: 0.32)) {
         currentSong = song
       }

@@ -131,7 +131,7 @@ struct AccountView: View {
           auth.logout()
         }
       } message: {
-        Text("You'll need to sign in again to access your library.")
+        Text("You'll need to sign in again to access your library and account features.")
       }
     }
   }

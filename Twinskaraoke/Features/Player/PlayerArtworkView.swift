@@ -4,6 +4,7 @@ struct PlayerArtworkView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
   let song: Song
   let size: CGFloat
+  var onTap: (() -> Void)?
   var body: some View {
     ZStack {
       LoadingImage(
@@ -24,5 +25,6 @@ struct PlayerArtworkView: View {
       }
     }
     .frame(maxWidth: .infinity)
+    .onTapGesture { onTap?() }
   }
 }
