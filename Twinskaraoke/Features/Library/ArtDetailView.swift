@@ -155,20 +155,13 @@ struct ZoomableImageViewer: View {
         )
         .scaleEffect(scale)
         .offset(offset)
-        .gesture(
-          MagnificationGesture()
-            .onChanged { value in
-              scale = max(1, min(5, lastScale * value))
-            }
-            .onEnded { _ in
-              lastScale = scale
-              if scale <= 1 {
-                withAnimation(.spring()) {
-                  offset = .zero
-                  lastOffset = .zero
-                }
-              }
-            }
+        .modifier(
+          PinchToZoomModifier(
+            scale: $scale,
+            lastScale: $lastScale,
+            offset: $offset,
+            lastOffset: $lastOffset
+          )
         )
         .simultaneousGesture(
           DragGesture()
@@ -258,5 +251,47 @@ struct ZoomableImageViewer: View {
       }
     }
     .statusBarHidden(true)
+  }
+}
+
+private struct PinchToZoomModifier: ViewModifier {
+  @Binding var scale: CGFloat
+  @Binding var lastScale: CGFloat
+  @Binding var offset: CGSize
+  @Binding var lastOffset: CGSize
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if #available(iOS 17.0, *) {
+      content.gesture(
+        MagnifyGesture()
+          .onChanged { value in
+            scale = max(1, min(5, lastScale * value.magnification))
+          }
+          .onEnded { _ in
+            finishZoom()
+          }
+      )
+    } else {
+      content.gesture(
+        MagnificationGesture()
+          .onChanged { value in
+            scale = max(1, min(5, lastScale * value))
+          }
+          .onEnded { _ in
+            finishZoom()
+          }
+      )
+    }
+  }
+
+  private func finishZoom() {
+    lastScale = scale
+    if scale <= 1 {
+      withAnimation(.spring()) {
+        offset = .zero
+        lastOffset = .zero
+      }
+    }
   }
 }

@@ -29,14 +29,14 @@ final class TransitionCoordinator {
     let outgoingBPM: Double?
     let incomingBPM: Double?
     let fadeDuration: TimeInterval
-    let rampStyle: AudioKitPlayback.RampStyle
+    let rampStyle: AVEnginePlayback.RampStyle
   }
 
   private(set) var state: State = .idle
   private var bpmTask: Task<Void, Never>?
   private var predownloadSession: PredownloadSession?
 
-  weak var audioKit: AudioKitPlayback?
+  weak var avEngine: AVEnginePlayback?
 
   var onBeginTransition: ((TransitionPlan) -> Void)?
 
@@ -167,7 +167,7 @@ final class TransitionCoordinator {
       if Task.isCancelled { return }
 
       let fadeDuration: TimeInterval
-      let rampStyle: AudioKitPlayback.RampStyle
+      let rampStyle: AVEnginePlayback.RampStyle
 
       if autoMixEnabled {
         if aiEffectActive {
@@ -207,7 +207,7 @@ final class TransitionCoordinator {
           category: .playback)
         self.state = .ready(plan: plan)
         if !aiEffectActive {
-          self.audioKit?.preloadCrossfade(url: fileURL)
+          self.avEngine?.preloadCrossfade(url: fileURL)
         }
       }
     }
@@ -225,7 +225,7 @@ final class TransitionCoordinator {
 
   static func computeFade(
     outBPM: Double?, inBPM: Double?
-  ) -> (duration: TimeInterval, style: AudioKitPlayback.RampStyle) {
+  ) -> (duration: TimeInterval, style: AVEnginePlayback.RampStyle) {
     guard let out = outBPM, let inB = inBPM else {
       return (6.0, .equalPower)  // fallback when BPM unknown
     }
@@ -249,7 +249,8 @@ final class TransitionCoordinator {
     if let downloaded = DownloadManager.shared.playableURL(for: song) {
       return downloaded
     }
-    return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL)
+    let expectedDuration = song.duration > 0 ? TimeInterval(song.duration) : nil
+    return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL, expectedDuration: expectedDuration)
   }
 
   private func nextSongInQueue(current: Song, queue: [Song], repeatMode: RepeatMode) -> Song? {
@@ -261,7 +262,7 @@ final class TransitionCoordinator {
 
   private func predownload(song: Song, from remoteURL: URL) async {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      let session = PredownloadSession(songID: song.id)
+      let session = PredownloadSession(songID: song.id, expectedDuration: song.duration > 0 ? TimeInterval(song.duration) : nil)
       self.predownloadSession = session
       session.onCompletion = { [weak self] in
         DebugLogger.log(
@@ -345,6 +346,7 @@ final class TransitionCoordinator {
 
 private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   private let songID: String
+  private let expectedDuration: TimeInterval?
   private let partialURL: URL
   private let finalURL: URL
   private var remoteURL: URL?
@@ -354,8 +356,9 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   private var didComplete = false
   var onCompletion: (() -> Void)?
 
-  init(songID: String) {
+  init(songID: String, expectedDuration: TimeInterval?) {
     self.songID = songID
+    self.expectedDuration = expectedDuration
     let songFiles = AudioCacheStore.files(for: songID)
     self.finalURL = songFiles.main
     self.partialURL = songFiles.mainPartial
@@ -364,7 +367,7 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
 
   func start(from remoteURL: URL) {
     self.remoteURL = remoteURL
-    if AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remoteURL) != nil {
+    if AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remoteURL, expectedDuration: expectedDuration) != nil {
       DebugLogger.log("Predownload cache hit for \(songID)", category: .playback)
       finish()
       return

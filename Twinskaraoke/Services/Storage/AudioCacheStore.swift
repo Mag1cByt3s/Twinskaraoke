@@ -1,3 +1,4 @@
+import AVFoundation
 import Compression
 import Foundation
 
@@ -42,8 +43,8 @@ nonisolated enum AudioCacheStore {
     return directory
   }
 
-  static func playableMainURL(for songID: String, expectedRemoteURL: URL? = nil) -> URL? {
-    guard validateMainAudio(for: songID, expectedRemoteURL: expectedRemoteURL) else { return nil }
+  static func playableMainURL(for songID: String, expectedRemoteURL: URL? = nil, expectedDuration: TimeInterval? = nil) -> URL? {
+    guard validateMainAudio(for: songID, expectedRemoteURL: expectedRemoteURL, expectedDuration: expectedDuration) else { return nil }
     return playableURL(for: files(for: songID).main)
   }
 
@@ -57,8 +58,8 @@ nonisolated enum AudioCacheStore {
     return CachedStems(vocals: vocals, instruments: instruments, startOffset: startOffset)
   }
 
-  static func hasCachedMainAudio(for songID: String, expectedRemoteURL: URL? = nil) -> Bool {
-    validateMainAudio(for: songID, expectedRemoteURL: expectedRemoteURL)
+  static func hasCachedMainAudio(for songID: String, expectedRemoteURL: URL? = nil, expectedDuration: TimeInterval? = nil) -> Bool {
+    validateMainAudio(for: songID, expectedRemoteURL: expectedRemoteURL, expectedDuration: expectedDuration)
   }
 
   static func hasCachedStems(for songID: String) -> Bool {
@@ -186,7 +187,7 @@ nonisolated enum AudioCacheStore {
     fm.fileExists(atPath: url.path) || fm.fileExists(atPath: compressedURL(for: url).path)
   }
 
-  private static func validateMainAudio(for songID: String, expectedRemoteURL: URL?) -> Bool {
+  private static func validateMainAudio(for songID: String, expectedRemoteURL: URL?, expectedDuration: TimeInterval?) -> Bool {
     let songFiles = files(for: songID)
     guard hasCachedPlayableFile(at: songFiles.main) else { return false }
     guard let expectedRemoteURL else { return true }
@@ -204,6 +205,18 @@ nonisolated enum AudioCacheStore {
       removeSongCache(for: songID)
       return false
     }
+    if let expectedDuration, expectedDuration > 0 {
+      guard let actualURL = playableURL(for: songFiles.main) else { return false }
+      let actualDuration = getAudioDuration(at: actualURL)
+      let tolerance: TimeInterval = 2.0
+      if actualDuration > 0, abs(actualDuration - expectedDuration) > tolerance {
+        DebugLogger.log(
+          "Discarding audio cache for \(songID) due to duration mismatch: expected \(expectedDuration)s, got \(actualDuration)s",
+          category: .cache)
+        removeSongCache(for: songID)
+        return false
+      }
+    }
     return true
   }
 
@@ -216,8 +229,16 @@ nonisolated enum AudioCacheStore {
     return value.isEmpty ? nil : value
   }
 
+  private static let minimumPlayableFileSize = 4096
+
   private static func playableURL(for url: URL) -> URL? {
     if fm.fileExists(atPath: url.path) {
+      if !isValidAudioFile(at: url) {
+        DebugLogger.log("Removing broken cache file: \(url.lastPathComponent)", category: .cache)
+        try? fm.removeItem(at: url)
+        try? fm.removeItem(at: compressedURL(for: url))
+        return nil
+      }
       touch(url)
       return url
     }
@@ -225,13 +246,33 @@ nonisolated enum AudioCacheStore {
     guard fm.fileExists(atPath: compressed.path) else { return nil }
     do {
       try decompressFileIfNeeded(from: compressed, to: url)
+      if !isValidAudioFile(at: url) {
+        DebugLogger.log("Removing broken compressed cache: \(url.lastPathComponent)", category: .cache)
+        try? fm.removeItem(at: url)
+        try? fm.removeItem(at: compressed)
+        return nil
+      }
       touch(url)
       return url
     } catch {
       DebugLogger.log("Audio cache decompress failed for \(url.lastPathComponent): \(error)", category: .cache)
       try? fm.removeItem(at: url)
+      try? fm.removeItem(at: compressed)
       return nil
     }
+  }
+
+  private static func isValidAudioFile(at url: URL) -> Bool {
+    guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+          size >= minimumPlayableFileSize else { return false }
+    return AVEnginePlayback.hasValidAudioHeader(at: url)
+  }
+
+  private static func getAudioDuration(at url: URL) -> TimeInterval {
+    let asset = AVURLAsset(url: url)
+    let duration = asset.duration
+    guard duration.isValid, !duration.isIndefinite else { return 0 }
+    return CMTimeGetSeconds(duration)
   }
 
   private static func compressPlayableFileIfNeeded(at url: URL) {
@@ -239,13 +280,23 @@ nonisolated enum AudioCacheStore {
     let compressed = compressedURL(for: url)
 
     if compressedIsCurrent(for: url, compressedURL: compressed) {
-      try? fm.removeItem(at: url)
+      if canDecompressFile(compressed) {
+        try? fm.removeItem(at: url)
+      } else {
+        DebugLogger.log("Removing invalid compressed cache: \(compressed.lastPathComponent)", category: .cache)
+        try? fm.removeItem(at: compressed)
+      }
       return
     }
 
     do {
       try compressFile(from: url, to: compressed)
-      try? fm.removeItem(at: url)
+      if canDecompressFile(compressed) {
+        try? fm.removeItem(at: url)
+      } else {
+        DebugLogger.log("Compression produced invalid file: \(compressed.lastPathComponent)", category: .cache)
+        try? fm.removeItem(at: compressed)
+      }
     } catch {
       DebugLogger.log("Audio cache compress failed for \(url.lastPathComponent): \(error)", category: .cache)
       try? fm.removeItem(at: compressed)
@@ -271,27 +322,32 @@ nonisolated enum AudioCacheStore {
     try? fm.removeItem(at: tempURL)
     fm.createFile(atPath: tempURL.path, contents: nil)
 
-    let reader = try FileHandle(forReadingFrom: sourceURL)
-    let writer = try FileHandle(forWritingTo: tempURL)
-    defer {
-      try? reader.close()
-      try? writer.close()
-    }
+    do {
+      let reader = try FileHandle(forReadingFrom: sourceURL)
+      let writer = try FileHandle(forWritingTo: tempURL)
+      defer {
+        try? reader.close()
+        try? writer.close()
+      }
 
-    let filter = try OutputFilter(.compress, using: compressionAlgorithm) { data in
-      guard let data else { return }
-      try writer.write(contentsOf: data)
-    }
+      let filter = try OutputFilter(.compress, using: compressionAlgorithm) { data in
+        guard let data else { return }
+        try writer.write(contentsOf: data)
+      }
 
-    while true {
-      let chunk = try reader.read(upToCount: chunkSize) ?? Data()
-      if chunk.isEmpty { break }
-      try filter.write(chunk)
-    }
-    try filter.finalize()
+      while true {
+        let chunk = try reader.read(upToCount: chunkSize) ?? Data()
+        if chunk.isEmpty { break }
+        try filter.write(chunk)
+      }
+      try filter.finalize()
 
-    try? fm.removeItem(at: destinationURL)
-    try fm.moveItem(at: tempURL, to: destinationURL)
+      try? fm.removeItem(at: destinationURL)
+      try fm.moveItem(at: tempURL, to: destinationURL)
+    } catch {
+      try? fm.removeItem(at: tempURL)
+      throw error
+    }
   }
 
   private static func decompressFileIfNeeded(from sourceURL: URL, to destinationURL: URL) throws {
@@ -299,22 +355,42 @@ nonisolated enum AudioCacheStore {
     try? fm.removeItem(at: tempURL)
     fm.createFile(atPath: tempURL.path, contents: nil)
 
-    let reader = try FileHandle(forReadingFrom: sourceURL)
-    let writer = try FileHandle(forWritingTo: tempURL)
-    defer {
-      try? reader.close()
-      try? writer.close()
-    }
+    do {
+      let reader = try FileHandle(forReadingFrom: sourceURL)
+      let writer = try FileHandle(forWritingTo: tempURL)
+      defer {
+        try? reader.close()
+        try? writer.close()
+      }
 
-    let filter = try InputFilter<Data>(.decompress, using: compressionAlgorithm) { requestedCount in
-      try reader.read(upToCount: requestedCount)
-    }
+      let filter = try InputFilter<Data>(.decompress, using: compressionAlgorithm) { requestedCount in
+        try reader.read(upToCount: requestedCount)
+      }
 
-    while let chunk = try filter.readData(ofLength: chunkSize), !chunk.isEmpty {
-      try writer.write(contentsOf: chunk)
-    }
+      while let chunk = try filter.readData(ofLength: chunkSize), !chunk.isEmpty {
+        try writer.write(contentsOf: chunk)
+      }
 
-    try? fm.removeItem(at: destinationURL)
-    try fm.moveItem(at: tempURL, to: destinationURL)
+      try? fm.removeItem(at: destinationURL)
+      try fm.moveItem(at: tempURL, to: destinationURL)
+    } catch {
+      try? fm.removeItem(at: tempURL)
+      throw error
+    }
+  }
+
+  private static func canDecompressFile(_ compressedURL: URL) -> Bool {
+    guard fm.fileExists(atPath: compressedURL.path) else { return false }
+    do {
+      let reader = try FileHandle(forReadingFrom: compressedURL)
+      defer { try? reader.close() }
+      let filter = try InputFilter<Data>(.decompress, using: compressionAlgorithm) { requestedCount in
+        try reader.read(upToCount: requestedCount)
+      }
+      _ = try filter.readData(ofLength: chunkSize)
+      return true
+    } catch {
+      return false
+    }
   }
 }

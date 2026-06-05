@@ -1,9 +1,9 @@
 import AVFoundation
 import Foundation
 
-enum AudioKitPlaybackMode { case single, aiStems }
+enum AVEnginePlaybackMode { case single, aiStems }
 
-enum AudioKitPlaybackRampStyle {
+enum AVEnginePlaybackRampStyle {
   case equalPower  // cos/sin curve — constant perceived loudness
   case linear  // straight line — faster cuts
 }
@@ -172,9 +172,9 @@ final class SimpleAudioPlayer {
 }
 
 @MainActor
-final class AudioKitPlayback {
-  typealias Mode = AudioKitPlaybackMode
-  typealias RampStyle = AudioKitPlaybackRampStyle
+final class AVEnginePlayback {
+  typealias Mode = AVEnginePlaybackMode
+  typealias RampStyle = AVEnginePlaybackRampStyle
   private typealias LoadedMedia = (AVAudioFile?, AVAudioPCMBuffer?)
   private typealias LoadedStemPair = (LoadedMedia, LoadedMedia)
   private typealias LoadedStemTriple = (LoadedMedia, LoadedMedia, LoadedMedia)
@@ -269,7 +269,7 @@ final class AudioKitPlayback {
     for i in 0..<10 {
       let band = userEQ.bands[i]
       band.filterType = .parametric
-      band.frequency = AudioKitPlayback.bandFrequencies[i]
+      band.frequency = AVEnginePlayback.bandFrequencies[i]
       band.bandwidth = 1.0
       band.gain = 0
       band.bypass = false
@@ -392,7 +392,7 @@ final class AudioKitPlayback {
         userInfo: [NSLocalizedDescriptionKey: "Audio file not found: \(url.lastPathComponent)"])
       throw err
     }
-    let headerOK = AudioKitPlayback.hasValidAudioHeader(at: url)
+    let headerOK = AVEnginePlayback.hasValidAudioHeader(at: url)
     if headerOK {
       try Task.checkCancellation()
       if let file = try? AVAudioFile(forReading: url) {
@@ -401,7 +401,7 @@ final class AudioKitPlayback {
           return (file, nil)
         }
         if fmt.channelCount == 1 {
-          if let stereo = AudioKitPlayback.convertToStereo(
+          if let stereo = AVEnginePlayback.convertToStereo(
             file: file, sourceURL: url, intent: intent)
           {
             return (nil, stereo)
@@ -417,7 +417,7 @@ final class AudioKitPlayback {
           return (file, nil)
         }
         if fmt.channelCount == 1 {
-          if let stereo = AudioKitPlayback.convertToStereo(
+          if let stereo = AVEnginePlayback.convertToStereo(
             file: file, sourceURL: url, intent: intent)
           {
             return (nil, stereo)
@@ -426,7 +426,7 @@ final class AudioKitPlayback {
       }
     }
     try Task.checkCancellation()
-    if let buffer = AudioKitPlayback.decodeFileToBuffer(url: url, intent: intent) {
+    if let buffer = AVEnginePlayback.decodeFileToBuffer(url: url, intent: intent) {
       return (nil, buffer)
     }
     try Task.checkCancellation()
@@ -457,8 +457,8 @@ final class AudioKitPlayback {
   }
 
   nonisolated private static func estimatedDecodedPCMBytes(for url: URL) -> Int64? {
-    let asset = AVURLAsset(url: url)
-    let seconds = asset.duration.seconds
+    guard let file = try? AVAudioFile(forReading: url) else { return nil }
+    let seconds = Double(file.length) / file.fileFormat.sampleRate
     guard seconds.isFinite, seconds > 0 else { return nil }
     let bytesPerFrame = 2 * MemoryLayout<Float>.size
     let estimated = seconds * 44_100 * Double(bytesPerFrame)
@@ -483,67 +483,64 @@ final class AudioKitPlayback {
         category: .playback)
       return nil
     }
-    let asset = AVURLAsset(url: url)
-    let tracks = asset.tracks(withMediaType: .audio)
-    guard let track = tracks.first else { return nil }
-    guard let reader = try? AVAssetReader(asset: asset) else { return nil }
-    let sampleRate: Double = 44100
-    let outputSettings: [String: Any] = [
-      AVFormatIDKey: kAudioFormatLinearPCM,
-      AVSampleRateKey: sampleRate,
-      AVNumberOfChannelsKey: 2,
-      AVLinearPCMBitDepthKey: 32,
-      AVLinearPCMIsFloatKey: true,
-      AVLinearPCMIsBigEndianKey: false,
-      AVLinearPCMIsNonInterleaved: true,
-    ]
-    let output = AVAssetReaderTrackOutput(track: track, outputSettings: outputSettings)
-    reader.add(output)
-    guard reader.startReading() else { return nil }
+    guard let inputFile = try? AVAudioFile(forReading: url) else { return nil }
+    let inputFormat = inputFile.processingFormat
+    guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { return nil }
+    let inputFrames = inputFile.length
+    guard inputFrames > 0 else { return nil }
     guard
-      let format = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+      let outputFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: standardSampleRate,
         channels: 2, interleaved: false)
     else { return nil }
-    let totalFrames = AVAudioFrameCount(max(1, asset.duration.seconds * sampleRate) + 8192)
-    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: totalFrames)
+    guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else { return nil }
+    let ratio = outputFormat.sampleRate / inputFormat.sampleRate
+    let estimatedFrames =
+      AVAudioFrameCount((Double(inputFrames) * ratio).rounded(.up)) + 8192
+    guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: estimatedFrames)
     else { return nil }
-    buffer.frameLength = 0
-    while reader.status == .reading {
-      if Task.isCancelled {
-        reader.cancelReading()
+
+    let readChunkFrames: AVAudioFrameCount = 16384
+    var reachedEnd = false
+    let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+      if Task.isCancelled || reachedEnd {
+        outStatus.pointee = .endOfStream
         return nil
       }
-      guard let sb = output.copyNextSampleBuffer(), let bb = CMSampleBufferGetDataBuffer(sb)
-      else { break }
-      let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sb))
-      var length = 0
-      var dataPtr: UnsafeMutablePointer<Int8>?
-      if CMBlockBufferGetDataPointer(
-        bb, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length,
-        dataPointerOut: &dataPtr) != noErr
-      {
-        continue
+      guard let chunk = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: readChunkFrames)
+      else {
+        outStatus.pointee = .endOfStream
+        return nil
       }
-      guard let dataPtr else { continue }
-      let writeStart = buffer.frameLength
-      let writeEnd = writeStart + frames
-      if writeEnd > buffer.frameCapacity { break }
-      let perChannelBytes = Int(frames) * MemoryLayout<Float>.size
-      if let channelData = buffer.floatChannelData {
-        memcpy(
-          channelData[0].advanced(by: Int(writeStart)),
-          dataPtr, perChannelBytes)
-        if length >= perChannelBytes * 2 {
-          memcpy(
-            channelData[1].advanced(by: Int(writeStart)),
-            dataPtr.advanced(by: perChannelBytes), perChannelBytes)
-        }
+      do {
+        try inputFile.read(into: chunk, frameCount: readChunkFrames)
+      } catch {
+        outStatus.pointee = .endOfStream
+        return nil
       }
-      buffer.frameLength = writeEnd
+      if chunk.frameLength == 0 {
+        reachedEnd = true
+        outStatus.pointee = .endOfStream
+        return nil
+      }
+      if inputFile.framePosition >= inputFrames { reachedEnd = true }
+      outStatus.pointee = .haveData
+      return chunk
     }
-    if reader.status == .failed { return nil }
-    return buffer.frameLength > 0 ? buffer : nil
+
+    var conversionError: NSError?
+    let status = converter.convert(
+      to: outputBuffer, error: &conversionError, withInputFrom: inputBlock)
+    if Task.isCancelled { return nil }
+    guard status != .error else {
+      if let conversionError {
+        DebugLogger.log(
+          "Audio decode conversion failed for \(url.lastPathComponent): \(conversionError)",
+          category: .playback)
+      }
+      return nil
+    }
+    return outputBuffer.frameLength > 0 ? outputBuffer : nil
   }
 
   nonisolated private static func convertToStereo(
@@ -687,7 +684,8 @@ final class AudioKitPlayback {
 
   func playStems(
     originalURL: URL, vocalsURL: URL, instrumentsURL: URL,
-    startOffset: TimeInterval, startAt: TimeInterval = 0
+    startOffset: TimeInterval, startAt: TimeInterval = 0,
+    onReady: (() -> Void)? = nil
   ) {
     DebugLogger.log(
       "Play stems: vocals=\(vocalsURL.lastPathComponent), inst=\(instrumentsURL.lastPathComponent)",
@@ -741,6 +739,7 @@ final class AudioKitPlayback {
         self.stemVocals.volume = 0
         self.stemInstrumental.volume = 0
         self.synchronizedPlay(mainPos: mainPos, stemPos: stemPos)
+        onReady?()
       } catch is CancellationError {
         guard self.primaryLoadGeneration == loadGeneration else { return }
         self.stemsLoadTask = nil
@@ -757,7 +756,8 @@ final class AudioKitPlayback {
 
   func switchToStems(
     vocalsURL: URL, instrumentsURL: URL,
-    startOffset: TimeInterval
+    startOffset: TimeInterval,
+    onReady: (() -> Void)? = nil
   ) {
     DebugLogger.log("Switching to stems at offset \(startOffset)", category: .playback)
     _paused = false
@@ -805,6 +805,7 @@ final class AudioKitPlayback {
         self.stemVocals.volume = 0
         self.stemInstrumental.volume = 0
         self.synchronizedPlay(mainPos: mainPos, stemPos: stemPos)
+        onReady?()
       } catch is CancellationError {
         guard self.primaryLoadGeneration == loadGeneration else { return }
         self.switchToStemsLoadTask = nil
@@ -1320,7 +1321,7 @@ final class AudioKitPlayback {
   ) throws {
     guard Self.containsPlayableMedia(media) else {
       throw NSError(
-        domain: "AudioKitPlayback",
+        domain: "AVEnginePlayback",
         code: -1001,
         userInfo: [
           NSLocalizedDescriptionKey:
@@ -1341,7 +1342,7 @@ final class AudioKitPlayback {
     let loadedDuration = mainPlayer.duration
     guard loadedDuration.isFinite, loadedDuration > 0.1 else {
       throw NSError(
-        domain: "AudioKitPlayback",
+        domain: "AVEnginePlayback",
         code: -1002,
         userInfo: [
           NSLocalizedDescriptionKey:
@@ -1430,7 +1431,7 @@ final class AudioKitPlayback {
     else { return nil }
     buffer.frameLength = 1_024
     for channel in 0..<Int(format.channelCount) {
-      buffer.floatChannelData?[channel].assign(repeating: 0, count: Int(buffer.frameLength))
+      buffer.floatChannelData?[channel].update(repeating: 0, count: Int(buffer.frameLength))
     }
     return buffer
   }()

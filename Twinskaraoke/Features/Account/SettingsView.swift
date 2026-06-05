@@ -385,7 +385,7 @@ private struct EqualizerBands: View {
   private let range: ClosedRange<Float> = -12...12
   var body: some View {
     HStack(alignment: .bottom, spacing: 6) {
-      ForEach(0..<AudioKitPlayback.eqBandCount, id: \.self) { i in
+      ForEach(0..<AVEnginePlayback.eqBandCount, id: \.self) { i in
         VStack(spacing: 6) {
           Text(gainLabel(gainsDB[i]))
             .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -394,7 +394,7 @@ private struct EqualizerBands: View {
           EqualizerBand(value: bandBinding(i), range: range)
             .frame(maxWidth: .infinity)
             .frame(height: 140)
-          Text(frequencyLabel(Double(AudioKitPlayback.bandFrequencies[i])))
+          Text(frequencyLabel(Double(AVEnginePlayback.bandFrequencies[i])))
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(height: 12)
