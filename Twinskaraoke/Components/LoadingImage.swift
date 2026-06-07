@@ -118,11 +118,6 @@ struct LoadingImage: View {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
       )
-      .overlay {
-        Image(systemName: "music.note")
-          .font(.system(size: 22, weight: .semibold))
-          .foregroundStyle(.secondary.opacity(0.55))
-      }
     }
   }
 }
