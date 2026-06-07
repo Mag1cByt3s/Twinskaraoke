@@ -53,7 +53,7 @@ struct HomeView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .musicScreenBackground()
-      .navigationTitle("Listen Now")
+      .navigationTitle("Home")
       .navigationBarTitleDisplayMode(.large)
       .refreshable { viewModel.fetchHomeData(force: true) }
     }

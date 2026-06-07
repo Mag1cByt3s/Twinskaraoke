@@ -637,7 +637,7 @@ final class AVEnginePlayback {
     releasePlayerMedia(crossfadePlayer)
   }
 
-  func play(url: URL, startAt: TimeInterval = 0) {
+  func play(url: URL, startAt: TimeInterval = 0, onReady: (() -> Void)? = nil) {
     DebugLogger.log("Play single: \(url.lastPathComponent)", category: .playback)
     _paused = false
     suppressionToken &+= 1
@@ -666,6 +666,7 @@ final class AVEnginePlayback {
         self.resetInstrumentalEQ()
         self.startEngineIfNeeded()
         self.safePlay(self.mainPlayer, from: startAt)
+        onReady?()
       } catch is CancellationError {
         guard self.primaryLoadGeneration == loadGeneration else { return }
         self.singleLoadTask = nil

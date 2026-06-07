@@ -141,13 +141,30 @@ struct AboutView: View {
   }
   @ViewBuilder
   private var appIconView: some View {
-    AnimatedImage(data: NSDataAsset(name: "AppLogo")?.data ?? Data())
-      .resizable()
-      .scaledToFill()
+    if !AppLogoData.shared.isEmpty {
+      AnimatedImage(data: AppLogoData.shared)
+        .resizable()
+        .scaledToFill()
+        .frame(width: 96, height: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 14, y: 6)
+        .transaction { $0.animation = nil }
+    } else {
+      ZStack {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+          .fill(ProfileTheme.radialGradient)
+        Image(systemName: "music.mic")
+          .font(.system(size: 42, weight: .semibold))
+          .foregroundStyle(.white)
+      }
       .frame(width: 96, height: 96)
-      .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       .shadow(color: Color.black.opacity(0.18), radius: 14, y: 6)
+    }
   }
+}
+
+enum AppLogoData {
+  static let shared: Data = NSDataAsset(name: "AppLogo")?.data ?? Data()
 }
 
 private struct EasterEggView: View {
@@ -161,10 +178,11 @@ private struct EasterEggView: View {
       )
       .ignoresSafeArea()
       VStack(spacing: 20) {
-        AnimatedImage(url: URL(string: "https://storage.neurokaraoke.com/media/nuero_.gif"))
+        AnimatedImage(url: URL(string: "\(StorageHost.base)/media/nuero_.gif"))
           .resizable()
           .scaledToFit()
           .padding(.horizontal, 24)
+          .transaction { $0.animation = nil }
         Text("404 Not Found")
           .font(.system(size: 28, weight: .bold, design: .monospaced))
           .foregroundColor(.primary)

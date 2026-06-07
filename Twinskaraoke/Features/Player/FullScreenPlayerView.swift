@@ -13,13 +13,12 @@ struct FullScreenPlayerView: View {
   @State private var showKaraokeControls = false
   @State private var showTranslatedLyrics = false
   @State private var showCoverArt = false
-  @State private var coverArtSaveStatus: CoverArtSaveStatus = .idle
+  @State private var coverArtSaveStatus: ArtworkSaveStatus = .idle
   @State private var easterEggImageURL: URL?
   @State private var easterEggArtistName: String?
   @State private var easterEggArtistLink: String?
   @State private var coverArtArtistName: String?
   @State private var coverArtArtistLink: String?
-  private enum CoverArtSaveStatus { case idle, saving, success, failed }
   @StateObject private var lyricsViewModel = LyricsViewModel()
   @StateObject private var upcomingLyricsViewModel = LyricsViewModel()
   var body: some View {
@@ -62,6 +61,7 @@ struct FullScreenPlayerView: View {
         ZoomableImageViewer(
           url: hdURL,
           lowResURL: thumbURL,
+          saveStatus: $coverArtSaveStatus,
           onSave: { saveCoverArt(url: hdURL) },
           title: isEasterEgg ? easterEggArtistName : coverArtArtistName,
           subtitle: isEasterEgg ? easterEggArtistLink : coverArtArtistLink
@@ -70,6 +70,7 @@ struct FullScreenPlayerView: View {
           easterEggImageURL = nil
           easterEggArtistName = nil
           easterEggArtistLink = nil
+          coverArtSaveStatus = .idle
         }
       }
     }
@@ -379,16 +380,37 @@ struct FullScreenPlayerView: View {
   }
 
   private func saveCoverArt(url: URL?) {
+    guard !coverArtSaveStatus.isSaving else { return }
     guard let url else { return }
-    URLSession.shared.dataTask(with: url) { data, _, _ in
+    coverArtSaveStatus = .saving
+    URLSession.shared.dataTask(with: url) { data, _, error in
       DispatchQueue.main.async {
         #if canImport(UIKit)
           if let data, let image = UIImage(data: data) {
-            ImageSaver.shared.save(image: image) { _ in }
+            ImageSaver.shared.save(image: image) { result in
+              DispatchQueue.main.async {
+                switch result {
+                case .success:
+                  coverArtSaveStatus = .success
+                case .failure(let err):
+                  coverArtSaveStatus = .failed(err.localizedDescription)
+                }
+                resetCoverArtSaveStatusLater()
+              }
+            }
+            return
           }
         #endif
+        coverArtSaveStatus = .failed(error?.localizedDescription ?? "Couldn't save")
+        resetCoverArtSaveStatusLater()
       }
     }.resume()
+  }
+
+  private func resetCoverArtSaveStatusLater() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+      coverArtSaveStatus = .idle
+    }
   }
 
   private func handleCoverArtTap(song: Song) {

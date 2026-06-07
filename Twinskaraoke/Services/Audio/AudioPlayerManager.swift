@@ -840,6 +840,9 @@ class AudioPlayerManager: ObservableObject {
       self.aiStemSwitchInFlightSongID = nil
       if !shouldResume { self.avEngine.pause() }
       onReady?()
+      #if canImport(UIKit)
+        self.endTrackTransitionBackgroundTask()
+      #endif
     }
     if isStreamMode {
       stopStreamPlayer()
@@ -1108,13 +1111,15 @@ class AudioPlayerManager: ObservableObject {
         originalURL: fileURL,
         vocalsURL: stems.vocals, instrumentsURL: stems.instruments,
         startOffset: stems.startOffset,
-        onReady: { [weak self] in self?.applyAIMixVolumes() })
+        onReady: { [weak self] in
+          self?.applyAIMixVolumes()
+          #if canImport(UIKit)
+            self?.endTrackTransitionBackgroundTask()
+          #endif
+        })
       isPlaying = true
       isBuffering = false
       updateNowPlayingInfo(reloadArtwork: true)
-      #if canImport(UIKit)
-        endTrackTransitionBackgroundTask()
-      #endif
       return
     }
     if let fileURL {
@@ -1211,7 +1216,11 @@ class AudioPlayerManager: ObservableObject {
     configureAudioSessionCategory()
     activateAudioSession()
     NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
-    avEngine.play(url: url, startAt: max(0, startAt))
+    avEngine.play(url: url, startAt: max(0, startAt)) { [weak self] in
+      #if canImport(UIKit)
+        self?.endTrackTransitionBackgroundTask()
+      #endif
+    }
     isPlaying = true
     isBuffering = false
     updateNowPlayingInfo(reloadArtwork: true)
@@ -1221,9 +1230,6 @@ class AudioPlayerManager: ObservableObject {
       triggerBackgroundAnalysis(for: song)
       prepareBackgroundStemPlaybackIfPossible(for: song)
     }
-    #if canImport(UIKit)
-      endTrackTransitionBackgroundTask()
-    #endif
   }
 
   private func fallBackToMainPlayback(for song: Song, startAt: TimeInterval) {

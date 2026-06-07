@@ -4,11 +4,7 @@ struct ArtDetailView: View {
   let art: GalleryArt
   let artist: GalleryArtist
   @State private var showFullScreen = false
-  @State private var saveStatus: SaveStatus = .idle
-  enum SaveStatus {
-    case idle, saving, success
-    case failed(String)
-  }
+  @State private var saveStatus: ArtworkSaveStatus = .idle
   private var fullResURL: URL? {
     art.fullHDImageURL ?? art.imageURL
   }
@@ -72,14 +68,22 @@ struct ArtDetailView: View {
             Image(systemName: "square.and.arrow.down")
           }
         }
-        .disabled({ if case .saving = saveStatus { return true } else { return false } }())
+        .disabled(saveStatus.isSaving)
       }
     }
     .fullScreenCover(isPresented: $showFullScreen) {
-      ZoomableImageViewer(url: fullResURL, lowResURL: art.blurPreviewURL, onSave: saveImage)
+      ZoomableImageViewer(
+        url: fullResURL,
+        lowResURL: art.blurPreviewURL,
+        saveStatus: $saveStatus,
+        onSave: saveImage,
+        title: artist.name,
+        subtitle: artist.socialLink
+      )
     }
   }
   private func saveImage() {
+    guard !saveStatus.isSaving else { return }
     guard let url = fullResURL else { return }
     saveStatus = .saving
     URLSession.shared.dataTask(with: url) { data, _, error in
@@ -106,6 +110,18 @@ struct ArtDetailView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saveStatus = .idle }
       }
     }.resume()
+  }
+}
+
+enum ArtworkSaveStatus: Equatable {
+  case idle
+  case saving
+  case success
+  case failed(String)
+
+  var isSaving: Bool {
+    if case .saving = self { return true }
+    return false
   }
 }
 
@@ -136,6 +152,7 @@ struct ArtDetailView: View {
 struct ZoomableImageViewer: View {
   let url: URL?
   let lowResURL: URL?
+  @Binding var saveStatus: ArtworkSaveStatus
   let onSave: () -> Void
   var title: String?
   var subtitle: String?
@@ -173,24 +190,7 @@ struct ZoomableImageViewer: View {
             }
             .onEnded { _ in lastOffset = offset }
         )
-        .onTapGesture(count: 2) {
-          withAnimation(.spring()) {
-            if scale > 1 {
-              scale = 1
-              lastScale = 1
-              offset = .zero
-              lastOffset = .zero
-            } else {
-              scale = 2
-              lastScale = 2
-            }
-          }
-        }
-        .onTapGesture(count: 1) {
-          withAnimation(.easeInOut(duration: 0.25)) {
-            showOverlay.toggle()
-          }
-        }
+        .simultaneousGesture(imageTapGesture)
       }
       if showOverlay {
         VStack {
@@ -208,26 +208,23 @@ struct ZoomableImageViewer: View {
             Button {
               onSave()
             } label: {
-              Image(systemName: "square.and.arrow.down")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 36, height: 36)
-                .background(Color.black.opacity(0.4))
-                .clipShape(Circle())
+              saveButtonLabel
             }
+            .disabled(saveStatus.isSaving)
+            .accessibilityLabel(saveAccessibilityLabel)
           }
           .padding()
           Spacer()
-          if title != nil || subtitle != nil {
+          if visibleTitle != nil || visibleSubtitle != nil {
             VStack(spacing: 4) {
-              if let title {
+              if let title = visibleTitle {
                 Text(title)
                   .font(.system(size: 17, weight: .bold))
                   .foregroundColor(.white)
                   .lineLimit(2)
                   .multilineTextAlignment(.center)
               }
-              if let subtitle {
+              if let subtitle = visibleSubtitle {
                 Text(subtitle)
                   .font(.system(size: 14))
                   .foregroundColor(.white.opacity(0.7))
@@ -252,6 +249,87 @@ struct ZoomableImageViewer: View {
     }
     .statusBarHidden(true)
   }
+
+  private var imageTapGesture: some Gesture {
+    TapGesture(count: 2)
+      .exclusively(before: TapGesture(count: 1))
+      .onEnded { value in
+        switch value {
+        case .first:
+          toggleZoom()
+        case .second:
+          toggleOverlay()
+        }
+      }
+  }
+
+  private func toggleZoom() {
+    withAnimation(.spring()) {
+      if scale > 1 {
+        scale = 1
+        lastScale = 1
+        offset = .zero
+        lastOffset = .zero
+      } else {
+        scale = 2
+        lastScale = 2
+      }
+    }
+  }
+
+  private func toggleOverlay() {
+    withAnimation(.easeInOut(duration: 0.25)) {
+      showOverlay.toggle()
+    }
+  }
+
+  private var visibleTitle: String? {
+    guard let title, !title.isEmpty else { return nil }
+    return title
+  }
+
+  private var visibleSubtitle: String? {
+    guard let subtitle, !subtitle.isEmpty else { return nil }
+    return subtitle
+  }
+
+  @ViewBuilder
+  private var saveButtonLabel: some View {
+    Group {
+      switch saveStatus {
+      case .saving:
+        ProgressView()
+          .progressViewStyle(.circular)
+          .tint(.white)
+      case .success:
+        Image(systemName: "checkmark.circle.fill")
+          .foregroundColor(.green)
+      case .failed:
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundColor(.orange)
+      case .idle:
+        Image(systemName: "square.and.arrow.down")
+          .foregroundColor(.white)
+      }
+    }
+    .font(.system(size: 16, weight: .semibold))
+    .frame(width: 36, height: 36)
+    .background(Color.black.opacity(0.4))
+    .clipShape(Circle())
+  }
+
+  private var saveAccessibilityLabel: String {
+    switch saveStatus {
+    case .saving:
+      return "Saving image"
+    case .success:
+      return "Image saved"
+    case .failed:
+      return "Image save failed"
+    case .idle:
+      return "Save image"
+    }
+  }
 }
 
 private struct PinchToZoomModifier: ViewModifier {
@@ -262,27 +340,15 @@ private struct PinchToZoomModifier: ViewModifier {
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    if #available(iOS 17.0, *) {
-      content.gesture(
-        MagnifyGesture()
-          .onChanged { value in
-            scale = max(1, min(5, lastScale * value.magnification))
-          }
-          .onEnded { _ in
-            finishZoom()
-          }
-      )
-    } else {
-      content.gesture(
-        MagnificationGesture()
-          .onChanged { value in
-            scale = max(1, min(5, lastScale * value))
-          }
-          .onEnded { _ in
-            finishZoom()
-          }
-      )
-    }
+    content.gesture(
+      MagnifyGesture()
+        .onChanged { value in
+          scale = max(1, min(5, lastScale * value.magnification))
+        }
+        .onEnded { _ in
+          finishZoom()
+        }
+    )
   }
 
   private func finishZoom() {

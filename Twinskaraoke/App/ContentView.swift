@@ -32,7 +32,7 @@ private struct PopupHostView: View {
   private var rootTabs: some View {
     TabView {
       HomeView()
-        .tabItem { Label("Listen Now", systemImage: "play.circle.fill") }
+        .tabItem { Label("Home", systemImage: "house.fill") }
       RadioView()
         .tabItem { Label("Radio", systemImage: "dot.radiowaves.left.and.right") }
       LibraryView()

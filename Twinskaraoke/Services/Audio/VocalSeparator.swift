@@ -383,12 +383,7 @@ final class VocalSeparator: ObservableObject {
     guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A)
     else { throw VocalSeparatorError.trimFailed }
     let start = CMTime(seconds: startSeconds, preferredTimescale: 600)
-    let duration: CMTime
-    if #available(iOS 16.0, *) {
-      duration = try await asset.load(.duration)
-    } else {
-      duration = asset.duration
-    }
+    let duration = try await asset.load(.duration)
     let safeStartSeconds = min(startSeconds, max(0, duration.seconds - 0.5))
     let safeStart = safeStartSeconds < startSeconds
       ? CMTime(seconds: safeStartSeconds, preferredTimescale: 600) : start

@@ -66,10 +66,11 @@ struct LoginSheet: View {
   }
   @ViewBuilder
   private var appLogo: some View {
-    if let data = NSDataAsset(name: "AppLogo")?.data {
-      AnimatedImage(data: data)
+    if !AppLogoData.shared.isEmpty {
+      AnimatedImage(data: AppLogoData.shared)
         .resizable()
         .aspectRatio(contentMode: .fill)
+        .transaction { $0.animation = nil }
     } else {
       ZStack {
         RoundedRectangle(cornerRadius: 22, style: .continuous)

@@ -78,7 +78,6 @@ struct LoadingImage: View {
             .aspectRatio(contentMode: contentMode)
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
-            .transition(.opacity.animation(.easeInOut(duration: 0.22)))
         } placeholder: {
           if showsLoading && lowResURL == nil {
             LoadingIndicator(size: min(geo.size.width, geo.size.height) * 0.5)
@@ -89,6 +88,7 @@ struct LoadingImage: View {
         .onSuccess { _, _, _ in
           DispatchQueue.main.async { fullLoaded = true }
         }
+        .transaction { $0.animation = nil }
       }
       .frame(width: geo.size.width, height: geo.size.height)
     }
