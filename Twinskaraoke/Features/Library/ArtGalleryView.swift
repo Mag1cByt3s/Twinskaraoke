@@ -2,22 +2,30 @@ import SwiftUI
 
 struct ArtGalleryView: View {
   @StateObject private var viewModel = ArtGalleryViewModel()
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   var body: some View {
     ScrollView {
       if viewModel.isLoading && viewModel.artists.isEmpty {
-        LoadingIndicator(size: 64)
-          .frame(maxWidth: .infinity)
-          .padding(.top, 120)
+        ArtGallerySkeletonView()
+          .padding(.top, 16)
+          .transition(.opacity)
       } else if viewModel.artists.isEmpty {
-        VStack(spacing: 16) {
-          Image(systemName: "paintpalette")
-            .font(.system(size: 48))
-            .foregroundColor(.secondary)
-          Text("No artwork yet")
-            .foregroundColor(.secondary)
+        ArtGalleryEmptyState(isError: viewModel.loadFailed) {
+          viewModel.fetch(force: true)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 120)
+        .padding(.horizontal, 24)
+        .padding(.top, 96)
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
       } else {
         VStack(alignment: .leading, spacing: 28) {
           if let featured = featuredArt {
@@ -27,8 +35,27 @@ struct ArtGalleryView: View {
               FeaturedArtCard(art: featured.art, artist: featured.artist)
             }
             .buttonStyle(PressableButtonStyle())
+            .simultaneousGesture(TapGesture().onEnded { AppHaptic.selection.play() })
+            .contextMenu {
+              if let url = featured.art.fullHDImageURL ?? featured.art.imageURL {
+                ShareLink(item: url) {
+                  Label("Share Artwork", systemImage: "square.and.arrow.up")
+                }
+              }
+              if let upvotes = featured.art.upvotes, upvotes > 0 {
+                Label("\(upvotes) likes", systemImage: "heart.fill")
+              }
+            } preview: {
+              GalleryArtPreview(art: featured.art, artist: featured.artist)
+            }
             .padding(.horizontal, 16)
           }
+          GalleryStatsStrip(
+            artistCount: viewModel.artists.count,
+            artworkCount: artworkCount,
+            totalUpvotes: totalUpvotes
+          )
+          .padding(.horizontal, 16)
           if !topArtists.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
               GallerySectionHeader(title: "Featured Artists")
@@ -41,6 +68,7 @@ struct ArtGalleryView: View {
                       ArtistCircleCard(artist: artist)
                     }
                     .buttonStyle(PressableButtonStyle())
+                    .simultaneousGesture(TapGesture().onEnded { AppHaptic.selection.play() })
                   }
                 }
                 .padding(.horizontal, 16)
@@ -57,6 +85,7 @@ struct ArtGalleryView: View {
                   ArtistListRow(artist: artist)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { AppHaptic.selection.play() })
                 if idx < viewModel.artists.count - 1 {
                   Divider().padding(.leading, 78)
                 }
@@ -70,8 +99,14 @@ struct ArtGalleryView: View {
     }
     .navigationTitle("Art Gallery")
     .navigationBarTitleDisplayMode(.large)
-    .refreshable { viewModel.fetch() }
+    .refreshable {
+      AppHaptic.selection.play()
+      viewModel.fetch(force: true)
+    }
     .onAppear { viewModel.fetch() }
+    .animation(
+      reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.84),
+      value: viewModel.artists.count)
   }
   private var featuredArt: (art: GalleryArt, artist: GalleryArtist)? {
     for artist in viewModel.artists {
@@ -84,6 +119,121 @@ struct ArtGalleryView: View {
   private var topArtists: [GalleryArtist] {
     Array(viewModel.artists.prefix(12))
   }
+  private var artworkCount: Int {
+    viewModel.artists.reduce(0) { $0 + ($1.arts?.count ?? 0) }
+  }
+  private var totalUpvotes: Int {
+    viewModel.artists.reduce(0) { partial, artist in
+      partial + (artist.arts ?? []).reduce(0) { $0 + ($1.upvotes ?? 0) }
+    }
+  }
+}
+
+private struct ArtGallerySkeletonView: View {
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var pulse = false
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 28) {
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .fill(Color.appPlaceholderPrimary)
+        .aspectRatio(4 / 5, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+
+      VStack(alignment: .leading, spacing: 12) {
+        skeletonTitle(width: 154)
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(alignment: .top, spacing: 14) {
+            ForEach(0..<6, id: \.self) { index in
+              VStack(spacing: 8) {
+                Circle()
+                  .fill(Color.appPlaceholderPrimary)
+                  .frame(width: 96, height: 96)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderSecondary)
+                  .frame(width: index == 2 ? 72 : 86, height: 12)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderPrimary)
+                  .frame(width: 54, height: 10)
+              }
+              .frame(width: 100)
+            }
+          }
+          .padding(.horizontal, 16)
+        }
+      }
+
+      VStack(alignment: .leading, spacing: 12) {
+        skeletonTitle(width: 88)
+        LazyVStack(spacing: 0) {
+          ForEach(0..<7, id: \.self) { index in
+            HStack(spacing: 14) {
+              Circle()
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: 50, height: 50)
+              VStack(alignment: .leading, spacing: 7) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderSecondary)
+                  .frame(width: index == 3 ? 126 : 164, height: 13)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderPrimary)
+                  .frame(width: 86, height: 11)
+              }
+              Spacer(minLength: 12)
+              Circle()
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: 22, height: 22)
+            }
+            .padding(.vertical, 10)
+            if index < 6 {
+              Divider().padding(.leading, 78)
+            }
+          }
+        }
+        .padding(.horizontal, 16)
+      }
+    }
+    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
+    .redacted(reason: .placeholder)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading art gallery")
+    .onAppear {
+      guard !reduceMotion else {
+        pulse = false
+        return
+      }
+      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+        pulse = true
+      }
+    }
+    .onChange(of: reduceMotion) { _, reduceMotion in
+      if reduceMotion {
+        withAnimation(nil) {
+          pulse = false
+        }
+      } else {
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+          pulse = true
+        }
+      }
+    }
+  }
+
+  private func skeletonTitle(width: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: 4, style: .continuous)
+      .fill(Color.appPlaceholderSecondary)
+      .frame(width: width, height: 22)
+      .padding(.horizontal, 16)
+  }
 }
 
 private struct GallerySectionHeader: View {
@@ -92,6 +242,66 @@ private struct GallerySectionHeader: View {
     Text(title)
       .font(.system(size: 22, weight: .bold))
       .padding(.horizontal, 16)
+  }
+}
+
+private struct ArtGalleryEmptyState: View {
+  let isError: Bool
+  let onRefresh: () -> Void
+
+  var body: some View {
+    VStack(spacing: 16) {
+      MusicEmptyState(
+        systemImage: isError ? "wifi.exclamationmark" : "paintpalette",
+        title: isError ? "Artwork Couldn't Load" : "No Artwork Yet",
+        message: isError
+          ? "Check your connection and try loading the gallery again."
+          : "New cover art and artist galleries will appear here."
+      )
+      Button(action: onRefresh) {
+        Label(isError ? "Try Again" : "Refresh", systemImage: "arrow.clockwise")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(Color.appAccent)
+          .padding(.horizontal, 18)
+          .padding(.vertical, 10)
+          .background(Color.appAccent.opacity(0.12), in: Capsule())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.78, haptic: .selection))
+    }
+  }
+}
+
+private struct GalleryStatsStrip: View {
+  let artistCount: Int
+  let artworkCount: Int
+  let totalUpvotes: Int
+
+  var body: some View {
+    HStack(spacing: 0) {
+      stat(value: "\(artistCount)", label: artistCount == 1 ? "Artist" : "Artists")
+      Divider().frame(height: 30)
+      stat(value: "\(artworkCount)", label: artworkCount == 1 ? "Artwork" : "Artworks")
+      Divider().frame(height: 30)
+      stat(value: "\(totalUpvotes)", label: totalUpvotes == 1 ? "Like" : "Likes")
+    }
+    .padding(.vertical, 12)
+    .background(Color.appSecondaryBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(Color.appDivider, lineWidth: 1)
+    )
+  }
+
+  private func stat(value: String, label: String) -> some View {
+    VStack(spacing: 2) {
+      Text(value)
+        .font(.system(size: 18, weight: .bold))
+        .monospacedDigit()
+      Text(label)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity)
   }
 }
 
@@ -138,6 +348,31 @@ private struct FeaturedArtCard: View {
       }
       .padding(20)
     }
+  }
+}
+
+private struct GalleryArtPreview: View {
+  let art: GalleryArt
+  let artist: GalleryArtist
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      ArtThumbnail(art: art)
+        .frame(width: 220, height: 220)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(artist.name)
+          .font(.system(size: 17, weight: .semibold))
+          .lineLimit(1)
+        if let upvotes = art.upvotes, upvotes > 0 {
+          Label("\(upvotes) likes", systemImage: "heart.fill")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding(14)
+    .frame(width: 248, alignment: .leading)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
   }
 }
 

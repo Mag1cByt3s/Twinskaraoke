@@ -2,13 +2,15 @@ import SwiftUI
 
 struct EqualizerBars: View {
   let isAnimating: Bool
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var startDate = Date()
   @State private var isVisible: Bool = false
 
   var body: some View {
     GeometryReader { geo in
       let barWidth = geo.size.width / 5
-      TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !(isAnimating && isVisible))) {
+      TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !shouldAnimateBars)) {
         context in
         let elapsed = max(0, context.date.timeIntervalSince(startDate))
         HStack(alignment: .bottom, spacing: barWidth / 2) {
@@ -34,10 +36,21 @@ struct EqualizerBars: View {
     }
   }
   private func barHeight(for index: Int, total: CGFloat, elapsed: TimeInterval) -> CGFloat {
-    guard isAnimating else { return total * 0.3 }
+    guard shouldAnimateBars else { return total * 0.3 }
     let speeds: [Double] = [3.4, 2.7, 4.1]
     let offsets: [Double] = [0.0, 0.45, 0.9]
     let v = (sin(elapsed * speeds[index] + offsets[index] * .pi * 2) + 1) / 2
     return total * (0.3 + 0.7 * v)
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
+  private var shouldAnimateBars: Bool {
+    isAnimating && isVisible && !reduceMotion
   }
 }

@@ -8,6 +8,7 @@ final class DownloadManager: ObservableObject {
     let directory: URL
     let audio: URL
     let source: URL
+    let metadata: URL
   }
 
   static let shared = DownloadManager()
@@ -32,7 +33,8 @@ final class DownloadManager: ObservableObject {
     return SongFiles(
       directory: directory,
       audio: directory.appendingPathComponent("main.mp3"),
-      source: directory.appendingPathComponent("main.source")
+      source: directory.appendingPathComponent("main.source"),
+      metadata: directory.appendingPathComponent("metadata.json")
     )
   }
 
@@ -84,19 +86,20 @@ final class DownloadManager: ObservableObject {
           moved = true
         } catch {}
       }
-      Task { @MainActor [weak self, moved, songID] in
-        self?.finishDownload(songID: songID, moved: moved)
+      Task { @MainActor [weak self, moved, song, songID] in
+        self?.finishDownload(songID: songID, song: song, moved: moved)
       }
     }
     tasks[song.id] = task
     task.resume()
   }
 
-  private func finishDownload(songID: String, moved: Bool) {
+  private func finishDownload(songID: String, song: Song, moved: Bool) {
     tasks.removeValue(forKey: songID)
     inProgress.remove(songID)
     progress.removeValue(forKey: songID)
     if moved {
+      writeMetadata(for: song)
       downloadedIDs.insert(songID)
       DebugLogger.log("Download completed: \(songID)", category: .network)
     } else {
@@ -117,6 +120,7 @@ final class DownloadManager: ObservableObject {
     try? FileManager.default.removeItem(at: songFiles.directory)
     try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(songID).mp3"))
     try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(songID).source"))
+    try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(songID).json"))
     downloadedIDs.remove(songID)
     DebugLogger.log("Download removed: \(songID)", category: .network)
   }
@@ -182,6 +186,27 @@ final class DownloadManager: ObservableObject {
     return songFiles.audio
   }
 
+  func downloadedSongs(knownSongs: [Song] = []) -> [Song] {
+    var songs: [Song] = []
+    var seen = Set<String>()
+
+    for song in knownSongs where downloadedIDs.contains(song.id) {
+      guard playableURL(for: song) != nil else { continue }
+      songs.append(song)
+      seen.insert(song.id)
+    }
+
+    for songID in downloadedIDs.sorted() where !seen.contains(songID) {
+      guard let song = readMetadata(for: songID), playableURL(for: song) != nil else { continue }
+      songs.append(song)
+      seen.insert(songID)
+    }
+
+    return songs.sorted {
+      $0.title.localizedStandardCompare($1.title) == .orderedAscending
+    }
+  }
+
   private func hasValidDownload(for songID: String) -> Bool {
     let songFiles = files(for: songID)
     guard FileManager.default.fileExists(atPath: songFiles.audio.path) else { return false }
@@ -196,6 +221,19 @@ final class DownloadManager: ObservableObject {
     }
     let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     return normalized.isEmpty ? nil : normalized
+  }
+
+  private func writeMetadata(for song: Song) {
+    let songFiles = files(for: song.id)
+    ensureSongDirectory(for: song.id)
+    guard let data = try? JSONEncoder().encode(song) else { return }
+    try? data.write(to: songFiles.metadata, options: [.atomic])
+  }
+
+  private func readMetadata(for songID: String) -> Song? {
+    let metadataURL = files(for: songID).metadata
+    guard let data = try? Data(contentsOf: metadataURL) else { return nil }
+    return try? JSONDecoder().decode(Song.self, from: data)
   }
 
   private func migrateLegacyDownloadsIfNeeded() {
@@ -243,6 +281,7 @@ final class DownloadManager: ObservableObject {
     if hasValidDownload(for: songID) {
       try? fm.removeItem(at: legacyAudio)
       try? fm.removeItem(at: legacySource)
+      try? fm.removeItem(at: cacheDir.appendingPathComponent("\(songID).json"))
       return
     }
 

@@ -7,6 +7,7 @@ struct PlayerVolumeRow: View {
       Image(systemName: "speaker.fill")
         .font(.system(size: 13))
         .foregroundColor(.secondary)
+        .accessibilityHidden(true)
       AppleMusicProgressBar(
         progress: $audioManager.volume,
         isScrubbing: $audioManager.isUserScrubbingVolume,
@@ -14,11 +15,15 @@ struct PlayerVolumeRow: View {
         trackColor: Color.primary.opacity(0.18),
         fillColor: .primary,
         idleHeight: 7,
-        activeHeight: 12
+        activeHeight: 12,
+        accessibilityLabel: "Volume",
+        accessibilityValueText: "\(Int(audioManager.volume * 100)) percent",
+        accessibilityHint: "Drag or swipe up and down to adjust volume."
       )
       Image(systemName: "speaker.wave.3.fill")
         .font(.system(size: 13))
         .foregroundColor(.secondary)
+        .accessibilityHidden(true)
     }
     .padding(.horizontal, 32)
     #if canImport(UIKit)

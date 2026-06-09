@@ -3,37 +3,56 @@ import SwiftUI
 struct HomeView: View {
   @StateObject var audioManager = AudioManager.shared
   @StateObject var homeViewModel = HomeViewModel()
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var navigateToPlayer = false
+
+  private var reduceMotion: Bool {
+    WatchMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
+  private var songStateAnimation: Animation? {
+    reduceMotion ? nil : .easeInOut(duration: 0.22)
+  }
+
+  private var playbackAnimation: Animation? {
+    reduceMotion ? nil : .easeInOut(duration: 0.18)
+  }
+
   var body: some View {
     NavigationStack {
       List {
-        if audioManager.currentSong != nil {
+        if let currentSong = audioManager.currentSong {
           Section("Now Playing") {
             NavigationLink(destination: PlayerView().environmentObject(audioManager)) {
-              HStack(spacing: 10) {
-                if let url = audioManager.currentSong?.imageURL {
-                  AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                  } placeholder: {
-                    Color.secondary.opacity(0.15)
-                  }
-                  .frame(width: 36, height: 36)
-                  .cornerRadius(4)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(audioManager.currentSong?.title ?? "")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.appAccent)
-                    .lineLimit(1)
-                  Text(audioManager.currentSong?.artistName ?? "")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                }
-                Spacer()
-                Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
-                  .font(.system(size: 14))
-                  .foregroundColor(.appAccent)
+              WatchSongRow(
+                song: currentSong,
+                isCurrent: true,
+                isPlaying: audioManager.isPlaying,
+                trailingSystemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
+            }
+            .buttonStyle(.watchPressable)
+            .accessibilityLabel("Now Playing")
+            .accessibilityValue("\(currentSong.title), \(currentSong.artistName), \(audioManager.isPlaying ? "Playing" : "Paused")")
+            .accessibilityHint("Double tap to open the player.")
+            .simultaneousGesture(
+              TapGesture().onEnded {
+                WatchHaptic.play(.click)
+              })
+            .contextMenu {
+              Button {
+                toggleCurrentPlayback()
+              } label: {
+                Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
+              }
+              Button {
+                audioManager.playNext()
+                WatchHaptic.play(.next)
+              } label: {
+                Label("Skip", systemImage: "forward.fill")
               }
             }
           }
@@ -41,31 +60,36 @@ struct HomeView: View {
         if !homeViewModel.trending.isEmpty {
           Section("Trending") {
             ForEach(homeViewModel.trending.prefix(5)) { song in
+              let isCurrent = audioManager.currentSong?.id == song.id
               Button {
-                audioManager.play(song: song, context: homeViewModel.trending)
-                navigateToPlayer = true
+                play(song, context: homeViewModel.trending)
               } label: {
-                HStack(spacing: 10) {
-                  AsyncImage(url: song.imageURL) { image in
-                    image.resizable().scaledToFill()
-                  } placeholder: {
-                    Color.secondary.opacity(0.15)
-                  }
-                  .frame(width: 36, height: 36)
-                  .cornerRadius(4)
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title)
-                      .font(.system(size: 13, weight: .medium))
-                      .foregroundColor(.primary)
-                      .lineLimit(1)
-                    Text(song.artistName)
-                      .font(.system(size: 11))
-                      .foregroundColor(.secondary)
-                      .lineLimit(1)
+                WatchSongRow(
+                  song: song,
+                  isCurrent: isCurrent,
+                  isPlaying: isCurrent && audioManager.isPlaying,
+                  trailingSystemImage: isCurrent
+                    ? (audioManager.isPlaying ? "pause.fill" : "play.fill")
+                    : nil)
+              }
+              .buttonStyle(.watchPressable)
+              .accessibilityLabel(isCurrent && audioManager.isPlaying ? "Open \(song.title)" : song.title)
+              .accessibilityValue("\(song.artistName), \(song.durationText)")
+              .accessibilityHint(isCurrent ? "Double tap to open the current song." : "Double tap to play this song.")
+              .contextMenu {
+                Button {
+                  play(song, context: homeViewModel.trending)
+                } label: {
+                  Label(isCurrent && audioManager.isPlaying ? "Open Player" : "Play", systemImage: "play.fill")
+                }
+                if isCurrent {
+                  Button {
+                    toggleCurrentPlayback()
+                  } label: {
+                    Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
                   }
                 }
               }
-              .buttonStyle(.plain)
             }
           }
         } else if homeViewModel.isLoading {
@@ -79,20 +103,54 @@ struct HomeView: View {
         }
         Section("Browse") {
           NavigationLink(destination: PlaylistsGridView()) {
-            Label("Playlists", systemImage: "music.note.list")
+            WatchBrowseLinkRow(
+              title: "Playlists",
+              subtitle: "Curated karaoke sets",
+              systemImage: "music.note.list",
+              tint: .appAccent)
           }
+          .buttonStyle(.watchPressable)
+          .accessibilityLabel("Playlists")
+          .accessibilityHint("Opens curated karaoke playlists.")
+          .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
           NavigationLink(destination: SongsView().environmentObject(audioManager)) {
-            Label("Songs", systemImage: "music.note")
+            WatchBrowseLinkRow(
+              title: "Songs",
+              subtitle: "Browse the full catalog",
+              systemImage: "music.note",
+              tint: .purple)
           }
+          .buttonStyle(.watchPressable)
+          .accessibilityLabel("Songs")
+          .accessibilityHint("Opens the full song catalog.")
+          .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
           NavigationLink(destination: SearchView().environmentObject(audioManager)) {
-            Label("Search", systemImage: "magnifyingglass")
+            WatchBrowseLinkRow(
+              title: "Search",
+              subtitle: "Find songs and artists",
+              systemImage: "magnifyingglass",
+              tint: .blue)
           }
+          .buttonStyle(.watchPressable)
+          .accessibilityLabel("Search")
+          .accessibilityHint("Opens karaoke search.")
+          .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
           NavigationLink(destination: AccountView()) {
-            Label("Account", systemImage: "person.crop.circle")
+            WatchBrowseLinkRow(
+              title: "Account",
+              subtitle: "Guest session and sync",
+              systemImage: "person.crop.circle",
+              tint: .green)
           }
+          .buttonStyle(.watchPressable)
+          .accessibilityLabel("Account")
+          .accessibilityHint("Opens account and sync status.")
+          .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
         }
       }
       .navigationTitle("Twins Karaoke")
+      .animation(songStateAnimation, value: audioManager.currentSong?.id)
+      .animation(playbackAnimation, value: audioManager.isPlaying)
       .navigationDestination(isPresented: $navigateToPlayer) {
         PlayerView()
           .environmentObject(audioManager)
@@ -102,5 +160,60 @@ struct HomeView: View {
       }
     }
     .environmentObject(audioManager)
+  }
+
+  private func play(_ song: Song, context: [Song]) {
+    if audioManager.currentSong?.id != song.id {
+      audioManager.play(song: song, context: context)
+      WatchHaptic.play(.start)
+    } else {
+      WatchHaptic.play(.click)
+    }
+    navigateToPlayer = true
+  }
+
+  private func toggleCurrentPlayback() {
+    let wasPlaying = audioManager.isPlaying
+    if audioManager.togglePlayPause() {
+      WatchHaptic.play(wasPlaying ? .stop : .start)
+    } else {
+      WatchHaptic.play(.failure)
+    }
+  }
+}
+
+private struct WatchBrowseLinkRow: View {
+  let title: String
+  let subtitle: String
+  let systemImage: String
+  let tint: Color
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: systemImage)
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundColor(tint)
+        .frame(width: 28, height: 28)
+        .background(Circle().fill(tint.opacity(0.14)))
+        .accessibilityHidden(true)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.primary)
+          .lineLimit(1)
+        Text(subtitle)
+          .font(.system(size: 10, weight: .medium))
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+      }
+
+      Spacer(minLength: 4)
+    }
+    .padding(.vertical, 3)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(subtitle)
   }
 }

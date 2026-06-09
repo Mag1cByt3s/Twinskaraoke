@@ -8,11 +8,14 @@ struct FullScreenPlayerView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
   @ObservedObject private var favorites = FavoritesManager.shared
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var showingQueue = false
   @State private var showLyrics = false
   @State private var showKaraokeControls = false
   @State private var showTranslatedLyrics = false
   @State private var showCoverArt = false
+  @State private var showAddToPlaylist = false
   @State private var coverArtSaveStatus: ArtworkSaveStatus = .idle
   @State private var easterEggImageURL: URL?
   @State private var easterEggArtistName: String?
@@ -87,9 +90,15 @@ struct FullScreenPlayerView: View {
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
     }
+    .sheet(isPresented: $showAddToPlaylist) {
+      if let song {
+        AddToPlaylistSheet(song: song)
+      }
+    }
     .onChange(of: audioManager.currentSong?.id) { _, newId in
       showTranslatedLyrics = false
       showKaraokeControls = false
+      showAddToPlaylist = false
       coverArtArtistName = nil
       coverArtArtistLink = nil
       if let id = newId {
@@ -168,18 +177,26 @@ struct FullScreenPlayerView: View {
                 .padding(.bottom, 32)
             }
           }
-          .transition(.opacity)
+          .transition(lyricsSurfaceTransition)
         } else {
           VStack(spacing: 0) {
             Spacer(minLength: 20)
             PlayerArtworkView(song: song, size: artSize, onTap: { handleCoverArtTap(song: song) })
+              .contextMenu {
+                songActions(song: song)
+              } preview: {
+                SongContextPreview(song: song)
+                  .environmentObject(audioManager)
+              }
             Spacer(minLength: 28)
             titleRow(song: song)
           }
-          .transition(.opacity)
+          .transition(artworkSurfaceTransition)
         }
       }
       .frame(maxHeight: .infinity)
+      .clipped()
+      .animation(playerSurfaceAnimation, value: showLyrics)
       progressSection(song: song)
       controlsRow
         .padding(.horizontal, 12)
@@ -190,7 +207,7 @@ struct FullScreenPlayerView: View {
         showingQueue: $showingQueue,
         song: song,
         onLyricsToggle: {
-          withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+          withAnimation(playerSurfaceAnimation) {
             showLyrics.toggle()
           }
           if showLyrics { lyricsViewModel.fetch(songID: song.id) }
@@ -207,13 +224,22 @@ struct FullScreenPlayerView: View {
       .frame(maxWidth: .infinity)
       .contentShape(Rectangle())
       .onTapGesture {
+        AppHaptic.light.play()
+        audioManager.showFullScreen = false
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Dismiss player")
+      .accessibilityHint("Collapses the full-screen player.")
+      .accessibilityAddTraits(.isButton)
+      .accessibilityAction {
+        AppHaptic.light.play()
         audioManager.showFullScreen = false
       }
   }
   @ViewBuilder
   private func lyricsHeader(song: Song) -> some View {
     Button {
-      withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+      withAnimation(playerSurfaceAnimation) {
         showLyrics = false
       }
     } label: {
@@ -237,7 +263,10 @@ struct FullScreenPlayerView: View {
         Spacer()
       }
     }
-    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.7))
+    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.7, haptic: .selection))
+    .accessibilityLabel("Hide lyrics")
+    .accessibilityValue("\(song.title), \(song.displayArtist)")
+    .accessibilityHint("Returns to the player controls.")
     .padding(.horizontal, 32)
     .padding(.top, 0)
     .padding(.bottom, 0)
@@ -256,13 +285,22 @@ struct FullScreenPlayerView: View {
           .foregroundColor(.secondary)
           .lineLimit(1)
       }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("Now playing")
+      .accessibilityValue("\(song.title), \(song.displayArtist)")
       Spacer(minLength: 8)
       Button {
+        let wasFavorite = favorites.isFavorite(song.id)
         favorites.toggle(songID: song.id)
+        if wasFavorite {
+          AppHaptic.selection.play()
+        } else {
+          AppHaptic.success.play()
+        }
       } label: {
         Group {
           let isFav = favorites.isFavorite(song.id)
-          if #available(iOS 17.0, *) {
+          if #available(iOS 17.0, *), !reduceMotion {
             Image(systemName: isFav ? "star.fill" : "star")
               .contentTransition(.symbolEffect(.replace))
           } else {
@@ -275,8 +313,19 @@ struct FullScreenPlayerView: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+      .accessibilityLabel(
+        favorites.isFavorite(song.id) ? "Remove from Favorites" : "Add to Favorites"
+      )
+      .accessibilityValue(song.title)
+      .accessibilityHint("Updates favorites for the current song.")
     }
     .padding(.horizontal, 32)
+    .contextMenu {
+      songActions(song: song)
+    } preview: {
+      SongContextPreview(song: song)
+        .environmentObject(audioManager)
+    }
   }
   @ViewBuilder
   private func progressSection(song: Song) -> some View {
@@ -285,7 +334,12 @@ struct FullScreenPlayerView: View {
     AppleMusicProgressBar(
       progress: $audioManager.progress,
       isScrubbing: $audioManager.isEditingProgress,
-      onSeekEnd: { fraction in audioManager.seek(to: fraction) }
+      onSeekEnd: { fraction in audioManager.seek(to: fraction) },
+      accessibilityLabel: "Playback position",
+      accessibilityValueText:
+        "\(formattedTime(elapsed)) elapsed, \(formattedTime(max(0, duration - elapsed))) remaining",
+      accessibilityHint: "Drag or swipe up and down to seek.",
+      scrubValueText: formattedTime(duration * audioManager.progress)
     )
     .padding(.horizontal, 32)
     .padding(.top, showLyrics ? 0 : 16)
@@ -297,7 +351,10 @@ struct FullScreenPlayerView: View {
     .font(.system(size: 12, weight: .medium, design: .monospaced))
     .foregroundColor(audioManager.isEditingProgress ? .primary : .secondary)
     .scaleEffect(audioManager.isEditingProgress ? 1.12 : 1.0, anchor: .center)
-    .animation(.spring(response: 0.3, dampingFraction: 0.85), value: audioManager.isEditingProgress)
+    .animation(
+      reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85),
+      value: audioManager.isEditingProgress
+    )
     .padding(.horizontal, 32)
     .padding(.top, 2)
   }
@@ -311,24 +368,27 @@ struct FullScreenPlayerView: View {
           .foregroundColor(.primary)
           .frame(maxWidth: .infinity)
       }
-      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .light))
+      .accessibilityLabel("Previous track")
+      .accessibilityHint("Skips to the previous song.")
       Button {
         audioManager.togglePlayPause()
       } label: {
         Group {
-          if #available(iOS 17.0, *) {
+          if #available(iOS 17.0, *), !reduceMotion {
             Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
               .contentTransition(.symbolEffect(.replace))
           } else {
             Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
-              .contentTransition(.opacity)
           }
         }
         .font(.system(size: 48))
         .foregroundColor(.primary)
         .frame(maxWidth: .infinity)
       }
-      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .medium))
+      .accessibilityLabel(audioManager.isPlaying ? "Pause" : "Play")
+      .accessibilityValue(audioManager.currentSong?.title ?? "Current song")
       Button {
         audioManager.playNextOrRandom()
       } label: {
@@ -337,7 +397,9 @@ struct FullScreenPlayerView: View {
           .foregroundColor(.primary)
           .frame(maxWidth: .infinity)
       }
-      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .light))
+      .accessibilityLabel("Next track")
+      .accessibilityHint("Skips to the next song.")
     }
   }
   private func backgroundView(song: Song) -> some View {
@@ -352,21 +414,75 @@ struct FullScreenPlayerView: View {
     return String(format: "%d:%02d", s / 60, s % 60)
   }
 
+  @ViewBuilder
+  private func songActions(song: Song) -> some View {
+    SongActionsMenuItems(song: song) {
+      showAddToPlaylist = true
+    }
+  }
+
+  private var playerSurfaceAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.86, blendDuration: 0.08)
+  }
+
+  private var lyricsSurfaceTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return AnyTransition.asymmetric(
+      insertion: .move(edge: .bottom)
+        .combined(with: .opacity)
+        .combined(with: .scale(scale: 0.98, anchor: .center)),
+      removal: .move(edge: .top)
+        .combined(with: .opacity)
+        .combined(with: .scale(scale: 0.98, anchor: .center))
+    )
+  }
+
+  private var artworkSurfaceTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return AnyTransition.asymmetric(
+      insertion: .move(edge: .top)
+        .combined(with: .opacity)
+        .combined(with: .scale(scale: 0.985, anchor: .center)),
+      removal: .move(edge: .bottom)
+        .combined(with: .opacity)
+        .combined(with: .scale(scale: 0.985, anchor: .center))
+    )
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   private var lyricsTranslationButton: some View {
     Button {
       if lyricsViewModel.hasTranslatedLyrics {
+        AppHaptic.selection.play()
         showTranslatedLyrics.toggle()
       } else {
+        AppHaptic.light.play()
         lyricsViewModel.requestTranslation()
       }
     } label: {
       ZStack {
         if lyricsViewModel.translationState == .translating {
-          Circle()
-            .trim(from: 0, to: 0.82)
-            .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .rotationEffect(.degrees(-90))
-            .padding(3)
+          if reduceMotion {
+            Circle()
+              .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+              .padding(3)
+              .transition(.opacity)
+          } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+              Circle()
+                .trim(from: 0, to: 0.82)
+                .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(translationSpinnerDegrees(for: context.date)))
+                .padding(3)
+            }
+            .transition(.scale(scale: 0.82).combined(with: .opacity))
+          }
         }
         Image(systemName: showTranslatedLyrics ? "globe.badge.chevron.backward" : "globe")
           .font(.system(size: 14, weight: .semibold))
@@ -377,6 +493,44 @@ struct FullScreenPlayerView: View {
     }
     .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.7))
     .disabled(lyricsViewModel.isLoading || lyricsViewModel.hasNoLyrics)
+    .accessibilityLabel(lyricsTranslationAccessibilityLabel)
+    .accessibilityValue(lyricsTranslationAccessibilityValue)
+    .accessibilityHint(lyricsTranslationAccessibilityHint)
+    .animation(
+      reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86),
+      value: lyricsViewModel.translationState
+    )
+  }
+
+  private func translationSpinnerDegrees(for date: Date) -> Double {
+    let cycle = 1.12
+    let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle) / cycle
+    return phase * 360 - 90
+  }
+
+  private var lyricsTranslationAccessibilityLabel: String {
+    if showTranslatedLyrics { return "Hide Translated Lyrics" }
+    if lyricsViewModel.hasTranslatedLyrics { return "Show Translated Lyrics" }
+    return "Translate Lyrics"
+  }
+
+  private var lyricsTranslationAccessibilityValue: String {
+    if showTranslatedLyrics { return "On" }
+    switch lyricsViewModel.translationState {
+    case .idle: return "Off"
+    case .translating: return "Translating"
+    case .ready: return "Available"
+    case .unavailable: return "Unavailable"
+    case .failed: return "Failed"
+    }
+  }
+
+  private var lyricsTranslationAccessibilityHint: String {
+    if lyricsViewModel.hasNoLyrics { return "Lyrics are not available for this song." }
+    if lyricsViewModel.hasTranslatedLyrics {
+      return "Toggles translated lyrics."
+    }
+    return "Requests translated lyrics."
   }
 
   private func saveCoverArt(url: URL?) {

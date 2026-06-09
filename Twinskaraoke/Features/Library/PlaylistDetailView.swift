@@ -4,15 +4,32 @@ import SwiftUI
 struct PlaylistDetailView: View {
   let playlist: Playlist
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @StateObject private var loader = PlaylistDetailViewModel()
   @ObservedObject private var favorites = FavoritesManager.shared
   @State private var scrollOffset: CGFloat = 0
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
   var body: some View {
     let songs: [Song] = loader.songs ?? playlist.songListDTOs ?? []
     GeometryReader { geo in
       ScrollView {
         VStack(spacing: 18) {
           parallaxHero(width: geo.size.width)
+            .contextMenu {
+              PlaylistActionsMenuItems(playlist: playlist, songs: songs)
+            } preview: {
+              PlaylistDetailContextPreview(
+                playlist: playlist,
+                songs: songs,
+                coverURL: playlistCoverURL
+              )
+            }
           VStack(spacing: 4) {
             Text(playlist.name)
               .font(.title2.bold())
@@ -26,19 +43,30 @@ struct PlaylistDetailView: View {
             actionButtons(songs: songs)
             LazyVStack(spacing: 0) {
               ForEach(songs) { song in
-                Button {
-                  audioManager.play(song: song, context: songs)
-                } label: {
-                  PlaylistRow(song: song)
-                }
-                .buttonStyle(PressableButtonStyle())
+                PlaylistRow(song: song)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    play(song, context: songs)
+                  }
+                  .songRowAccessibility(song: song) {
+                    play(song, context: songs)
+                  }
                 Divider().padding(.leading, 76)
               }
             }
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
           } else if loader.isLoading {
-            LoadingIndicator(size: 48)
-              .frame(maxWidth: .infinity)
-              .padding(.vertical, 40)
+            PlaylistLoadingRows()
+              .transition(.opacity)
+          } else {
+            PlaylistEmptyStateView(
+              isFavorites: playlist.isFavorites,
+              message: loader.emptyStateMessage
+            ) {
+              loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
+            }
+            .padding(.top, 14)
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
           }
         }
         .padding(.bottom, 16)
@@ -65,8 +93,19 @@ struct PlaylistDetailView: View {
         )
       }
     }
-    .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
-    .refreshable { loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs) }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: scrollOffset < -180)
+    .animation(
+      reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84),
+      value: songs.count)
+    .animation(
+      reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84),
+      value: loader.isLoading)
+    .scrollIndicators(.hidden)
+    .musicScreenBackground()
+    .refreshable {
+      AppHaptic.selection.play()
+      loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
+    }
     .onAppear {
       loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
       RecentlyPlayedStore.shared.record(playlist)
@@ -82,11 +121,12 @@ struct PlaylistDetailView: View {
 
   private func parallaxHero(width: CGFloat) -> some View {
     let baseSize: CGFloat = 240
-    let stretch = max(0, scrollOffset)
-    let shrink = max(0, -scrollOffset * 0.4)
+    let stretch = reduceMotion ? 0 : max(0, scrollOffset)
+    let shrink = reduceMotion ? 0 : max(0, -scrollOffset * 0.4)
     let size = max(140, baseSize + stretch * 0.6 - shrink)
-    let blur = min(8, max(0, -scrollOffset / 30))
-    let yOffset = scrollOffset > 0 ? -scrollOffset / 2 : 0
+    let blur = reduceMotion ? 0 : min(8, max(0, -scrollOffset / 30))
+    let yOffset = reduceMotion ? 0 : (scrollOffset > 0 ? -scrollOffset / 2 : 0)
+    let artworkOpacity = reduceMotion ? 1 : 1 - min(0.7, max(0, -scrollOffset / 250))
     return Group {
       if playlist.isFavorites {
         FavoritesArtworkTile()
@@ -100,7 +140,7 @@ struct PlaylistDetailView: View {
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
     .blur(radius: blur)
-    .opacity(1 - min(0.7, max(0, -scrollOffset / 250)))
+    .opacity(artworkOpacity)
     .frame(width: width)
     .offset(y: yOffset)
     .padding(.top, 12)
@@ -110,37 +150,169 @@ struct PlaylistDetailView: View {
     HStack(spacing: 12) {
       Button {
         if let first = songs.first {
+          AppHaptic.selection.play()
           audioManager.playInOrder(song: first, context: songs)
         }
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play")
+        actionLabel(symbol: "play.fill", text: "Play", isPrimary: true)
       }
-      .buttonStyle(PressableButtonStyle())
+      .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
+      .accessibilityLabel("Play playlist")
       Button {
+        AppHaptic.selection.play()
         audioManager.playShuffled(from: songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle")
+        actionLabel(symbol: "shuffle", text: "Shuffle", isPrimary: false)
       }
-      .buttonStyle(PressableButtonStyle())
+      .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
+      .accessibilityLabel("Shuffle playlist")
     }
     .padding(.horizontal)
   }
-  private func actionLabel(symbol: String, text: String) -> some View {
+  private func actionLabel(symbol: String, text: String, isPrimary: Bool) -> some View {
     HStack(spacing: 6) {
       Image(systemName: symbol)
+        .font(.system(size: 15, weight: .semibold))
       Text(text).fontWeight(.semibold)
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 12)
-    .foregroundColor(.appAccent)
-    .background(Color(.tertiarySystemFill))
+    .foregroundColor(isPrimary ? .appControlActiveForeground : .appAccent)
+    .background(isPrimary ? Color.appControlActiveFill : Color.appControlInactiveFill)
     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+  }
+  private func play(_ song: Song, context: [Song]) {
+    AppHaptic.selection.play()
+    audioManager.play(song: song, context: context)
+  }
+}
+
+private struct PlaylistLoadingRows: View {
+  var body: some View {
+    LazyVStack(spacing: 0) {
+      ForEach(0..<7, id: \.self) { _ in
+        HStack(spacing: 12) {
+          RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
+            .fill(Color.appPlaceholderPrimary)
+            .frame(width: 48, height: 48)
+          VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color.appPlaceholderSecondary)
+              .frame(width: 180, height: 11)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color.appPlaceholderPrimary)
+              .frame(width: 126, height: 9)
+          }
+          Spacer()
+          LoadingIndicator(size: 16)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        Divider().padding(.leading, 76)
+      }
+    }
+    .accessibilityLabel("Loading playlist songs")
+  }
+}
+
+private struct PlaylistEmptyStateView: View {
+  let isFavorites: Bool
+  let message: String
+  let onRefresh: () -> Void
+  private var title: String {
+    isFavorites ? "No Favorites Yet" : "No Songs"
+  }
+  private var icon: String {
+    isFavorites ? "star" : "music.note.list"
+  }
+  private var resolvedMessage: String {
+    guard !message.hasPrefix("The playlist") else { return message }
+    if isFavorites {
+      return "Favorite songs to build this playlist automatically."
+    }
+    return message
+  }
+  var body: some View {
+    VStack(spacing: 16) {
+      MusicEmptyState(systemImage: icon, title: title, message: resolvedMessage)
+      Button {
+        onRefresh()
+      } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.appAccent)
+          .padding(.horizontal, 18)
+          .padding(.vertical, 10)
+          .background(Color.appAccent.opacity(0.12), in: Capsule())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.78, haptic: .selection))
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 24)
+  }
+}
+
+private struct PlaylistDetailContextPreview: View {
+  let playlist: Playlist
+  let songs: [Song]
+  let coverURL: URL?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Group {
+        if playlist.isFavorites {
+          FavoritesArtworkTile()
+        } else if let coverURL {
+          LoadingImage(url: coverURL, cornerRadius: 10)
+        } else {
+          PlaylistPlaceholderArtwork(seed: playlist.id)
+        }
+      }
+      .frame(width: 220, height: 220)
+      .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text(playlist.isFavorites ? "Favorites" : "Playlist")
+          .font(.system(size: 12, weight: .bold))
+          .foregroundColor(.appAccent)
+          .textCase(.uppercase)
+        Text(playlist.name)
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundColor(.primary)
+          .lineLimit(2)
+        Text("\(songs.isEmpty ? playlist.songCount : songs.count) songs")
+          .font(.system(size: 14))
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+      }
+    }
+    .padding(16)
+    .frame(width: 252, alignment: .leading)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 
 private struct PlaylistMoreMenu: View {
   let playlist: Playlist
   let songs: [Song]
+  var body: some View {
+    Menu {
+      PlaylistActionsMenuItems(playlist: playlist, songs: songs)
+    } label: {
+      Image(systemName: "ellipsis")
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundColor(.appAccent)
+        .frame(width: 32, height: 32)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.65, haptic: .selection))
+  }
+}
+
+struct PlaylistActionsMenuItems: View {
+  let playlist: Playlist
+  let songs: [Song]
+  @EnvironmentObject private var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
   @ObservedObject private var savedStore: SavedPlaylistsStore = .shared
   private var pendingCount: Int {
@@ -155,28 +327,52 @@ private struct PlaylistMoreMenu: View {
   private var canSaveToLibrary: Bool { !playlist.isFavorites && !playlist.isPersonal }
   private var isSaved: Bool { savedStore.isSaved(playlist) }
   var body: some View {
-    Menu {
-      if canSaveToLibrary {
-        Button {
-          savedStore.toggle(playlist)
-        } label: {
-          if isSaved {
-            Label("Remove from Library", systemImage: "checkmark.circle.fill")
-          } else {
-            Label("Add to Library", systemImage: "plus.circle")
-          }
+    if !songs.isEmpty {
+      Button {
+        AppHaptic.selection.play()
+        if let first = songs.first {
+          audioManager.playInOrder(song: first, context: songs)
+        }
+      } label: {
+        Label("Play", systemImage: "play.fill")
+      }
+
+      Button {
+        AppHaptic.selection.play()
+        audioManager.playShuffled(from: songs)
+      } label: {
+        Label("Shuffle", systemImage: "shuffle")
+      }
+
+      Divider()
+    }
+
+    if canSaveToLibrary {
+      Button {
+        AppHaptic.selection.play()
+        savedStore.toggle(playlist)
+      } label: {
+        if isSaved {
+          Label("Remove from Library", systemImage: "checkmark.circle.fill")
+        } else {
+          Label("Add to Library", systemImage: "plus.circle")
         }
       }
+    }
+
+    if !songs.isEmpty {
       if inFlightCount > 0 {
         Label("Downloading \(inFlightCount)…", systemImage: "arrow.down.circle")
       } else if allDownloaded {
         Button(role: .destructive) {
+          AppHaptic.warning.play()
           for s in songs { downloads.remove(songID: s.id) }
         } label: {
           Label("Remove Downloads", systemImage: "trash")
         }
       } else {
         Button {
+          AppHaptic.success.play()
           for s in songs where !downloads.isDownloaded(s.id) && !downloads.isDownloading(s.id) {
             downloads.download(song: s)
           }
@@ -185,12 +381,6 @@ private struct PlaylistMoreMenu: View {
           Label(label, systemImage: "arrow.down.circle")
         }
       }
-    } label: {
-      Image(systemName: "ellipsis")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundColor(.appAccent)
-        .frame(width: 32, height: 32)
-        .contentShape(Rectangle())
     }
   }
 }
@@ -212,14 +402,22 @@ struct PlaylistRow: View {
 class PlaylistDetailViewModel: ObservableObject {
   @Published var songs: [Song]?
   @Published var isLoading = false
+  @Published private var loadFailed = false
   private var loadedID: String?
+  var emptyStateMessage: String {
+    if loadFailed {
+      return "The playlist couldn’t be loaded. Check your connection and try again."
+    }
+    return "Pull down or tap refresh to check for new songs."
+  }
   func reload(playlistID: String, fallback: [Song]? = nil) {
     loadedID = nil
+    loadFailed = false
     load(playlistID: playlistID, fallback: fallback)
   }
   func load(playlistID: String, fallback: [Song]?) {
-    let alreadyFullyLoaded = (loadedID == playlistID) && (songs?.isEmpty == false)
-    if alreadyFullyLoaded { return }
+    let alreadyLoaded = (loadedID == playlistID) && songs != nil && !isLoading
+    if alreadyLoaded { return }
     loadedID = playlistID
     if songs?.isEmpty ?? true, let fallback = fallback, !fallback.isEmpty {
       self.songs = fallback
@@ -236,13 +434,16 @@ class PlaylistDetailViewModel: ObservableObject {
       r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
     GuestIdentity.applyIfNeeded(to: &r)
-    URLSession.shared.dataTask(with: r) { [weak self] data, _, _ in
+    URLSession.shared.dataTask(with: r) { [weak self] data, response, error in
       guard let self = self else { return }
       let list = Self.decodeSongs(from: data)
+      let statusCode = (response as? HTTPURLResponse)?.statusCode
+      let requestFailed = error != nil || statusCode.map { !(200..<300).contains($0) } == true
       DispatchQueue.main.async {
-        if let list = list, !list.isEmpty {
+        if let list = list {
           self.songs = list
         }
+        self.loadFailed = requestFailed && (self.songs?.isEmpty ?? true)
         self.isLoading = false
       }
     }.resume()

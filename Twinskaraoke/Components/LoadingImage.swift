@@ -131,3 +131,33 @@ struct LoadingIndicator: View {
       .frame(width: size, height: size)
   }
 }
+
+struct MusicEmptyState: View {
+  let systemImage: String
+  let title: String
+  let message: String
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Image(systemName: systemImage)
+        .font(.system(size: 28, weight: .semibold))
+        .foregroundColor(.appAccent)
+        .frame(width: 64, height: 64)
+        .background(Color.appAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+      VStack(spacing: 4) {
+        Text(title)
+          .font(.system(size: 19, weight: .bold))
+          .foregroundColor(.primary)
+          .multilineTextAlignment(.center)
+        Text(message)
+          .font(.system(size: 14))
+          .foregroundColor(.secondary)
+          .multilineTextAlignment(.center)
+          .lineLimit(3)
+      }
+    }
+    .frame(maxWidth: 320)
+    .frame(maxWidth: .infinity)
+    .padding(.horizontal, 24)
+  }
+}

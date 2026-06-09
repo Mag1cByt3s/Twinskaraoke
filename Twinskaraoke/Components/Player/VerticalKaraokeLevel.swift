@@ -4,6 +4,9 @@ struct VerticalKaraokeLevel: View {
   @Binding var value: Double
   var enabled: Bool = true
   var onSet: (Double) -> Void = { _ in }
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+
   var body: some View {
     GeometryReader { geo in
       let h = geo.size.height
@@ -14,7 +17,7 @@ struct VerticalKaraokeLevel: View {
         Capsule()
           .fill(Color.primary.opacity(enabled ? 1.0 : 0.4))
           .frame(height: max(4, h * CGFloat(clamped)))
-          .animation(.spring(response: 0.32, dampingFraction: 0.85), value: value)
+          .animation(levelAnimation, value: value)
       }
       .contentShape(Rectangle())
       .gesture(
@@ -27,5 +30,16 @@ struct VerticalKaraokeLevel: View {
           }
       )
     }
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
+  private var levelAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.85)
   }
 }

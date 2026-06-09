@@ -27,6 +27,7 @@ class AudioManager: ObservableObject {
   @Published var currentIndex: Int = 0
   @Published var playbackMode: PlaybackMode = .listLoop
   @Published var isShuffleOn = false
+  @Published var volume: Double = AudioManager.storedVolume()
   private var player: AVPlayer?
   private var timeObserver: Any?
   private var endTimeObserver: NSObjectProtocol?
@@ -42,6 +43,7 @@ class AudioManager: ObservableObject {
     return dir
   }()
   private static let maxCachedFiles = 10
+  private static let volumeDefaultsKey = "nk.watchVolume"
   init() {
     setupRemoteCommands()
     setupInterruptionHandler()
@@ -111,6 +113,7 @@ class AudioManager: ObservableObject {
     } catch {}
     let playerItem = AVPlayerItem(url: localURL)
     let player = AVPlayer(playerItem: playerItem)
+    player.volume = Float(volume)
     self.player = player
     player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
     playerItem.publisher(for: \.duration)
@@ -278,6 +281,16 @@ class AudioManager: ObservableObject {
   func seek(to time: Double) {
     player?.seek(to: CMTime(seconds: time, preferredTimescale: 600))
     updateNowPlayingInfo()
+  }
+  func setVolume(_ value: Double) {
+    let clamped = min(max(value, 0), 1)
+    volume = clamped
+    UserDefaults.standard.set(clamped, forKey: AudioManager.volumeDefaultsKey)
+    player?.volume = Float(clamped)
+  }
+  private static func storedVolume() -> Double {
+    guard UserDefaults.standard.object(forKey: volumeDefaultsKey) != nil else { return 1 }
+    return min(max(UserDefaults.standard.double(forKey: volumeDefaultsKey), 0), 1)
   }
   private func cleanupPlayer() {
     if let observer = timeObserver {

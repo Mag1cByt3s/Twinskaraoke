@@ -7,6 +7,8 @@ struct ProfileDetailView: View {
   let profile: Profile?
   let badges: [Badge]
   let uploadLimits: UploadLimits?
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var selected: Badge?
   private let cols = [
     GridItem(.flexible(), spacing: 14),
@@ -15,6 +17,12 @@ struct ProfileDetailView: View {
   ]
   private var unlocked: [Badge] { badges.filter { $0.unlocked } }
   private var locked: [Badge] { badges.filter { !$0.unlocked } }
+  private var unlockedBadgeCount: Int { profile?.unlockedBadges ?? unlocked.count }
+  private var totalBadgeCount: Int { max(profile?.totalBadges ?? badges.count, badges.count) }
+  private var nextBadge: Badge? {
+    locked.first { $0.conditionValue > 0 } ?? locked.first
+  }
+
   var body: some View {
     ScrollView {
       VStack(spacing: 24) {
@@ -25,8 +33,26 @@ struct ProfileDetailView: View {
           unlockedCount: unlocked.count,
           totalCount: badges.count
         )
+        if !badges.isEmpty {
+          ProfileAchievementStrip(
+            unlockedCount: unlockedBadgeCount,
+            totalCount: totalBadgeCount,
+            nextBadge: nextBadge,
+            onSelect: selectBadge
+          )
+          .transition(bottomTransition)
+        }
         if let uploadLimits {
           StorageSection(limits: uploadLimits)
+        }
+        if unlocked.isEmpty && locked.isEmpty {
+          MusicEmptyState(
+            systemImage: "rosette",
+            title: "No Badges Yet",
+            message: "Sing more songs to start unlocking profile badges."
+          )
+          .padding(.vertical, 28)
+          .transition(emptyStateTransition)
         }
         if !unlocked.isEmpty {
           BadgeGridSection(
@@ -34,8 +60,9 @@ struct ProfileDetailView: View {
             items: unlocked,
             headerCount: profile?.unlockedBadges,
             cols: cols,
-            onSelect: { selected = $0 }
+            onSelect: selectBadge
           )
+          .transition(bottomTransition)
         }
         if !locked.isEmpty {
           BadgeGridSection(
@@ -43,19 +70,51 @@ struct ProfileDetailView: View {
             items: locked,
             headerCount: nil,
             cols: cols,
-            onSelect: { selected = $0 }
+            onSelect: selectBadge
           )
+          .transition(bottomTransition)
         }
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 20)
     }
+    .scrollIndicators(.hidden)
+    .musicScreenBackground()
     .navigationTitle("Profile")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(item: $selected) { badge in
       BadgeDetailSheet(badge: badge)
         .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
+    .animation(profileAnimation, value: badges.count)
+    .animation(profileAnimation, value: unlocked.count)
+  }
+
+  private func selectBadge(_ badge: Badge) {
+    guard !reduceMotion else {
+      selected = badge
+      return
+    }
+    withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+      selected = badge
+    }
+  }
+
+  private var profileAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.82)
+  }
+
+  private var bottomTransition: AnyTransition {
+    reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+  }
+
+  private var emptyStateTransition: AnyTransition {
+    reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98))
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
   }
 }
 
@@ -195,12 +254,211 @@ private struct ProfileStatsCard: View {
   }
 }
 
+private struct ProfileAchievementStrip: View {
+  let unlockedCount: Int
+  let totalCount: Int
+  let nextBadge: Badge?
+  let onSelect: (Badge) -> Void
+  private var completion: Double {
+    guard totalCount > 0 else { return 0 }
+    return min(1, Double(unlockedCount) / Double(totalCount))
+  }
+  private var completionText: String {
+    "\(unlockedCount) of \(totalCount)"
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(alignment: .center, spacing: 14) {
+        AchievementMeter(progress: completion)
+          .frame(width: 74, height: 74)
+        VStack(alignment: .leading, spacing: 5) {
+          Text("Achievements")
+            .font(.system(size: 18, weight: .bold))
+            .foregroundStyle(.primary)
+          Text("\(completionText) badges unlocked")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          Text("Keep singing to complete your profile collection.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 0)
+      }
+
+      if let nextBadge {
+        Button {
+          onSelect(nextBadge)
+        } label: {
+          NextBadgeCallout(badge: nextBadge)
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82, haptic: .selection))
+        .contextMenu {
+          Button {
+            onSelect(nextBadge)
+          } label: {
+            Label("View Badge", systemImage: "info.circle")
+          }
+        }
+      }
+    }
+    .padding(16)
+    .background(Color.appSecondaryBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(Color.appDivider, lineWidth: 1)
+    )
+  }
+}
+
+private struct AchievementMeter: View {
+  let progress: Double
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var animatedProgress = 0.0
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .stroke(Color.appControlInactiveFill, lineWidth: 8)
+      Circle()
+        .trim(from: 0, to: animatedProgress)
+        .stroke(
+          Color.appAccent,
+          style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round)
+        )
+        .rotationEffect(.degrees(-90))
+      VStack(spacing: 1) {
+        Text("\(Int((animatedProgress * 100).rounded()))%")
+          .font(.system(size: 16, weight: .bold))
+          .monospacedDigit()
+        Text("done")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(.secondary)
+      }
+    }
+    .onAppear {
+      setProgress(progress)
+    }
+    .onChange(of: progress) { _, newValue in
+      setProgress(newValue)
+    }
+    .onChange(of: reduceMotion) { _, _ in
+      setProgress(progress)
+    }
+  }
+
+  private func setProgress(_ newValue: Double) {
+    guard !reduceMotion else {
+      animatedProgress = newValue
+      return
+    }
+    withAnimation(.spring(response: 0.7, dampingFraction: 0.86)) {
+      animatedProgress = newValue
+    }
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
+  }
+}
+
+private struct NextBadgeCallout: View {
+  let badge: Badge
+  private var progressRatio: Double {
+    guard badge.conditionValue > 0 else { return 0 }
+    return min(1, Double(badge.currentProgress) / Double(badge.conditionValue))
+  }
+  private var progressText: String {
+    guard badge.conditionValue > 0 else { return "View badge details" }
+    return "\(badge.currentProgress) / \(badge.conditionValue)"
+  }
+
+  var body: some View {
+    HStack(spacing: 12) {
+      BadgeMiniIcon(badge: badge)
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 6) {
+          Text("Next Badge")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Color.appAccent)
+            .textCase(.uppercase)
+          Spacer(minLength: 0)
+          Text(progressText)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        Text(badge.name)
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+        if badge.conditionValue > 0 {
+          GradientProgressBar(progress: progressRatio, height: 5)
+        }
+      }
+      Image(systemName: "chevron.right")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.tertiary)
+    }
+    .padding(12)
+    .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .contentShape(Rectangle())
+  }
+}
+
+private struct BadgeMiniIcon: View {
+  let badge: Badge
+  private var ringColor: Color { ProfileTheme.rarityColor(badge.rarity) }
+
+  var body: some View {
+    ZStack {
+      Circle().fill(Color.appBackground)
+      if let url = badge.iconURL {
+        WebImage(url: url, options: ImageCacheConfig.defaultOptions) { image in
+          image
+            .resizable()
+            .scaledToFit()
+            .padding(8)
+            .saturation(badge.unlocked ? 1 : 0)
+            .opacity(badge.unlocked ? 1 : 0.45)
+        } placeholder: {
+          placeholder
+        }
+      } else {
+        placeholder
+      }
+    }
+    .frame(width: 46, height: 46)
+    .overlay(Circle().strokeBorder(ringColor.opacity(0.55), lineWidth: 2))
+    .overlay(alignment: .bottomTrailing) {
+      if !badge.unlocked {
+        Image(systemName: "lock.fill")
+          .font(.system(size: 8, weight: .bold))
+          .foregroundStyle(.white)
+          .frame(width: 17, height: 17)
+          .background(Color.primary.opacity(0.76), in: Circle())
+          .overlay(Circle().strokeBorder(Color.appSecondaryBackground, lineWidth: 2))
+      }
+    }
+  }
+
+  private var placeholder: some View {
+    Image(systemName: "rosette")
+      .font(.system(size: 18))
+      .foregroundStyle(.secondary)
+  }
+}
+
 private struct BadgeGridSection: View {
   let title: String
   let items: [Badge]
   let headerCount: Int?
   let cols: [GridItem]
   let onSelect: (Badge) -> Void
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
@@ -218,20 +476,41 @@ private struct BadgeGridSection: View {
           } label: {
             BadgeGridCell(badge: badge)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.82, haptic: .selection))
+          .contextMenu {
+            Button {
+              AppHaptic.selection.play()
+              onSelect(badge)
+            } label: {
+              Label("View Details", systemImage: "info.circle")
+            }
+          }
+          .transition(cellTransition)
         }
       }
     }
+  }
+
+  private var cellTransition: AnyTransition {
+    reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94))
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
   }
 }
 
 struct BadgeGridCell: View {
   let badge: Badge
   private var ringColor: Color { ProfileTheme.rarityColor(badge.rarity) }
+  private var progressRatio: Double {
+    guard badge.conditionValue > 0 else { return 0 }
+    return min(1, Double(badge.currentProgress) / Double(badge.conditionValue))
+  }
   var body: some View {
     VStack(spacing: 6) {
       ZStack {
-        Circle().fill(Color(.secondarySystemBackground))
+        Circle().fill(Color.appSecondaryBackground)
         if let url = badge.iconURL {
           WebImage(url: url, options: ImageCacheConfig.defaultOptions) { image in
             image
@@ -255,18 +534,46 @@ struct BadgeGridCell: View {
       .overlay(
         Circle().strokeBorder(ringColor.opacity(badge.unlocked ? 1 : 0.4), lineWidth: 2)
       )
+      .overlay {
+        if !badge.unlocked && badge.conditionValue > 0 {
+          Circle()
+            .trim(from: 0, to: progressRatio)
+            .stroke(ringColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(-2)
+        }
+      }
+      .overlay(alignment: .bottomTrailing) {
+        if !badge.unlocked {
+          Image(systemName: "lock.fill")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 19, height: 19)
+            .background(Color.primary.opacity(0.72), in: Circle())
+            .overlay(Circle().strokeBorder(Color.appBackground, lineWidth: 2))
+        }
+      }
+      .shadow(color: ringColor.opacity(badge.unlocked ? 0.22 : 0.08), radius: 8, y: 4)
       Text(badge.name)
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(badge.unlocked ? .primary : .secondary)
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .frame(height: 28)
-      if !badge.unlocked && badge.conditionValue > 0 {
-        Text("\(badge.currentProgress) / \(badge.conditionValue)")
-          .font(.system(size: 10, weight: .medium))
-          .foregroundStyle(.secondary)
+      Group {
+        if !badge.unlocked && badge.conditionValue > 0 {
+          Text("\(badge.currentProgress) / \(badge.conditionValue)")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+        } else if badge.unlocked {
+          Text("Unlocked")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(ringColor)
+        }
       }
+      .frame(height: 12)
     }
+    .contentShape(Rectangle())
   }
 }
 
@@ -275,6 +582,12 @@ struct BadgeDetailSheet: View {
   @Environment(\.dismiss) private var dismiss
   var body: some View {
     ZStack(alignment: .topTrailing) {
+      LinearGradient(
+        colors: [Color.appSheetGradientTop, Color.appSheetGradientBottom],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+      .ignoresSafeArea()
       VStack(spacing: 20) {
         Spacer(minLength: 0)
         BadgeDetailIcon(badge: badge)
@@ -287,6 +600,7 @@ struct BadgeDetailSheet: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       Button {
+        AppHaptic.light.play()
         dismiss()
       } label: {
         Image(systemName: "xmark")
@@ -295,9 +609,9 @@ struct BadgeDetailSheet: View {
           .frame(width: 30, height: 30)
           .background(Color(.tertiarySystemBackground), in: Circle())
       }
-      .buttonStyle(.plain)
-        .padding(.top, 14)
-        .padding(.trailing, 14)
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.72))
+      .padding(.top, 14)
+      .padding(.trailing, 14)
     }
   }
 }
@@ -306,7 +620,7 @@ private struct BadgeDetailIcon: View {
   let badge: Badge
   var body: some View {
     ZStack {
-      Circle().fill(Color(.secondarySystemBackground))
+      Circle().fill(Color.appSecondaryBackground)
       if let url = badge.iconURL {
         WebImage(url: url, options: ImageCacheConfig.defaultOptions) { image in
           image
@@ -323,6 +637,20 @@ private struct BadgeDetailIcon: View {
       }
     }
     .frame(width: 128, height: 128)
+    .overlay(
+      Circle().strokeBorder(ProfileTheme.rarityColor(badge.rarity).opacity(0.85), lineWidth: 3)
+    )
+    .overlay(alignment: .bottomTrailing) {
+      if !badge.unlocked {
+        Image(systemName: "lock.fill")
+          .font(.system(size: 13, weight: .bold))
+          .foregroundStyle(.white)
+          .frame(width: 30, height: 30)
+          .background(Color.primary.opacity(0.76), in: Circle())
+          .overlay(Circle().strokeBorder(Color.appBackground, lineWidth: 3))
+      }
+    }
+    .shadow(color: ProfileTheme.rarityColor(badge.rarity).opacity(0.22), radius: 16, y: 8)
   }
   private var placeholder: some View {
     Image(systemName: "rosette")
@@ -338,14 +666,53 @@ private struct BadgeDetailInfo: View {
       Text(badge.name)
         .font(.title3.weight(.bold))
         .multilineTextAlignment(.center)
+      HStack(spacing: 8) {
+        BadgeStatusPill(unlocked: badge.unlocked)
+        BadgeRarityPill(rarity: badge.rarity)
+      }
       if let description = badge.description, !description.isEmpty {
         Text(description)
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
+          .padding(.horizontal, 24)
       }
     }
-    .padding(.horizontal, 24)
+  }
+}
+
+private struct BadgeStatusPill: View {
+  let unlocked: Bool
+  var body: some View {
+    Label(
+      unlocked ? "Unlocked" : "Locked",
+      systemImage: unlocked ? "checkmark.circle.fill" : "lock.fill"
+    )
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(unlocked ? Color.green : Color.secondary)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 5)
+      .background(Color.appControlInactiveFill, in: Capsule())
+  }
+}
+
+private struct BadgeRarityPill: View {
+  let rarity: Int
+  private var label: String {
+    switch rarity {
+    case 0: return "Common"
+    case 1: return "Rare"
+    case 2: return "Epic"
+    default: return "Legendary"
+    }
+  }
+  var body: some View {
+    Text(label)
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(ProfileTheme.rarityColor(rarity))
+      .padding(.horizontal, 10)
+      .padding(.vertical, 5)
+      .background(ProfileTheme.rarityColor(rarity).opacity(0.12), in: Capsule())
   }
 }
 
@@ -353,14 +720,15 @@ private struct BadgeDetailProgress: View {
   let badge: Badge
   private var ratio: Double {
     guard badge.conditionValue > 0 else { return 0 }
-    return Double(badge.currentProgress) / Double(badge.conditionValue)
+    return min(1, Double(badge.currentProgress) / Double(badge.conditionValue))
   }
   var body: some View {
-    VStack(spacing: 6) {
-      GradientProgressBar(progress: ratio, height: 6)
+    VStack(spacing: 8) {
+      GradientProgressBar(progress: ratio, height: 7)
       Text("\(badge.currentProgress) / \(badge.conditionValue)")
-        .font(.caption)
+        .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
+        .monospacedDigit()
     }
   }
 }

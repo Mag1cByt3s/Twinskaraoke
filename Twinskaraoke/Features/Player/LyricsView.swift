@@ -9,6 +9,20 @@ struct LyricsView: View {
   var hasNoLyrics: Bool = false
   let onSeek: (TimeInterval) -> Void
   var onRetry: (() -> Void)? = nil
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+
+  private var scrollAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.85)
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   private var currentIndex: Int {
     guard !lyrics.isEmpty else { return -1 }
     var lo = 0, hi = lyrics.count - 1, result = -1
@@ -38,7 +52,19 @@ struct LyricsView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
                 .contentShape(Rectangle())
-                .onTapGesture { onSeek(0) }
+                .onTapGesture {
+                  AppHaptic.selection.play()
+                  onSeek(0)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Intro")
+                .accessibilityValue(introAccessibilityValue(startTime: first.time))
+                .accessibilityHint("Double tap to restart the song.")
+                .accessibilityAddTraits(isIntro ? .isSelected : [])
+                .accessibilityAction {
+                  AppHaptic.selection.play()
+                  onSeek(0)
+                }
             }
             ForEach(Array(lyrics.enumerated()), id: \.element.id) { index, line in
               LyricLineRow(
@@ -49,9 +75,7 @@ struct LyricsView: View {
                 showTranslation: showTranslations,
                 nextLineTime: index + 1 < lyrics.count ? lyrics[index + 1].time : nil,
                 onSeek: { time in
-                  withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-                    proxy.scrollTo(line.id, anchor: .center)
-                  }
+                  scrollTo(line.id, proxy: proxy)
                   onSeek(time)
                 }
               )
@@ -72,16 +96,22 @@ struct LyricsView: View {
         )
         .onChange(of: currentIndex) { _, idx in
           if idx < 0 {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-              proxy.scrollTo("intro-dots", anchor: .center)
-            }
+            scrollTo("intro-dots", proxy: proxy)
           } else if idx < lyrics.count {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-              proxy.scrollTo(lyrics[idx].id, anchor: .center)
-            }
+            scrollTo(lyrics[idx].id, proxy: proxy)
           }
         }
       }
+    }
+  }
+
+  private func scrollTo<ID: Hashable>(_ id: ID, proxy: ScrollViewProxy) {
+    if let scrollAnimation {
+      withAnimation(scrollAnimation) {
+        proxy.scrollTo(id, anchor: .center)
+      }
+    } else {
+      proxy.scrollTo(id, anchor: .center)
     }
   }
 }
@@ -111,10 +141,21 @@ struct LyricsBouncingDots: View {
   var progress: Double? = nil
   var dotSize: CGFloat = 9
   var color: Color = .primary
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var loopPhase: Date = .now
   private let loopCycle: TimeInterval = 1.6
   var body: some View {
-    if let progress, isActive {
+    if reduceMotion {
+      HStack(spacing: dotSize * 0.55) {
+        ForEach(0..<3, id: \.self) { _ in
+          Circle()
+            .fill(color)
+            .frame(width: dotSize, height: dotSize)
+            .opacity(isActive ? 0.9 : 0.35)
+        }
+      }
+    } else if let progress, isActive {
       HStack(spacing: dotSize * 0.55) {
         ForEach(0..<3, id: \.self) { i in
           Circle()
@@ -170,6 +211,13 @@ struct LyricsBouncingDots: View {
     }
     return 1.0
   }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
 }
 
 private struct LyricLineRow: View {
@@ -180,6 +228,8 @@ private struct LyricLineRow: View {
   let showTranslation: Bool
   let nextLineTime: TimeInterval?
   let onSeek: (TimeInterval) -> Void
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   private var isCurrent: Bool { index == currentIndex }
   private var isPast: Bool { index < currentIndex }
   private var distance: Int { abs(index - currentIndex) }
@@ -222,6 +272,7 @@ private struct LyricLineRow: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(translationTransition)
             }
           }
           .padding(.vertical, isCurrent ? 10 : 6)
@@ -229,10 +280,47 @@ private struct LyricLineRow: View {
       }
       .padding(.horizontal, 4)
     }
-    .buttonStyle(.plain)
-    .scaleEffect(isCurrent ? 1.0 : 0.92, anchor: .leading)
+    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.82, haptic: .selection))
+    .scaleEffect(reduceMotion ? 1.0 : (isCurrent ? 1.0 : 0.92), anchor: .leading)
     .opacity(lineOpacity)
-    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: currentIndex)
+    .animation(lineAnimation, value: currentIndex)
+    .animation(translationAnimation, value: showTranslation)
+    .accessibilityLabel(accessibilityLabel)
+    .accessibilityValue(accessibilityValue)
+    .accessibilityHint("Double tap to jump to this lyric.")
+    .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    .accessibilityAction(named: "Jump to Lyric") {
+      AppHaptic.selection.play()
+      onSeek(line.time)
+    }
+  }
+  private var accessibilityLabel: String {
+    line.isInstrumental ? "Instrumental break" : line.text
+  }
+  private var accessibilityValue: String {
+    var values = [lineStatus, formattedLyricTime(line.time)]
+    if showTranslation,
+      let translated = line.translatedText,
+      !translated.isEmpty,
+      translated != line.text
+    {
+      values.append(translated)
+    }
+    return values.joined(separator: ", ")
+  }
+  private var lineStatus: String {
+    if isCurrent { return "Current lyric" }
+    if isPast { return "Past lyric" }
+    return "Upcoming lyric"
+  }
+  private var lineAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.82)
+  }
+  private var translationAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86)
+  }
+  private var translationTransition: AnyTransition {
+    reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
   }
   private var lineColor: Color {
     if isCurrent { return .primary }
@@ -245,6 +333,25 @@ private struct LyricLineRow: View {
     if distance <= 2 { return 1.0 }
     return max(0.5, 1.0 - Double(distance - 2) * 0.1)
   }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+}
+
+private func formattedLyricTime(_ seconds: TimeInterval) -> String {
+  let clamped = max(0, Int(seconds.rounded()))
+  return String(format: "%d:%02d", clamped / 60, clamped % 60)
+}
+
+private func introAccessibilityValue(startTime: TimeInterval) -> String {
+  if startTime <= 1 {
+    return "No intro"
+  }
+  return "First lyric at \(formattedLyricTime(startTime))"
 }
 
 extension LyricsView {
@@ -263,8 +370,10 @@ extension LyricsView {
           .foregroundStyle(.primary.opacity(0.55))
           .multilineTextAlignment(.center)
         if let onRetry {
-          Button(action: onRetry) {
-            Text("Retry")
+          Button {
+            onRetry()
+          } label: {
+            Label("Retry", systemImage: "arrow.clockwise")
               .font(.system(size: 14, weight: .semibold))
               .foregroundStyle(.primary)
               .padding(.horizontal, 22)
@@ -272,7 +381,7 @@ extension LyricsView {
               .background(
                 Capsule().fill(.primary.opacity(0.12)))
           }
-          .buttonStyle(.plain)
+          .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.78, haptic: .selection))
           .padding(.top, 4)
         }
       }
@@ -287,13 +396,36 @@ extension LyricsView {
           .foregroundStyle(.primary.opacity(0.75))
       }
     } else {
-      VStack(spacing: 14) {
-        LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
-        Text("Loading lyrics")
-          .font(.system(size: 14))
-          .foregroundStyle(.primary.opacity(0.6))
-      }
+      LyricsLoadingSkeleton()
     }
+  }
+}
+
+private struct LyricsLoadingSkeleton: View {
+  private let rows: [CGFloat] = [0.78, 0.58, 0.86, 0.66, 0.74, 0.52, 0.8]
+
+  var body: some View {
+    GeometryReader { proxy in
+      let availableWidth = max(proxy.size.width - 56, 160)
+      VStack(alignment: .leading, spacing: 20) {
+        LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
+          .padding(.bottom, 8)
+
+        ForEach(Array(rows.enumerated()), id: \.offset) { index, width in
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(index == 0 ? Color.primary.opacity(0.24) : Color.primary.opacity(0.14))
+            .frame(width: availableWidth * width, height: index == 0 ? 28 : 22)
+            .opacity(index < 4 ? 1.0 : 0.72)
+        }
+
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .padding(.horizontal, 28)
+      .padding(.top, 28)
+    }
+    .redacted(reason: .placeholder)
+    .accessibilityLabel("Loading lyrics")
   }
 }
 
@@ -301,6 +433,8 @@ private struct IntroDots: View {
   let isActive: Bool
   let startTime: TimeInterval
   let currentTime: TimeInterval
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   private var progress: Double {
     guard startTime > 0 else { return 1 }
     return max(0, min(1, currentTime / startTime))
@@ -313,6 +447,13 @@ private struct IntroDots: View {
       color: isActive ? .primary : .primary.opacity(0.4)
     )
     .opacity(isActive ? 1.0 : 0.3)
-    .animation(.easeInOut(duration: 0.4), value: isActive)
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: isActive)
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
   }
 }

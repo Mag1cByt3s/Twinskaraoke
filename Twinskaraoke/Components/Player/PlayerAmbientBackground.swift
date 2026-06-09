@@ -7,8 +7,14 @@ import SwiftUI
 struct PlayerAmbientBackground: View {
   let artworkURL: URL?
   var isPlaying: Bool = true
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var palette: ArtworkPalette = .placeholder
   @State private var animationPhase: Bool = false
+
+  private var shouldAnimateAmbient: Bool {
+    animationPhase && isPlaying && !reduceMotion
+  }
 
   var body: some View {
     ZStack {
@@ -18,19 +24,39 @@ struct PlayerAmbientBackground: View {
       vignetteLayer
     }
     .ignoresSafeArea()
-    .animation(.easeInOut(duration: 0.4), value: artworkURL)
-    .animation(.easeInOut(duration: 0.8), value: palette)
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: artworkURL)
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: palette)
     .onAppear(perform: loadPalette)
     .onChange(of: artworkURL) { loadPalette() }
     .onChange(of: isPlaying) { _, playing in
       if playing { startBreathing() }
+    }
+    .onChange(of: reduceMotion) { _, reduceMotion in
+      if reduceMotion {
+        withAnimation(nil) {
+          animationPhase = false
+        }
+      } else if isPlaying {
+        startBreathing()
+      }
     }
     .onAppear {
       if isPlaying { startBreathing() }
     }
   }
 
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   private func startBreathing() {
+    guard !reduceMotion else {
+      animationPhase = false
+      return
+    }
     withAnimation(
       .easeInOut(duration: 6.0)
       .repeatForever(autoreverses: true)
@@ -55,10 +81,10 @@ struct PlayerAmbientBackground: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .blur(radius: 58)
             .saturation(1.05)
-            .scaleEffect(animationPhase && isPlaying ? 1.28 : 1.22)
+            .scaleEffect(shouldAnimateAmbient ? 1.28 : 1.22)
             .offset(
-              x: animationPhase && isPlaying ? 8 : -8,
-              y: animationPhase && isPlaying ? -6 : 6
+              x: shouldAnimateAmbient ? 8 : -8,
+              y: shouldAnimateAmbient ? -6 : 6
             )
             .clipped()
             .drawingGroup()
@@ -81,8 +107,8 @@ struct PlayerAmbientBackground: View {
           palette.secondary.opacity(0.22),
           palette.tertiary.opacity(0.28),
         ],
-        startPoint: animationPhase && isPlaying ? .topLeading : .top,
-        endPoint: animationPhase && isPlaying ? .bottomTrailing : .bottom
+        startPoint: shouldAnimateAmbient ? .topLeading : .top,
+        endPoint: shouldAnimateAmbient ? .bottomTrailing : .bottom
       )
 
       Rectangle()

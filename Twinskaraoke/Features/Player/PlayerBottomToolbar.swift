@@ -19,29 +19,41 @@ struct PlayerBottomToolbar: View {
           Image(systemName: "quote.bubble")
             .font(.system(size: 22))
             .foregroundColor(showLyrics ? .primary : .secondary)
+            .frame(width: 44, height: 44)
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.85, dim: 0.55))
+        .buttonStyle(PressableButtonStyle(scale: 0.85, dim: 0.55, haptic: .selection))
+        .accessibilityLabel(showLyrics ? "Hide Lyrics" : "Show Lyrics")
+        .accessibilityValue(showLyrics ? "On" : "Off")
       }
       #if canImport(UIKit)
         ZStack {
           Image(systemName: routeSymbolName(audioManager.routeIcon))
             .font(.system(size: 22))
             .foregroundColor(.primary)
+            .accessibilityHidden(true)
           AirPlayRoutePickerView()
             .frame(width: 44, height: 44)
         }
+        .frame(width: 44, height: 44)
         .frame(maxWidth: audioManager.isRadioMode ? nil : .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("AirPlay")
+        .accessibilityHint("Choose an audio output")
       #endif
       Button {
+        AppHaptic.selection.play()
         showingQueue = true
       } label: {
         Image(systemName: "list.bullet")
           .font(.system(size: 22))
           .foregroundColor(.primary)
+          .frame(width: 44, height: 44)
           .frame(maxWidth: audioManager.isRadioMode ? nil : .infinity)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.85, dim: 0.55))
+      .accessibilityLabel("Playing Next")
+      .accessibilityHint("Show the queue for \(song.title)")
     }
     .padding(.horizontal, audioManager.isRadioMode ? 0 : 48)
     .padding(.top, 16)

@@ -682,13 +682,13 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Twinskaraoke;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.evilneur.Twinskaraoke;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.evilneuro.Twinskaraoke;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -717,13 +717,13 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Twinskaraoke;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.evilneur.Twinskaraoke;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.evilneuro.Twinskaraoke;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -766,7 +766,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -807,7 +807,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -837,7 +837,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.TwinskaraokeTests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.TwinskaraokeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -865,7 +865,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.TwinskaraokeTests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.TwinskaraokeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -892,7 +892,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.TwinskaraokeUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.TwinskaraokeUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -918,7 +918,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.TwinskaraokeUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.TwinskaraokeUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -944,7 +944,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitappTests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitappTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -972,7 +972,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitappTests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitappTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -999,7 +999,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitappUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitappUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1025,7 +1025,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.evilneur.Twinskaraoke.watchkitappUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = org.evilneuro.Twinskaraoke.watchkitappUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

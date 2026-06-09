@@ -8,6 +8,9 @@ final class RadioController: ObservableObject {
     string: "https://radio.twinskaraoke.com/api/nowplaying_static/neuro_21.json")!
   static let stationID = "neuro_21"
   @Published var nowPlaying: RadioNowPlaying?
+  @Published var isRefreshing = false
+  @Published var refreshErrorMessage: String?
+  @Published var lastUpdated: Date?
   private var pollTimer: Timer?
   private var refreshTask: Task<Void, Never>?
   private var lastMetadataSignature: String?
@@ -59,17 +62,31 @@ final class RadioController: ObservableObject {
     }
   }
   func refresh() async {
-    guard let (data, _) = try? await URLSession.shared.data(from: Self.metadataURL) else { return }
-    guard let np = try? JSONDecoder().decode(RadioNowPlaying.self, from: data) else { return }
-    self.nowPlaying = np
-    if AudioPlayerManager.shared.isRadioMode, let info = np.nowPlaying?.song {
-      let signature = metadataSignature(for: info)
-      if signature != lastMetadataSignature {
-        lastMetadataSignature = signature
-        let song = info.toSong(stationID: Self.stationID)
-        let art = info.art.flatMap { URL(string: $0) }
-        AudioPlayerManager.shared.updateRadioMetadata(song: song, artworkURL: art)
+    guard !isRefreshing else { return }
+    isRefreshing = true
+    defer { isRefreshing = false }
+
+    do {
+      let (data, _) = try await URLSession.shared.data(from: Self.metadataURL)
+      let np = try JSONDecoder().decode(RadioNowPlaying.self, from: data)
+      nowPlaying = np
+      refreshErrorMessage = nil
+      lastUpdated = Date()
+      if AudioPlayerManager.shared.isRadioMode, let info = np.nowPlaying?.song {
+        let signature = metadataSignature(for: info)
+        if signature != lastMetadataSignature {
+          lastMetadataSignature = signature
+          let song = info.toSong(stationID: Self.stationID)
+          let art = info.art.flatMap { URL(string: $0) }
+          AudioPlayerManager.shared.updateRadioMetadata(song: song, artworkURL: art)
+        }
       }
+    } catch {
+      guard !Task.isCancelled else { return }
+      refreshErrorMessage =
+        nowPlaying == nil
+        ? "Radio metadata is temporarily unavailable."
+        : "Couldn't refresh radio metadata."
     }
   }
 

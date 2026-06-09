@@ -920,6 +920,9 @@ class AudioPlayerManager: ObservableObject {
     cancelPendingTransitionWork()
     downloadSession?.cancel()
     downloadSession = nil
+    #if canImport(UIKit)
+      endAudioCacheBackgroundTask()
+    #endif
     instrumentalTask?.cancel()
     instrumentalTask = nil
     cancelBackgroundAnalysisRetry()
@@ -1175,6 +1178,9 @@ class AudioPlayerManager: ObservableObject {
     session.onCompletion = { [weak self] url in
       guard let self else { return }
       self.downloadSession = nil
+      #if canImport(UIKit)
+        self.endAudioCacheBackgroundTask()
+      #endif
       guard let url else { return }
       CacheManager.shared.recordAccess(for: url)
       let protectedIDs = self.activeSongIDs()
@@ -2273,16 +2279,20 @@ class AudioPlayerManager: ObservableObject {
 
   #if canImport(UIKit)
     private func handleBackgroundTransition() {
-      if bgTaskID != .invalid {
-        UIApplication.shared.endBackgroundTask(bgTaskID)
-      }
+      endAudioCacheBackgroundTask()
+      // Only keep the app alive in the background when there is an in-flight
+      // cache download to finish. Otherwise there is nothing to protect and the
+      // task would linger until the OS expires it (triggering the
+      // "created over 30 seconds ago" warning).
+      guard downloadSession != nil else { return }
       bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "AudioCache") { [weak self] in
-        guard let self = self else { return }
-        if self.bgTaskID != .invalid {
-          UIApplication.shared.endBackgroundTask(self.bgTaskID)
-          self.bgTaskID = .invalid
-        }
+        self?.endAudioCacheBackgroundTask()
       }
+    }
+    private func endAudioCacheBackgroundTask() {
+      guard bgTaskID != .invalid else { return }
+      UIApplication.shared.endBackgroundTask(bgTaskID)
+      bgTaskID = .invalid
     }
     private func beginTrackTransitionBackgroundTask() {
       endTrackTransitionBackgroundTask()

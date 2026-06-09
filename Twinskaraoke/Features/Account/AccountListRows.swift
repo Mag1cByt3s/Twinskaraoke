@@ -27,7 +27,25 @@ struct ProfileHeaderRow: View {
       Spacer()
     }
     .padding(.vertical, 8)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(displayName)
+    .accessibilityValue(profileAccessibilityValue)
   }
+
+  private var profileAccessibilityValue: String {
+    var parts: [String] = []
+    if let level {
+      parts.append("Level \(level)")
+    }
+    if let levelTitle, !levelTitle.isEmpty {
+      parts.append(levelTitle)
+    }
+    if let xpToNextLevel, xpToNextLevel > 0 {
+      parts.append("\(xpToNextLevel) XP to next level")
+    }
+    return parts.joined(separator: ", ")
+  }
+
   private func levelChip(level: Int, title: String?) -> some View {
     HStack(spacing: 6) {
       Text("LV \(level)")
@@ -95,11 +113,15 @@ struct UnlockedBadgesRow: View {
         HStack(spacing: 12) {
           ForEach(badges) { badge in
             Button {
+              AppHaptic.selection.play()
               selected = badge
             } label: {
               BadgeIcon(badge: badge)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.92, dim: 0.78))
+            .accessibilityLabel(badge.name)
+            .accessibilityValue(accessibilityValue(for: badge))
+            .accessibilityHint("Shows badge details.")
           }
         }
         .padding(.vertical, 2)
@@ -110,6 +132,17 @@ struct UnlockedBadgesRow: View {
       BadgeDetailSheet(badge: badge)
         .presentationDetents([.medium])
     }
+  }
+
+  private func accessibilityValue(for badge: Badge) -> String {
+    var parts = [badge.unlocked ? "Unlocked" : "Locked", "Rarity \(badge.rarity)"]
+    if !badge.unlocked, badge.conditionValue > 0 {
+      parts.append("\(badge.currentProgress) of \(badge.conditionValue)")
+    }
+    if let description = badge.description, !description.isEmpty {
+      parts.append(description)
+    }
+    return parts.joined(separator: ", ")
   }
 }
 

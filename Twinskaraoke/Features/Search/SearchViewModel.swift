@@ -139,6 +139,7 @@ final class GenresViewModel: ObservableObject {
   @Published var artworkURLs: [String: URL] = [:]
   @Published var firstSongs: [String: Song] = [:]
   @Published var allSongs: [String: [Song]] = [:]
+  @Published var isLoading = false
   @Published var isLoadingMore = false
   @Published var canLoadMore = true
   private var page = 0
@@ -182,7 +183,11 @@ final class GenresViewModel: ObservableObject {
         string:
           "\(StorageHost.api)/api/filters/genres?page=\(page)&pageSize=\(pageSize)")
     else { return }
-    isLoadingMore = !replace
+    if replace {
+      isLoading = true
+    } else {
+      isLoadingMore = true
+    }
     var request = URLRequest(url: url)
     GuestIdentity.applyIfNeeded(to: &request)
     URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
@@ -193,7 +198,10 @@ final class GenresViewModel: ObservableObject {
   }
 
   private func applyGenrePageResponse(_ data: Data?, page: Int, replace: Bool) {
-    defer { isLoadingMore = false }
+    defer {
+      isLoading = false
+      isLoadingMore = false
+    }
 
     guard let data, let list = try? JSONDecoder().decode([GenreSummary].self, from: data) else {
       canLoadMore = false
@@ -255,10 +263,94 @@ final class GenresViewModel: ObservableObject {
 }
 
 @MainActor
+final class SearchCategorySongsViewModel: ObservableObject {
+  @Published var songs: [Song] = []
+  @Published var isLoading = false
+  @Published private var loadFailed = false
+  @Published private(set) var hasLoaded = false
+  private let query: String
+  private var requestToken = 0
+
+  init(query: String) {
+    self.query = query
+  }
+
+  func loadIfNeeded() {
+    guard !hasLoaded else { return }
+    hasLoaded = true
+    fetch()
+  }
+
+  func refresh() {
+    hasLoaded = true
+    fetch()
+  }
+
+  var emptyStateMessage: String {
+    if loadFailed {
+      return "The category couldn’t be loaded. Check your connection and try again."
+    }
+    return "Try another category or search term."
+  }
+
+  private func fetch() {
+    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
+      loadFailed = songs.isEmpty
+      return
+    }
+    requestToken += 1
+    let token = requestToken
+    isLoading = true
+    loadFailed = false
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    GuestIdentity.applyIfNeeded(to: &request)
+    request.httpBody = try? JSONSerialization.data(withJSONObject: [
+      "page": 1,
+      "pageSize": 100,
+      "search": query,
+    ])
+
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+      let statusCode = (response as? HTTPURLResponse)?.statusCode
+      let requestFailed = error != nil || statusCode.map { !(200..<300).contains($0) } == true
+      Task { @MainActor [weak self, data, token, requestFailed] in
+        self?.applyResponse(data, token: token, requestFailed: requestFailed)
+      }
+    }.resume()
+  }
+
+  private func applyResponse(_ data: Data?, token: Int, requestFailed: Bool) {
+    guard token == requestToken else { return }
+    defer { isLoading = false }
+
+    guard !requestFailed else {
+      loadFailed = songs.isEmpty
+      return
+    }
+
+    guard let data else {
+      loadFailed = songs.isEmpty
+      return
+    }
+
+    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
+      songs = decoded.items
+    } else {
+      songs = SongPayloadDecoder.decodeSongs(from: data) ?? []
+    }
+    loadFailed = false
+  }
+}
+
+@MainActor
 final class SearchViewModel: ObservableObject {
   @Published var results: [Song] = []
   @Published var searchText = ""
   @Published var isSearching = false
+  @Published var searchErrorMessage: String?
   private var cancellables = Set<AnyCancellable>()
   private var queryToken: Int = 0
 
@@ -267,38 +359,89 @@ final class SearchViewModel: ObservableObject {
       .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
       .removeDuplicates()
       .sink { [weak self] query in
-        if !query.isEmpty { self?.search(query) } else { self?.results = [] }
+        if !query.isEmpty { self?.search(query) } else { self?.clearSearch() }
       }
       .store(in: &cancellables)
   }
 
+  func retrySearch() {
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return }
+    search(query)
+  }
+
   func search(_ query: String) {
-    guard let url = URL(string: "\(StorageHost.api)/api/songs") else { return }
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else {
+      clearSearch()
+      return
+    }
+    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
+      results = []
+      isSearching = false
+      searchErrorMessage = "Search couldn't be started. Try again."
+      return
+    }
     queryToken += 1
     let token = queryToken
+    results = []
     isSearching = true
+    searchErrorMessage = nil
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     GuestIdentity.applyIfNeeded(to: &request)
     request.httpBody = try? JSONSerialization.data(withJSONObject: [
-      "page": 1, "pageSize": 30, "search": query,
+      "page": 1, "pageSize": 30, "search": trimmedQuery,
     ])
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      Task { @MainActor [weak self, data, token] in
-        self?.applySearchResponse(data, token: token)
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+      let statusCode = (response as? HTTPURLResponse)?.statusCode
+      let failureMessage: String?
+      if error != nil {
+        failureMessage = "Check your connection and try again."
+      } else if let statusCode, !(200..<300).contains(statusCode) {
+        failureMessage = "Search returned an unexpected response. Try again."
+      } else {
+        failureMessage = nil
+      }
+      Task { @MainActor [weak self, data, token, failureMessage] in
+        self?.applySearchResponse(data, token: token, failureMessage: failureMessage)
       }
     }.resume()
   }
 
-  private func applySearchResponse(_ data: Data?, token: Int) {
+  private func clearSearch() {
+    queryToken += 1
+    results = []
+    isSearching = false
+    searchErrorMessage = nil
+  }
+
+  private func applySearchResponse(_ data: Data?, token: Int, failureMessage: String?) {
     guard queryToken == token else { return }
     defer { isSearching = false }
 
-    guard let data, let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) else {
+    guard failureMessage == nil else {
+      results = []
+      searchErrorMessage = failureMessage
       return
     }
 
-    results = decoded.items
+    guard let data else {
+      results = []
+      searchErrorMessage = "Search couldn't load results. Try again."
+      return
+    }
+
+    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
+      results = decoded.items
+      searchErrorMessage = nil
+    } else if let decodedSongs = SongPayloadDecoder.decodeSongs(from: data) {
+      results = decodedSongs
+      searchErrorMessage = nil
+    } else {
+      results = []
+      searchErrorMessage = "Search results couldn't be read. Try again."
+    }
   }
 }

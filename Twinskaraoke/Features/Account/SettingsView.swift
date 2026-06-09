@@ -12,6 +12,18 @@ struct SettingsView: View {
   var body: some View {
     List {
       Section {
+        SettingsOverviewCard(
+          title: audioManager.currentSong?.title ?? "Ready to Play",
+          subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twins Karaoke",
+          isPlaying: audioManager.isPlaying,
+          badges: settingsBadges
+        )
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
+        .listRowBackground(Color.clear)
+      }
+      .listSectionSpacing(8)
+
+      Section {
         Toggle("Auto Mix", isOn: $audioManager.autoMixEnabled)
           .tint(.appAccent)
         Toggle("Crossfade", isOn: $audioManager.crossfadeEnabled)
@@ -100,6 +112,9 @@ struct SettingsView: View {
         }
       }
     }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.appGroupedBackground.ignoresSafeArea())
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .alert(
@@ -123,14 +138,43 @@ struct SettingsView: View {
       isPresented: $showAutoAnalyzeAlert
     ) {
       Button("Turn On") {
+        AppHaptic.success.play()
         audioManager.aiAutoAnalyze = true
       }
-      Button("Cancel", role: .cancel) {}
+      Button("Cancel", role: .cancel) {
+        AppHaptic.selection.play()
+      }
     } message: {
       Text(
         "Songs will be analyzed in the background so karaoke modes can switch instantly during playback.\n\nThis uses more battery and processing power. Separated stems count toward the 4 GB music cache limit."
       )
     }
+  }
+
+  private var settingsBadges: [SettingsOverviewBadge] {
+    var badges: [SettingsOverviewBadge] = []
+    if audioManager.autoMixEnabled {
+      badges.append(SettingsOverviewBadge(title: "Auto Mix", symbol: "waveform.path.ecg"))
+    }
+    if audioManager.crossfadeEnabled {
+      badges.append(SettingsOverviewBadge(title: "\(Int(audioManager.crossfadeSeconds.rounded()))s Crossfade", symbol: "arrow.left.arrow.right"))
+    }
+    if audioManager.eqEnabled {
+      badges.append(SettingsOverviewBadge(title: "EQ", symbol: "slider.vertical.3"))
+    }
+    if audioManager.karaokeMode {
+      badges.append(SettingsOverviewBadge(title: "Vocal Removal", symbol: "music.mic"))
+    } else if audioManager.bassEnhanceMode {
+      badges.append(SettingsOverviewBadge(title: "Bass Enhance", symbol: "speaker.wave.3"))
+    } else if audioManager.vocalEnhanceMode {
+      badges.append(SettingsOverviewBadge(title: "Vocal Enhance", symbol: "music.mic.circle"))
+    } else if audioManager.instrumentalEnhanceMode {
+      badges.append(SettingsOverviewBadge(title: "Instrumental", symbol: "music.note"))
+    }
+    if downloadOnPlay {
+      badges.append(SettingsOverviewBadge(title: "Auto Download", symbol: "arrow.down.circle"))
+    }
+    return badges.isEmpty ? [SettingsOverviewBadge(title: "Default", symbol: "checkmark.circle")] : badges
   }
 
   @ViewBuilder
@@ -190,7 +234,11 @@ struct SettingsView: View {
           Text(aiStrengthLabel)
             .foregroundStyle(.secondary)
         }
-        StrengthSlider(value: $audioManager.aiVocalStrength)
+        StrengthSlider(
+          value: $audioManager.aiVocalStrength,
+          title: "Vocal Removal Level",
+          valueDescription: aiStrengthLabel
+        )
       }
       Toggle("Bass Enhance", isOn: $audioManager.bassEnhanceMode)
         .tint(.appAccent)
@@ -202,7 +250,11 @@ struct SettingsView: View {
           Text(bassStrengthLabel)
             .foregroundStyle(.secondary)
         }
-        StrengthSlider(value: $audioManager.bassEnhanceStrength)
+        StrengthSlider(
+          value: $audioManager.bassEnhanceStrength,
+          title: "Bass Enhance Strength",
+          valueDescription: bassStrengthLabel
+        )
       }
       Toggle("Vocal Enhance", isOn: $audioManager.vocalEnhanceMode)
         .tint(.appAccent)
@@ -214,7 +266,11 @@ struct SettingsView: View {
           Text(vocalEnhanceStrengthLabel)
             .foregroundStyle(.secondary)
         }
-        StrengthSlider(value: $audioManager.vocalEnhanceStrength)
+        StrengthSlider(
+          value: $audioManager.vocalEnhanceStrength,
+          title: "Vocal Enhance Strength",
+          valueDescription: vocalEnhanceStrengthLabel
+        )
       }
       Toggle("Instrumental Enhance", isOn: $audioManager.instrumentalEnhanceMode)
         .tint(.appAccent)
@@ -226,7 +282,11 @@ struct SettingsView: View {
           Text(instrumentalEnhanceStrengthLabel)
             .foregroundStyle(.secondary)
         }
-        StrengthSlider(value: $audioManager.instrumentalEnhanceStrength)
+        StrengthSlider(
+          value: $audioManager.instrumentalEnhanceStrength,
+          title: "Instrumental Enhance Strength",
+          valueDescription: instrumentalEnhanceStrengthLabel
+        )
       }
       if audioManager.isBackgroundKaraokeLocked {
         Text("Available after background processing finishes for the current song.")
@@ -246,63 +306,57 @@ struct SettingsView: View {
   private var storageSection: some View {
     Section {
       Button {
-        pendingAction = .clearImageCache
+        request(.clearImageCache)
       } label: {
-        HStack(spacing: 10) {
-          Image(systemName: "photo")
-            .font(.system(size: 16))
-            .foregroundColor(.appAccent)
-            .frame(width: 24)
-          Text("Image Cache")
-            .foregroundColor(.primary)
-          Spacer()
-          Text("\(cacheManager.formattedImageCacheSize()) / 2 GB")
-            .font(.subheadline.weight(.medium))
-            .foregroundColor(.secondary)
-        }
+        SettingsStorageActionRow(
+          symbol: "photo",
+          title: "Image Cache",
+          detail: "\(cacheManager.formattedImageCacheSize()) / 2 GB"
+        )
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
       Button {
-        pendingAction = .clearMusicCache
+        request(.clearMusicCache)
       } label: {
-        HStack(spacing: 10) {
-          Image(systemName: "music.note")
-            .font(.system(size: 16))
-            .foregroundColor(.appAccent)
-            .frame(width: 24)
-          Text("Music Cache")
-            .foregroundColor(.primary)
-          Spacer()
-          Text("\(cacheManager.formattedMusicCacheSize()) / 4 GB")
-            .font(.subheadline.weight(.medium))
-            .foregroundColor(.secondary)
-        }
+        SettingsStorageActionRow(
+          symbol: "music.note",
+          title: "Music Cache",
+          detail: "\(cacheManager.formattedMusicCacheSize()) / 4 GB"
+        )
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
       Button {
-        pendingAction = .clearLyricsCache
+        request(.clearLyricsCache)
       } label: {
-        HStack(spacing: 10) {
-          Image(systemName: "text.quote")
-            .font(.system(size: 16))
-            .foregroundColor(.appAccent)
-            .frame(width: 24)
-          Text("Lyrics Cache")
-            .foregroundColor(.primary)
-          Spacer()
-          Text("\(cacheManager.formattedLyricsCacheSize()) / 2 GB")
-            .font(.subheadline.weight(.medium))
-            .foregroundColor(.secondary)
-        }
+        SettingsStorageActionRow(
+          symbol: "text.quote",
+          title: "Lyrics Cache",
+          detail: "\(cacheManager.formattedLyricsCacheSize()) / 2 GB"
+        )
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
       Button(role: .destructive) {
-        pendingAction = .removeDownloads
+        request(.removeDownloads)
       } label: {
-        Text("Remove All Downloads")
+        SettingsStorageActionRow(
+          symbol: "arrow.down.circle",
+          title: "Remove All Downloads",
+          detail: "Offline songs on this device",
+          isDestructive: true
+        )
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
       Button(role: .destructive) {
-        pendingAction = .clearRecentlyPlayed
+        request(.clearRecentlyPlayed)
       } label: {
-        Text("Clear Recently Played")
+        SettingsStorageActionRow(
+          symbol: "clock.arrow.circlepath",
+          title: "Clear Recently Played",
+          detail: "Listening history on this device",
+          isDestructive: true
+        )
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
     } header: {
       Text("Storage")
     } footer: {
@@ -310,6 +364,11 @@ struct SettingsView: View {
         "Tap an indicator to clear that cache. Image cache is limited to 2 GB, music cache (including AI stems) to 4 GB, and lyrics cache to 2 GB. Items older than 6 months are automatically cleaned. Downloads are exempt from these limits."
       )
     }
+  }
+
+  private func request(_ action: SettingsDestructiveAction) {
+    AppHaptic.warning.play()
+    pendingAction = action
   }
 
   private func perform(_ action: SettingsDestructiveAction) {
@@ -326,6 +385,7 @@ struct SettingsView: View {
     case .clearRecentlyPlayed:
       RecentlyPlayedStore.shared.reset()
     }
+    AppHaptic.success.play()
   }
 
   private var aiStrengthLabel: String {
@@ -354,8 +414,152 @@ struct SettingsView: View {
   }
 }
 
+private struct SettingsOverviewBadge: Hashable, Identifiable {
+  let title: String
+  let symbol: String
+
+  var id: String { "\(symbol)-\(title)" }
+}
+
+private struct SettingsOverviewCard: View {
+  let title: String
+  let subtitle: String
+  let isPlaying: Bool
+  let badges: [SettingsOverviewBadge]
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(spacing: 14) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.appControlActiveFill)
+          Image(systemName: isPlaying ? "waveform" : "music.note")
+            .font(.system(size: 26, weight: .bold))
+            .foregroundColor(.appControlActiveForeground)
+            .scaleEffect(reduceMotion ? 1 : (isPlaying ? 1.06 : 1))
+            .opacity(isPlaying ? 1 : 0.88)
+            .animation(overviewAnimation, value: isPlaying)
+        }
+        .frame(width: 62, height: 62)
+        .shadow(color: Color.appShadow, radius: 10, y: 5)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(isPlaying ? "Now Playing" : "Playback")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+          Text(title)
+            .font(.system(size: 19, weight: .bold))
+            .foregroundColor(.primary)
+            .lineLimit(1)
+          Text(subtitle)
+            .font(.system(size: 14))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        Spacer(minLength: 0)
+      }
+
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          ForEach(badges) { badge in
+            SettingsOverviewPill(badge: badge)
+          }
+        }
+        .padding(.vertical, 1)
+      }
+    }
+    .padding(16)
+    .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(isPlaying ? "Now playing" : "Playback settings"), \(title), \(subtitle)")
+  }
+
+  private var overviewAnimation: Animation? {
+    reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.7)
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
+  }
+}
+
+private struct SettingsOverviewPill: View {
+  let badge: SettingsOverviewBadge
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Image(systemName: badge.symbol)
+        .font(.system(size: 12, weight: .semibold))
+      Text(badge.title)
+        .font(.system(size: 13, weight: .semibold))
+        .lineLimit(1)
+    }
+    .foregroundColor(.appAccent)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 7)
+    .background(Color.appAccent.opacity(0.12), in: Capsule())
+  }
+}
+
+private struct SettingsStorageActionRow: View {
+  let symbol: String
+  let title: String
+  let detail: String
+  var isDestructive = false
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: symbol)
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundColor(isDestructive ? .appAccent : .white)
+        .frame(width: 30, height: 30)
+        .background(
+          RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(isDestructive ? Color.appAccent.opacity(0.12) : Color.appAccent)
+        )
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(.system(size: 16))
+          .foregroundColor(isDestructive ? .appAccent : .primary)
+        Text(detail)
+          .font(.system(size: 13))
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+      }
+      Spacer()
+    }
+    .padding(.vertical, 3)
+  }
+}
+
 private struct StrengthSlider: View {
   @Binding var value: Float
+  var title: String = "Strength"
+  var valueDescription: String? = nil
+  var step: Float = 0.05
+
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var lastFeedbackStep: Int?
+
+  private var clampedValue: Float {
+    min(1, max(0, value))
+  }
+
+  private var percent: Int {
+    Int((clampedValue * 100).rounded())
+  }
+
+  private var accessibilityValueText: String {
+    if let valueDescription {
+      return "\(valueDescription), \(percent) percent"
+    }
+    return "\(percent) percent"
+  }
+
   var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
@@ -363,7 +567,14 @@ private struct StrengthSlider: View {
           .fill(Color.primary.opacity(0.15))
         Capsule()
           .fill(Color.appAccent)
-          .frame(width: max(8, geo.size.width * CGFloat(value)))
+          .frame(width: max(8, geo.size.width * CGFloat(clampedValue)))
+          .animation(sliderAnimation, value: clampedValue)
+        Circle()
+          .fill(Color.appAccent)
+          .frame(width: 18, height: 18)
+          .shadow(color: Color.appAccent.opacity(0.24), radius: 6, y: 2)
+          .offset(x: max(0, geo.size.width * CGFloat(clampedValue) - 9))
+          .animation(sliderAnimation, value: clampedValue)
       }
       .frame(height: 6)
       .frame(maxHeight: .infinity, alignment: .center)
@@ -371,12 +582,53 @@ private struct StrengthSlider: View {
       .gesture(
         DragGesture(minimumDistance: 0)
           .onChanged { drag in
-            let v = max(0, min(1, drag.location.x / geo.size.width))
-            value = Float(v)
+            let v = max(0, min(1, drag.location.x / max(1, geo.size.width)))
+            setValue(Float(v), feedback: true)
+          }
+          .onEnded { _ in
+            lastFeedbackStep = nil
           }
       )
     }
-    .frame(height: 28)
+    .frame(height: 32)
+    .accessibilityElement()
+    .accessibilityLabel(title)
+    .accessibilityValue(accessibilityValueText)
+    .accessibilityHint("Swipe up or down to adjust.")
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment:
+        setValue(clampedValue + step, feedback: true)
+      case .decrement:
+        setValue(clampedValue - step, feedback: true)
+      @unknown default:
+        break
+      }
+    }
+  }
+
+  private func setValue(_ newValue: Float, feedback: Bool) {
+    let clamped = min(1, max(0, newValue))
+    guard abs(clamped - value) > 0.001 else { return }
+    value = clamped
+    if feedback {
+      playStepFeedback(for: clamped)
+    }
+  }
+
+  private func playStepFeedback(for value: Float) {
+    let feedbackStep = Int((value * 20).rounded())
+    guard feedbackStep != lastFeedbackStep else { return }
+    lastFeedbackStep = feedbackStep
+    AppHaptic.selection.play()
+  }
+
+  private var sliderAnimation: Animation? {
+    reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.82)
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
   }
 }
 
@@ -391,9 +643,14 @@ private struct EqualizerBands: View {
             .font(.system(size: 9, weight: .medium, design: .monospaced))
             .foregroundStyle(.secondary)
             .frame(height: 12)
-          EqualizerBand(value: bandBinding(i), range: range)
-            .frame(maxWidth: .infinity)
-            .frame(height: 140)
+            .monospacedDigit()
+          EqualizerBand(
+            value: bandBinding(i),
+            range: range,
+            title: "\(frequencyAccessibilityLabel(Double(AVEnginePlayback.bandFrequencies[i]))) Equalizer"
+          )
+          .frame(maxWidth: .infinity)
+          .frame(height: 140)
           Text(frequencyLabel(Double(AVEnginePlayback.bandFrequencies[i])))
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.secondary)
@@ -408,7 +665,7 @@ private struct EqualizerBands: View {
       set: { newValue in
         guard gainsDB.indices.contains(i) else { return }
         var copy = gainsDB
-        copy[i] = newValue
+        copy[i] = min(range.upperBound, max(range.lowerBound, newValue))
         gainsDB = copy
       }
     )
@@ -427,15 +684,42 @@ private struct EqualizerBands: View {
     }
     return "\(Int(hz))"
   }
+  private func frequencyAccessibilityLabel(_ hz: Double) -> String {
+    if hz >= 1000 {
+      let k = hz / 1000
+      if k.truncatingRemainder(dividingBy: 1) == 0 {
+        return "\(Int(k)) kilohertz"
+      }
+      return String(format: "%.1f kilohertz", k)
+    }
+    return "\(Int(hz)) hertz"
+  }
 }
 
 private struct EqualizerBand: View {
   @Binding var value: Float
   let range: ClosedRange<Float>
+  var title: String
+
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var lastFeedbackStep: Int?
+
+  private var clampedValue: Float {
+    min(range.upperBound, max(range.lowerBound, value))
+  }
+
+  private var valueText: String {
+    if abs(clampedValue) < 0.05 {
+      return "0 decibels"
+    }
+    return String(format: "%+.0f decibels", clampedValue)
+  }
+
   var body: some View {
     GeometryReader { geo in
       let span = range.upperBound - range.lowerBound
-      let normalized = (value - range.lowerBound) / span
+      let normalized = (clampedValue - range.lowerBound) / span
       let trackHeight = geo.size.height
       let knobY = trackHeight - CGFloat(normalized) * trackHeight
       let zeroY = trackHeight - CGFloat((0 - range.lowerBound) / span) * trackHeight
@@ -444,7 +728,7 @@ private struct EqualizerBand: View {
           .fill(Color.primary.opacity(0.15))
           .frame(width: 4)
           .frame(maxWidth: .infinity)
-        if value >= 0 {
+        if clampedValue >= 0 {
           Capsule()
             .fill(Color.appAccent)
             .frame(width: 4, height: max(0, zeroY - knobY))
@@ -458,18 +742,61 @@ private struct EqualizerBand: View {
         Circle()
           .fill(Color.appAccent)
           .frame(width: 18, height: 18)
+          .shadow(color: Color.appAccent.opacity(0.24), radius: 6, y: 2)
           .offset(y: knobY - 9)
       }
+      .animation(bandAnimation, value: clampedValue)
       .contentShape(Rectangle())
       .gesture(
         DragGesture(minimumDistance: 0)
           .onChanged { drag in
             let y = max(0, min(trackHeight, drag.location.y))
-            let n = 1 - (y / trackHeight)
-            value = Float(range.lowerBound) + Float(n) * span
+            let n = 1 - (y / max(1, trackHeight))
+            setValue(range.lowerBound + Float(n) * span, feedback: true)
+          }
+          .onEnded { _ in
+            lastFeedbackStep = nil
           }
       )
     }
+    .accessibilityElement()
+    .accessibilityLabel(title)
+    .accessibilityValue(valueText)
+    .accessibilityHint("Swipe up or down to adjust this band by one decibel.")
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment:
+        setValue(clampedValue + 1, feedback: true)
+      case .decrement:
+        setValue(clampedValue - 1, feedback: true)
+      @unknown default:
+        break
+      }
+    }
+  }
+
+  private func setValue(_ newValue: Float, feedback: Bool) {
+    let clamped = min(range.upperBound, max(range.lowerBound, newValue))
+    guard abs(clamped - value) > 0.001 else { return }
+    value = clamped
+    if feedback {
+      playStepFeedback(for: clamped)
+    }
+  }
+
+  private func playStepFeedback(for value: Float) {
+    let feedbackStep = Int(value.rounded())
+    guard feedbackStep != lastFeedbackStep else { return }
+    lastFeedbackStep = feedbackStep
+    AppHaptic.selection.play()
+  }
+
+  private var bandAnimation: Animation? {
+    reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.82)
+  }
+
+  private var reduceMotion: Bool {
+    respectReducedMotion && systemReduceMotion
   }
 }
 

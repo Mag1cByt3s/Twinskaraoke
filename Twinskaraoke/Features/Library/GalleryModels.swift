@@ -40,10 +40,12 @@ struct GalleryArt: Codable, Identifiable, Equatable {
 class ArtGalleryViewModel: ObservableObject {
   @Published var artists: [GalleryArtist] = []
   @Published var isLoading = false
-  func fetch() {
-    guard artists.isEmpty else { return }
+  @Published var loadFailed = false
+  func fetch(force: Bool = false) {
+    guard force || artists.isEmpty else { return }
     guard let url = URL(string: "\(StorageHost.api)/api/media/artists?loadArts=true")
     else { return }
+    loadFailed = false
     isLoading = true
     var request = URLRequest(url: url)
     GuestIdentity.applyIfNeeded(to: &request)
@@ -54,10 +56,14 @@ class ArtGalleryViewModel: ObservableObject {
           .sorted { ($0.arts?.count ?? 0) > ($1.arts?.count ?? 0) }
         DispatchQueue.main.async {
           self.artists = filtered
+          self.loadFailed = false
           self.isLoading = false
         }
       } else {
-        DispatchQueue.main.async { self.isLoading = false }
+        DispatchQueue.main.async {
+          self.loadFailed = self.artists.isEmpty
+          self.isLoading = false
+        }
       }
     }.resume()
   }

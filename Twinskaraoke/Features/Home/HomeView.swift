@@ -5,6 +5,20 @@ struct HomeView: View {
   @StateObject var viewModel = HomeViewModel()
   @StateObject private var recentlyPlayed = RecentlyPlayedStore.shared
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+
+  private var loadingAnimation: Animation? {
+    reduceMotion ? nil : .easeInOut(duration: 0.35)
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
@@ -48,7 +62,7 @@ struct HomeView: View {
             .transition(.opacity)
           }
         }
-        .animation(.easeInOut(duration: 0.35), value: viewModel.isLoading)
+        .animation(loadingAnimation, value: viewModel.isLoading)
         .padding(.top, AM.Spacing.l)
         .padding(.bottom, AM.Spacing.l)
       }
@@ -74,25 +88,14 @@ struct PlaylistCarousel: View {
         LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
           ForEach(playlists) { playlist in
             NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-              VStack(alignment: .leading, spacing: AM.Spacing.s) {
-                PlaylistArtwork(playlist: playlist, cornerRadius: AM.Radius.card)
-                  .frame(width: AM.Spacing.shelfTile, height: AM.Spacing.shelfTile)
-                  .clipShape(
-                    RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-                  )
-                  .amShadow(AM.Shadow.card)
-                Text(playlist.name)
-                  .font(AM.Font.tileTitle)
-                  .foregroundColor(.primary)
-                  .lineLimit(1)
-                PlaylistSongCountLabel(playlist: playlist, fallbackText: "Playlist")
-                  .font(AM.Font.tileCaption)
-                  .foregroundColor(.secondary)
-                  .lineLimit(1)
-              }
-              .frame(width: AM.Spacing.shelfTile)
+              PlaylistGridCell(playlist: playlist, width: AM.Spacing.shelfTile)
             }
             .buttonStyle(PressableButtonStyle())
+            .contextMenu {
+              PlaylistActionsMenuItems(playlist: playlist, songs: playlist.songListDTOs ?? [])
+            } preview: {
+              PlaylistContextPreview(playlist: playlist)
+            }
             .onAppear { onAppearItem?(playlist) }
           }
           if isLoadingMore {
@@ -111,23 +114,59 @@ struct PlaylistListView: View {
   let playlists: [Playlist]
   var apiURL: ((Int, Int) -> String)? = nil
   let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @StateObject private var loader = PlaylistListLoader()
+  @State private var searchText = ""
   private var allPlaylists: [Playlist] {
     loader.playlists.isEmpty ? playlists : loader.playlists
   }
+  private var displayedPlaylists: [Playlist] {
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return allPlaylists }
+    return allPlaylists.filter { playlist in
+      playlist.name.localizedCaseInsensitiveContains(query)
+    }
+  }
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
   var body: some View {
     ScrollView {
-      LazyVGrid(columns: cols, spacing: AM.Spacing.l) {
-        ForEach(allPlaylists) { playlist in
-          NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-            PlaylistGridCell(playlist: playlist)
+      if displayedPlaylists.isEmpty {
+        MusicEmptyState(
+          systemImage: "music.note.list",
+          title: searchText.isEmpty ? "No Playlists" : "No Results",
+          message: searchText.isEmpty
+            ? "Playlists will appear here."
+            : "Try another playlist name."
+        )
+        .frame(maxWidth: .infinity, minHeight: 360)
+      } else {
+        LazyVGrid(columns: cols, spacing: AM.Spacing.l) {
+          ForEach(displayedPlaylists) { playlist in
+            NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
+              PlaylistGridCell(playlist: playlist)
+            }
+            .buttonStyle(PressableButtonStyle())
+            .contextMenu {
+              PlaylistActionsMenuItems(playlist: playlist, songs: playlist.songListDTOs ?? [])
+            } preview: {
+              PlaylistContextPreview(playlist: playlist)
+            }
+            .onAppear {
+              if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                loader.loadMoreIfNeeded(current: playlist)
+              }
+            }
           }
-          .buttonStyle(PressableButtonStyle())
-          .onAppear { loader.loadMoreIfNeeded(current: playlist) }
         }
+        .padding(.horizontal, AM.Spacing.screenMargin)
+        .padding(.vertical, AM.Spacing.m)
       }
-      .padding(.horizontal, AM.Spacing.screenMargin)
-      .padding(.vertical, AM.Spacing.m)
       if loader.isLoadingMore {
         LoadingIndicator(size: 32)
           .frame(maxWidth: .infinity, alignment: .center)
@@ -136,6 +175,15 @@ struct PlaylistListView: View {
     }
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
+    .searchable(
+      text: $searchText,
+      placement: .navigationBarDrawer(displayMode: .always),
+      prompt: "Search Playlists"
+    )
+    .animation(
+      reduceMotion ? nil : .easeInOut(duration: 0.22),
+      value: displayedPlaylists.map(\.id)
+    )
     .onAppear {
       if let apiURL {
         loader.bootstrap(initial: playlists, urlBuilder: apiURL)
@@ -166,9 +214,10 @@ struct HomeSongCard: View {
   let song: Song
   let context: [Song]
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @State private var showAddToPlaylist = false
   var body: some View {
     Button {
-      audioManager.play(song: song, context: context)
+      play()
     } label: {
       VStack(alignment: .leading, spacing: AM.Spacing.s) {
         LoadingImage(url: song.imageURL, cornerRadius: AM.Radius.card)
@@ -187,6 +236,22 @@ struct HomeSongCard: View {
       .frame(width: AM.Spacing.shelfTile)
     }
     .buttonStyle(PressableButtonStyle())
+    .contextMenu {
+      SongActionsMenuItems(song: song) {
+        showAddToPlaylist = true
+      }
+    } preview: {
+      SongContextPreview(song: song)
+        .environmentObject(audioManager)
+    }
+    .sheet(isPresented: $showAddToPlaylist) {
+      AddToPlaylistSheet(song: song)
+    }
+  }
+
+  private func play() {
+    AppHaptic.selection.play()
+    audioManager.play(song: song, context: context)
   }
 }
 
@@ -194,12 +259,13 @@ private struct LatestSingleSection: View {
   let song: Song
   let context: [Song]
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @State private var showAddToPlaylist = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: AM.Spacing.m) {
       AMSectionHeader("Latest Single")
       Button {
-        audioManager.play(song: song, context: context)
+        play()
       } label: {
         HStack(spacing: AM.Spacing.m) {
           LoadingImage(url: song.imageURL, cornerRadius: AM.Radius.card)
@@ -229,16 +295,135 @@ private struct LatestSingleSection: View {
         )
       }
       .buttonStyle(PressableButtonStyle())
+      .contextMenu {
+        SongActionsMenuItems(song: song) {
+          showAddToPlaylist = true
+        }
+      } preview: {
+        SongContextPreview(song: song)
+          .environmentObject(audioManager)
+      }
+      .sheet(isPresented: $showAddToPlaylist) {
+        AddToPlaylistSheet(song: song)
+      }
       .padding(.horizontal, AM.Spacing.screenMargin)
     }
+  }
+
+  private func play() {
+    AppHaptic.selection.play()
+    audioManager.play(song: song, context: context)
   }
 }
 
 struct HomeSkeletonView: View {
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var pulse = false
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
   var body: some View {
-    LoadingIndicator(size: 64)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .padding(.top, 80)
+    VStack(alignment: .leading, spacing: AM.Spacing.shelfSpacing) {
+      skeletonShelf(titleWidth: 96, tileSize: AM.Spacing.shelfTile, count: 3)
+      skeletonShelf(titleWidth: 138, tileSize: AM.Spacing.shelfTile, count: 3)
+      skeletonShelf(titleWidth: 118, tileSize: AM.Spacing.shelfTile, count: 3)
+      latestSingleSkeleton
+      skeletonShelf(titleWidth: 126, tileSize: AM.Spacing.shelfTile, count: 3)
+    }
+    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
+    .redacted(reason: .placeholder)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading Home")
+    .onAppear {
+      guard !reduceMotion else {
+        pulse = false
+        return
+      }
+      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+        pulse = true
+      }
+    }
+    .onChange(of: reduceMotion) { _, reduceMotion in
+      if reduceMotion {
+        withAnimation(nil) {
+          pulse = false
+        }
+      } else {
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+          pulse = true
+        }
+      }
+    }
+  }
+
+  private func skeletonShelf(titleWidth: CGFloat, tileSize: CGFloat, count: Int) -> some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.m) {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(Color.appPlaceholderSecondary)
+        .frame(width: titleWidth, height: 18)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(alignment: .top, spacing: AM.Spacing.l) {
+          ForEach(0..<count, id: \.self) { index in
+            VStack(alignment: .leading, spacing: AM.Spacing.s) {
+              RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: tileSize, height: tileSize)
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.appPlaceholderSecondary)
+                .frame(width: tileSize * (index == 1 ? 0.78 : 0.62), height: 13)
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: tileSize * (index == 2 ? 0.52 : 0.44), height: 11)
+            }
+            .frame(width: tileSize)
+          }
+        }
+        .padding(.horizontal, AM.Spacing.screenMargin)
+      }
+    }
+  }
+
+  private var latestSingleSkeleton: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.m) {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(Color.appPlaceholderSecondary)
+        .frame(width: 112, height: 18)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+
+      HStack(spacing: AM.Spacing.m) {
+        RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+          .fill(Color.appPlaceholderPrimary)
+          .frame(width: 92, height: 92)
+
+        VStack(alignment: .leading, spacing: 8) {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.appPlaceholderSecondary)
+            .frame(width: 190, height: 18)
+          RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Color.appPlaceholderPrimary)
+            .frame(width: 132, height: 12)
+          RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Color.appPlaceholderSecondary)
+            .frame(width: 118, height: 12)
+        }
+
+        Spacer(minLength: 0)
+      }
+      .padding(14)
+      .background(
+        Color.appSecondaryBackground,
+        in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous)
+      )
+      .padding(.horizontal, AM.Spacing.screenMargin)
+    }
   }
 }
 
@@ -247,8 +432,16 @@ struct BrowseSongCollectionView: View {
   let subtitle: String?
   let songs: [Song]
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var scrollOffset: CGFloat = 0
   private var showsArtwork: Bool { songs.count <= 200 }
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
   init(title: String, subtitle: String? = nil, songs: [Song]) {
     self.title = title
     self.subtitle = subtitle
@@ -272,20 +465,31 @@ struct BrowseSongCollectionView: View {
             actionButtons
             LazyVStack(spacing: 0) {
               ForEach(songs) { song in
-                Button {
-                  audioManager.play(song: song, context: songs)
-                } label: {
-                  SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
-                    .padding(.horizontal, AM.Spacing.screenMargin)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(PressableButtonStyle())
+                SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
+                  .padding(.horizontal, AM.Spacing.screenMargin)
+                  .padding(.vertical, 6)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    play(song)
+                  }
+                  .songRowAccessibility(song: song) {
+                    play(song)
+                  }
                 Divider().padding(.leading, showsArtwork ? 76 : 28)
               }
             }
+          } else {
+            MusicEmptyState(
+              systemImage: "music.note.list",
+              title: "No Songs",
+              message: "This collection does not have playable songs yet."
+            )
+            .padding(.top, AM.Spacing.s)
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
           }
         }
         .padding(.bottom, AM.Spacing.l)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: songs.count)
         .background(
           GeometryReader { proxy in
             Color.clear.preference(
@@ -301,15 +505,21 @@ struct BrowseSongCollectionView: View {
     .navigationTitle(scrollOffset < -180 ? title : "")
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(scrollOffset < -180 ? .visible : .hidden, for: .navigationBar)
-    .animation(.easeInOut(duration: 0.2), value: scrollOffset < -180)
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: scrollOffset < -180)
   }
+
+  private func play(_ song: Song) {
+    AppHaptic.selection.play()
+    audioManager.play(song: song, context: songs)
+  }
+
   @ViewBuilder
   private func parallaxHero(width: CGFloat) -> some View {
     let baseSize: CGFloat = 240
-    let stretch = max(0, scrollOffset)
-    let shrink = max(0, -scrollOffset * 0.4)
+    let stretch = reduceMotion ? 0 : max(0, scrollOffset)
+    let shrink = reduceMotion ? 0 : max(0, -scrollOffset * 0.4)
     let size = max(140, baseSize + stretch * 0.6 - shrink)
-    let yOffset = scrollOffset > 0 ? -scrollOffset / 2 : 0
+    let yOffset = reduceMotion ? 0 : (scrollOffset > 0 ? -scrollOffset / 2 : 0)
     heroArtwork
       .frame(width: size, height: size)
       .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
@@ -329,6 +539,7 @@ struct BrowseSongCollectionView: View {
     HStack(spacing: AM.Spacing.m) {
       Button {
         if let first = songs.first {
+          AppHaptic.medium.play()
           audioManager.playInOrder(song: first, context: songs)
         }
       } label: {
@@ -340,7 +551,11 @@ struct BrowseSongCollectionView: View {
           .foregroundColor(.appAccent)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
+      .accessibilityLabel("Play \(title)")
+      .accessibilityValue(subtitle ?? "\(songs.count) songs")
       Button {
+        AppHaptic.selection.play()
         audioManager.playShuffled(from: songs)
       } label: {
         Label("Shuffle", systemImage: "shuffle")
@@ -351,6 +566,9 @@ struct BrowseSongCollectionView: View {
           .foregroundColor(.appAccent)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
+      .accessibilityLabel("Shuffle \(title)")
+      .accessibilityValue(subtitle ?? "\(songs.count) songs")
     }
     .padding(.horizontal, AM.Spacing.screenMargin)
   }

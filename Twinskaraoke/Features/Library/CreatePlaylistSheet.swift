@@ -2,6 +2,8 @@ import SwiftUI
 
 struct CreatePlaylistSheet: View {
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @ObservedObject private var manager = UserPlaylistsManager.shared
 
   @State private var name = ""
@@ -9,34 +11,105 @@ struct CreatePlaylistSheet: View {
   @State private var isPublic = false
   @State private var isSaving = false
   @State private var errorMessage: String?
+  @FocusState private var focusedField: CreatePlaylistField?
+
+  private var trimmedName: String {
+    name.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var trimmedDescription: String {
+    playlistDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var canSave: Bool {
+    !trimmedName.isEmpty && !isSaving
+  }
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
 
   var body: some View {
     NavigationStack {
-      Form {
-        Section {
-          TextField("Playlist Name", text: $name)
-          TextField("Description (optional)", text: $playlistDescription)
-        }
+      ScrollView {
+        VStack(spacing: 24) {
+          CreatePlaylistArtworkPreview(name: trimmedName, isPublic: isPublic)
+            .padding(.top, 8)
 
-        Section {
-          Toggle("Public", isOn: $isPublic)
-        } footer: {
-          Text("Public playlists can be discovered by other users.")
-        }
+          VStack(spacing: 14) {
+            CreatePlaylistTextField(
+              title: "Name",
+              prompt: "Playlist Name",
+              text: $name,
+              axis: .horizontal
+            )
+            .focused($focusedField, equals: .name)
+            .submitLabel(.next)
+            .onSubmit {
+              focusedField = .description
+            }
 
-        if let errorMessage {
-          Section {
-            Text(errorMessage)
-              .foregroundStyle(.red)
-              .font(.footnote)
+            Divider()
+
+            CreatePlaylistTextField(
+              title: "Description",
+              prompt: "Optional",
+              text: $playlistDescription,
+              axis: .vertical
+            )
+            .focused($focusedField, equals: .description)
+            .lineLimit(2...4)
           }
+          .padding(16)
+          .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous))
+
+          VStack(spacing: 12) {
+            Toggle(isOn: $isPublic) {
+              CreatePlaylistPrivacyLabel(isPublic: isPublic)
+            }
+            .tint(.appAccent)
+            .onChange(of: isPublic) { _, _ in
+              AppHaptic.selection.play()
+            }
+
+            Text("Public playlists can be discovered by other users.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(16)
+          .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous))
+
+          if let errorMessage {
+            CreatePlaylistErrorBanner(message: errorMessage)
+              .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+          }
+
+          Button {
+            save()
+          } label: {
+            CreatePlaylistSaveLabel(isSaving: isSaving)
+          }
+          .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.8, haptic: canSave ? .medium : nil))
+          .disabled(!canSave)
+          .accessibilityLabel("Create playlist")
         }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 28)
       }
+      .scrollDismissesKeyboard(.interactively)
+      .musicScreenBackground()
       .navigationTitle("New Playlist")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          GlassXButton(action: { dismiss() })
+          GlassXButton(action: {
+            AppHaptic.selection.play()
+            dismiss()
+          })
         }
         ToolbarItem(placement: .confirmationAction) {
           if isSaving {
@@ -44,34 +117,199 @@ struct CreatePlaylistSheet: View {
           } else {
             GlassCheckmarkButton(
               action: { save() },
-              isEnabled: !name.trimmingCharacters(in: .whitespaces).isEmpty
+              isEnabled: canSave
             )
           }
         }
       }
       .toolbarBackground(.hidden, for: .navigationBar)
       .interactiveDismissDisabled(isSaving)
+      .onAppear {
+        focusedField = .name
+      }
+      .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84), value: isSaving)
+      .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: errorMessage)
+      .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: trimmedName)
     }
   }
 
   private func save() {
+    guard canSave else {
+      AppHaptic.warning.play()
+      return
+    }
+
     isSaving = true
     errorMessage = nil
-
-    let trimmedName = name.trimmingCharacters(in: .whitespaces)
-    let desc = playlistDescription.trimmingCharacters(in: .whitespaces)
+    focusedField = nil
 
     manager.createPlaylist(
       name: trimmedName,
-      description: desc.isEmpty ? nil : desc,
+      description: trimmedDescription.isEmpty ? nil : trimmedDescription,
       isPublic: isPublic
     ) { success in
       isSaving = false
       if success {
+        AppHaptic.success.play()
         dismiss()
       } else {
+        AppHaptic.error.play()
         errorMessage = "Failed to create playlist. Please try again."
       }
     }
+  }
+}
+
+private enum CreatePlaylistField: Hashable {
+  case name
+  case description
+}
+
+private struct CreatePlaylistArtworkPreview: View {
+  let name: String
+  let isPublic: Bool
+
+  private var initials: String {
+    let pieces = name
+      .split(separator: " ")
+      .prefix(2)
+      .compactMap(\.first)
+    let text = String(pieces).uppercased()
+    return text.isEmpty ? "NK" : text
+  }
+
+  var body: some View {
+    VStack(spacing: 14) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+          .fill(
+            LinearGradient(
+              colors: [
+                .appAccent,
+                .appPlaceholderTertiary,
+                .appControlActiveFill.opacity(0.9),
+              ],
+              startPoint: .topLeading,
+              endPoint: .bottomTrailing
+            )
+          )
+
+        VStack(spacing: 12) {
+          Text(initials)
+            .font(.system(size: name.isEmpty ? 36 : 44, weight: .black, design: .rounded))
+            .foregroundStyle(.white)
+            .minimumScaleFactor(0.55)
+            .lineLimit(1)
+          Image(systemName: isPublic ? "person.2.fill" : "lock.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.88))
+        }
+      }
+      .frame(width: 172, height: 172)
+      .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+      .shadow(color: Color.appShadow, radius: 18, y: 10)
+      .scaleEffect(name.isEmpty ? 0.97 : 1)
+
+      VStack(spacing: 3) {
+        Text(name.isEmpty ? "Untitled Playlist" : name)
+          .font(.system(size: 21, weight: .bold))
+          .foregroundColor(.primary)
+          .lineLimit(2)
+          .multilineTextAlignment(.center)
+        Text(isPublic ? "Public Playlist" : "Private Playlist")
+          .font(.system(size: 14, weight: .medium))
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(name.isEmpty ? "New private playlist" : "\(name), \(isPublic ? "public" : "private") playlist")
+  }
+}
+
+private struct CreatePlaylistTextField: View {
+  let title: String
+  let prompt: String
+  @Binding var text: String
+  var axis: Axis = .horizontal
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text(title)
+        .font(.system(size: 12, weight: .bold))
+        .foregroundStyle(.secondary)
+        .textCase(.uppercase)
+      TextField(prompt, text: $text, axis: axis)
+        .font(.system(size: 17))
+        .textInputAutocapitalization(.words)
+        .disableAutocorrection(false)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct CreatePlaylistPrivacyLabel: View {
+  let isPublic: Bool
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Image(systemName: isPublic ? "person.2.fill" : "lock.fill")
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(isPublic ? .white : Color.appAccent)
+        .frame(width: 34, height: 34)
+        .background(
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isPublic ? Color.appAccent : Color.appAccent.opacity(0.12))
+        )
+      VStack(alignment: .leading, spacing: 2) {
+        Text(isPublic ? "Public" : "Private")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.primary)
+        Text(isPublic ? "Visible to other listeners" : "Only you can edit this playlist")
+          .font(.system(size: 13))
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+}
+
+private struct CreatePlaylistErrorBanner: View {
+  let message: String
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.system(size: 15, weight: .semibold))
+      Text(message)
+        .font(.system(size: 14, weight: .medium))
+      Spacer(minLength: 0)
+    }
+    .foregroundStyle(Color.appAccent)
+    .padding(.horizontal, 14)
+    .padding(.vertical, 12)
+    .background(Color.appAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+  }
+}
+
+private struct CreatePlaylistSaveLabel: View {
+  let isSaving: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      if isSaving {
+        ProgressView()
+          .tint(.appControlActiveForeground)
+      } else {
+        Image(systemName: "plus")
+          .font(.system(size: 15, weight: .bold))
+      }
+      Text(isSaving ? "Creating..." : "Create Playlist")
+        .font(.system(size: 17, weight: .semibold))
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 15)
+    .foregroundColor(.appControlActiveForeground)
+    .background(Color.appControlActiveFill, in: Capsule())
+    .opacity(isSaving ? 0.72 : 1)
   }
 }

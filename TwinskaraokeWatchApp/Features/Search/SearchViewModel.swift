@@ -8,6 +8,7 @@ class SearchViewModel: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
   init() {
     $searchText
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
       .removeDuplicates()
       .sink { [weak self] text in

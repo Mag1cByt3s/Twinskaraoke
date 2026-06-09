@@ -8,9 +8,15 @@ struct LoginSheet: View {
   @State private var password = ""
   @State private var showPassword = false
   @FocusState private var focus: LoginField?
-  private enum LoginField { case username, password }
+  private enum LoginField: Hashable { case username, password }
+  private var trimmedUsername: String {
+    username.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+  private var hasEnteredCredentials: Bool {
+    !trimmedUsername.isEmpty && !password.isEmpty
+  }
   private var canSubmit: Bool {
-    !username.isEmpty && !password.isEmpty && !auth.isLoading
+    hasEnteredCredentials && !auth.isLoading
   }
   var body: some View {
     NavigationStack {
@@ -20,6 +26,7 @@ struct LoginSheet: View {
           credentialsCard
           if let err = auth.errorMessage, !err.isEmpty {
             errorBanner(err)
+              .transition(.move(edge: .top).combined(with: .opacity))
           }
           signInButton
           divider
@@ -43,6 +50,11 @@ struct LoginSheet: View {
       .onChange(of: auth.isLoggedIn) { _, isLoggedIn in
         if isLoggedIn { dismiss() }
       }
+      .onChange(of: auth.errorMessage ?? "") { _, message in
+        if !message.isEmpty { AppHaptic.error.play() }
+      }
+      .animation(.spring(response: 0.34, dampingFraction: 0.86), value: auth.errorMessage ?? "")
+      .animation(.spring(response: 0.32, dampingFraction: 0.84), value: auth.isLoading)
     }
   }
   private var header: some View {
@@ -51,6 +63,7 @@ struct LoginSheet: View {
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color.black.opacity(0.18), radius: 16, y: 8)
+        .accessibilityHidden(true)
       VStack(spacing: 6) {
         Text("Sign in to Twinskaraoke")
           .font(.system(size: 26, weight: .bold))
@@ -88,6 +101,7 @@ struct LoginSheet: View {
           .font(.system(size: 15, weight: .semibold))
           .foregroundStyle(.secondary)
           .frame(width: 22)
+          .accessibilityHidden(true)
         TextField("Username", text: $username)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
@@ -103,6 +117,7 @@ struct LoginSheet: View {
           .font(.system(size: 15, weight: .semibold))
           .foregroundStyle(.secondary)
           .frame(width: 22)
+          .accessibilityHidden(true)
         Group {
           if showPassword {
             TextField("Password", text: $password)
@@ -116,13 +131,25 @@ struct LoginSheet: View {
         .submitLabel(.go)
         .onSubmit { signIn() }
         Button {
+          AppHaptic.selection.play()
           showPassword.toggle()
         } label: {
-          Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(.secondary)
+          Group {
+            if #available(iOS 17.0, *) {
+              Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                .contentTransition(.symbolEffect(.replace))
+            } else {
+              Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+            }
+          }
+          .font(.system(size: 15, weight: .medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 32, height: 32)
+          .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.72))
+        .accessibilityLabel(showPassword ? "Hide Password" : "Show Password")
+        .accessibilityValue(showPassword ? "Visible" : "Hidden")
       }
       .padding(.horizontal, 16)
       .frame(height: 52)
@@ -131,6 +158,14 @@ struct LoginSheet: View {
       RoundedRectangle(cornerRadius: 14, style: .continuous)
         .fill(Color(.secondarySystemGroupedBackground))
     )
+    .overlay {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .stroke(
+          focus == nil ? Color.clear : Color.appAccent.opacity(0.38),
+          lineWidth: 1.2
+        )
+    }
+    .animation(.spring(response: 0.28, dampingFraction: 0.86), value: focus)
   }
   private func errorBanner(_ message: String) -> some View {
     HStack(spacing: 10) {
@@ -148,6 +183,9 @@ struct LoginSheet: View {
       RoundedRectangle(cornerRadius: 12, style: .continuous)
         .fill(Color.appAccent.opacity(0.10))
     )
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Sign-in error")
+    .accessibilityValue(message)
   }
   private var signInButton: some View {
     Button(action: signIn) {
@@ -164,10 +202,13 @@ struct LoginSheet: View {
       .frame(height: 50)
       .background(ProfileTheme.gradient)
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-      .opacity(canSubmit ? 1 : 0.5)
+      .opacity(hasEnteredCredentials ? 1 : 0.5)
     }
     .disabled(!canSubmit)
-    .buttonStyle(.plain)
+    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.78))
+    .accessibilityLabel(auth.isLoading ? "Signing In" : "Sign In")
+    .accessibilityValue(canSubmit ? "Ready" : "Username and password required")
+    .accessibilityHint("Signs in with your Twinskaraoke account.")
   }
   private var divider: some View {
     HStack(spacing: 12) {
@@ -180,6 +221,8 @@ struct LoginSheet: View {
   }
   private var discordButton: some View {
     Button {
+      guard !auth.isLoading else { return }
+      AppHaptic.medium.play()
       Task { await auth.loginWithDiscord() }
     } label: {
       HStack(spacing: 10) {
@@ -194,7 +237,10 @@ struct LoginSheet: View {
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
     .disabled(auth.isLoading)
-    .buttonStyle(.plain)
+    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.78))
+    .accessibilityLabel("Continue with Discord")
+    .accessibilityValue(auth.isLoading ? "Unavailable while signing in" : "Ready")
+    .accessibilityHint("Opens Discord sign-in.")
   }
   private var footer: some View {
     Text("By continuing, you agree to Twinskaraoke's Terms of Service and Privacy Policy.")
@@ -205,8 +251,14 @@ struct LoginSheet: View {
       .padding(.top, 4)
   }
   private func signIn() {
+    guard canSubmit else {
+      AppHaptic.warning.play()
+      focus = trimmedUsername.isEmpty ? .username : .password
+      return
+    }
+    AppHaptic.medium.play()
     focus = nil
-    Task { await auth.login(username: username, password: password) }
+    Task { await auth.login(username: trimmedUsername, password: password) }
   }
 }
 
