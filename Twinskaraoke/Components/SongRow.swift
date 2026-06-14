@@ -175,6 +175,158 @@ struct SongRowSkeleton: View {
   }
 }
 
+enum MusicGridCardSize: Equatable {
+  case regular
+  case compact
+
+  var defaultWidth: CGFloat {
+    switch self {
+    case .regular: return AM.Spacing.shelfTile
+    case .compact: return AM.Spacing.compactShelfTile
+    }
+  }
+
+  var titleFont: Font {
+    switch self {
+    case .regular: return AM.Font.tileTitle
+    case .compact: return .system(size: 13, weight: .semibold)
+    }
+  }
+
+  var artistFont: Font {
+    switch self {
+    case .regular: return AM.Font.tileCaption
+    case .compact: return .system(size: 11)
+    }
+  }
+
+  var textSpacing: CGFloat {
+    switch self {
+    case .regular: return AM.Spacing.s
+    case .compact: return 6
+    }
+  }
+
+  var usesShadow: Bool {
+    switch self {
+    case .regular: return true
+    case .compact: return false
+    }
+  }
+}
+
+struct MusicGridCard: View {
+  let song: Song
+  let context: [Song]
+  var size: MusicGridCardSize = .regular
+  var width: CGFloat?
+  var accessibilityIdentifier: String?
+  @EnvironmentObject private var audioManager: AudioPlayerManager
+  @State private var showAddToPlaylist = false
+
+  init(
+    song: Song,
+    context: [Song],
+    size: MusicGridCardSize = .regular,
+    width: CGFloat? = nil,
+    fillsWidth: Bool = false,
+    accessibilityIdentifier: String? = nil
+  ) {
+    self.song = song
+    self.context = context
+    self.size = size
+    self.width = fillsWidth ? nil : (width ?? size.defaultWidth)
+    self.accessibilityIdentifier = accessibilityIdentifier
+  }
+
+  private var artistText: String {
+    song.displayArtist.isEmpty ? "Unknown Artist" : song.displayArtist
+  }
+
+  var body: some View {
+    Button {
+      AppHaptic.selection.play()
+      audioManager.play(song: song, context: context)
+    } label: {
+      VStack(alignment: .leading, spacing: size.textSpacing) {
+        artwork
+        Text(song.title)
+          .font(size.titleFont)
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+        Text(artistText)
+          .font(size.artistFont)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+      .frame(width: width, alignment: .leading)
+      .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+    }
+    .buttonStyle(PressableButtonStyle(scale: size == .regular ? 0.97 : 0.96, dim: 0.78, haptic: .selection))
+    .contextMenu {
+      SongActionsMenuItems(song: song) {
+        showAddToPlaylist = true
+      }
+    } preview: {
+      SongContextPreview(song: song)
+        .environmentObject(audioManager)
+    }
+    .sheet(isPresented: $showAddToPlaylist) {
+      AddToPlaylistSheet(song: song)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(song.title)
+    .accessibilityValue(artistText)
+    .accessibilityIdentifier(accessibilityIdentifier ?? "MusicGridCard.\(song.id)")
+  }
+
+  @ViewBuilder
+  private var artwork: some View {
+    if let width {
+      artworkContent
+        .frame(width: width, height: width)
+        .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
+        .modifier(MusicGridCardShadow(enabled: size.usesShadow))
+    } else {
+      artworkContent
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
+        .modifier(MusicGridCardShadow(enabled: size.usesShadow))
+    }
+  }
+
+  @ViewBuilder
+  private var artworkContent: some View {
+    if let imageURL = audioManager.displayImageURL(for: song) {
+      LoadingImage(url: imageURL, cornerRadius: AM.Radius.card)
+    } else {
+      RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+        .fill(Color.appPlaceholderPrimary)
+        .overlay {
+          GeometryReader { proxy in
+            Image(systemName: "music.note")
+              .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.36, weight: .regular))
+              .foregroundStyle(.secondary.opacity(0.7))
+              .frame(width: proxy.size.width, height: proxy.size.height)
+          }
+        }
+    }
+  }
+}
+
+private struct MusicGridCardShadow: ViewModifier {
+  let enabled: Bool
+
+  func body(content: Content) -> some View {
+    content.shadow(
+      color: enabled ? AM.Shadow.card.color : .clear,
+      radius: enabled ? AM.Shadow.card.radius : 0,
+      y: enabled ? AM.Shadow.card.y : 0
+    )
+  }
+}
+
 struct SongActionsMenuItems: View {
   let song: Song
   let onAddToPlaylist: () -> Void

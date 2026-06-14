@@ -1,5 +1,29 @@
 import SwiftUI
 
+private struct WatchPlayerLayoutMetrics {
+  let containerSize: CGSize
+
+  private var compactWidth: Bool { containerSize.width < 180 }
+  private var compactHeight: Bool { containerSize.height < 205 }
+
+  var artworkSize: CGFloat {
+    min(containerSize.width * (compactWidth ? 0.49 : 0.54), compactHeight ? 80 : 96)
+  }
+
+  var contentSpacing: CGFloat { compactHeight ? 6 : 9 }
+  var titleSize: CGFloat { compactWidth ? 13 : 14 }
+  var artistSize: CGFloat { compactWidth ? 10 : 11 }
+  var progressHorizontalPadding: CGFloat { compactWidth ? 2 : 4 }
+  var mainControlSpacing: CGFloat { compactWidth ? 9 : 13 }
+  var sideControlDiameter: CGFloat { compactWidth ? 31 : 34 }
+  var sideControlIconSize: CGFloat { compactWidth ? 14 : 15 }
+  var primaryControlDiameter: CGFloat { compactWidth ? 44 : 48 }
+  var primaryControlIconSize: CGFloat { compactWidth ? 22 : 24 }
+  var secondaryControlSpacing: CGFloat { compactWidth ? 12 : 18 }
+  var secondaryControlSize: CGFloat { compactWidth ? 26 : 28 }
+  var volumeHorizontalPadding: CGFloat { compactWidth ? 4 : 10 }
+}
+
 struct PlayerView: View {
   @EnvironmentObject var audioManager: AudioManager
   @Environment(\.colorScheme) private var colorScheme
@@ -22,9 +46,9 @@ struct PlayerView: View {
   var body: some View {
     if let song = audioManager.currentSong {
       GeometryReader { geo in
-        let artSize = min(geo.size.width * 0.52, 92)
+        let metrics = WatchPlayerLayoutMetrics(containerSize: geo.size)
         ScrollView {
-          VStack(spacing: 9) {
+          VStack(spacing: metrics.contentSpacing) {
             ZStack {
               AsyncImage(url: song.imageURL) { image in
                 image.resizable().scaledToFit()
@@ -32,20 +56,20 @@ struct PlayerView: View {
                 RoundedRectangle(cornerRadius: 10)
                   .fill(Color.secondary.opacity(0.25))
               }
-              .frame(width: artSize, height: artSize)
+              .frame(width: metrics.artworkSize, height: metrics.artworkSize)
               .clipShape(RoundedRectangle(cornerRadius: 10))
               .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
               .scaleEffect(reduceMotion ? 1 : (audioManager.isPlaying ? 1 : 0.95))
               if audioManager.isLoading {
                 RoundedRectangle(cornerRadius: 10)
                   .fill(overlayColor)
-                  .frame(width: artSize, height: artSize)
+                  .frame(width: metrics.artworkSize, height: metrics.artworkSize)
                 ProgressView()
                   .progressViewStyle(CircularProgressViewStyle(tint: .appAccent))
                   .scaleEffect(0.6)
               }
             }
-            .frame(width: artSize, height: artSize)
+            .frame(width: metrics.artworkSize, height: metrics.artworkSize)
             .animation(playbackAnimation, value: audioManager.isPlaying)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Artwork")
@@ -54,28 +78,24 @@ struct PlayerView: View {
             .accessibilityAction {
               togglePlayPause()
             }
-            .contextMenu {
-              playerContextMenu
-            }
 
             VStack(spacing: 2) {
               Text(song.title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: metrics.titleSize, weight: .semibold))
                 .foregroundColor(.primary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
               Text(song.artistName)
-                .font(.system(size: 11))
+                .font(.system(size: metrics.artistSize))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.82)
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Now Playing")
             .accessibilityValue(playerStateAccessibilityValue(for: song))
-            .accessibilityHint("Long press for playback actions.")
-            .contextMenu {
-              playerContextMenu
-            }
+            .accessibilityHint("Use the playback controls below.")
             VStack(spacing: 1) {
               let total = max(audioManager.duration, 1)
               ProgressView(value: min(audioManager.currentTime, total), total: total)
@@ -89,7 +109,7 @@ struct PlayerView: View {
               .font(.system(size: 9, design: .monospaced))
               .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, metrics.progressHorizontalPadding)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Playback Position")
             .accessibilityValue(progressAccessibilityValue)
@@ -105,11 +125,11 @@ struct PlayerView: View {
               }
             }
 
-            HStack(spacing: 13) {
+            HStack(spacing: metrics.mainControlSpacing) {
               WatchPlayerIconButton(
                 systemName: "backward.fill",
-                diameter: 34,
-                iconSize: 15,
+                diameter: metrics.sideControlDiameter,
+                iconSize: metrics.sideControlIconSize,
                 tint: .primary,
                 fill: Color.secondary.opacity(0.14),
                 isDisabled: audioManager.isLoading,
@@ -123,8 +143,8 @@ struct PlayerView: View {
 
               WatchPlayerIconButton(
                 systemName: audioManager.isPlaying ? "pause.fill" : "play.fill",
-                diameter: 48,
-                iconSize: 24,
+                diameter: metrics.primaryControlDiameter,
+                iconSize: metrics.primaryControlIconSize,
                 tint: .white,
                 fill: Color.appAccent,
                 accessibilityLabel: audioManager.isPlaying ? "Pause" : "Play",
@@ -136,8 +156,8 @@ struct PlayerView: View {
 
               WatchPlayerIconButton(
                 systemName: "forward.fill",
-                diameter: 34,
-                iconSize: 15,
+                diameter: metrics.sideControlDiameter,
+                iconSize: metrics.sideControlIconSize,
                 tint: .primary,
                 fill: Color.secondary.opacity(0.14),
                 isDisabled: audioManager.isLoading,
@@ -150,7 +170,7 @@ struct PlayerView: View {
               }
             }
 
-            HStack(spacing: 18) {
+            HStack(spacing: metrics.secondaryControlSpacing) {
               Button {
                 audioManager.toggleShuffle()
                 WatchHaptic.play(audioManager.isShuffleOn ? .success : .click)
@@ -158,7 +178,7 @@ struct PlayerView: View {
                 Image(systemName: "shuffle")
                   .font(.system(size: 13, weight: .semibold))
                   .foregroundColor(audioManager.isShuffleOn ? .appAccent : .secondary)
-                  .frame(width: 28, height: 28)
+                  .frame(width: metrics.secondaryControlSize, height: metrics.secondaryControlSize)
                   .background(
                     Circle().fill(audioManager.isShuffleOn ? Color.appAccent.opacity(0.14) : Color.clear))
               }
@@ -174,7 +194,7 @@ struct PlayerView: View {
                   .font(.system(size: 13, weight: .semibold))
                   .foregroundColor(
                     audioManager.playbackMode == .singleLoop ? .appAccent : .secondary)
-                  .frame(width: 28, height: 28)
+                  .frame(width: metrics.secondaryControlSize, height: metrics.secondaryControlSize)
                   .background(
                     Circle().fill(
                       audioManager.playbackMode == .singleLoop
@@ -189,19 +209,20 @@ struct PlayerView: View {
                 Image(systemName: "list.bullet")
                   .font(.system(size: 13, weight: .semibold))
                   .foregroundColor(.secondary)
-                  .frame(width: 28, height: 28)
+                  .frame(width: metrics.secondaryControlSize, height: metrics.secondaryControlSize)
               }
               .buttonStyle(.watchPressable)
               .accessibilityLabel("Playing Next")
               .accessibilityValue(queueAccessibilityValue)
               .accessibilityHint("Show the queue for \(song.title)")
+              .accessibilityIdentifier("WatchPlayer.queue")
               .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
             }
 
             WatchVolumeControl(volume: crownVolume) { newValue in
               setVolume(newValue, feedback: true)
             }
-              .padding(.horizontal, 10)
+              .padding(.horizontal, metrics.volumeHorizontalPadding)
               .padding(.top, 1)
               .focusable(true)
               .digitalCrownRotation(
@@ -273,7 +294,7 @@ struct PlayerView: View {
     return "\(formatTime(audioManager.currentTime)) elapsed, \(formatTime(remaining)) remaining"
   }
   private var queueAccessibilityValue: String {
-    let count = max(0, audioManager.queue.count - 1)
+    let count = audioManager.upNextSongs.count
     if count == 0 { return "No songs queued" }
     if count == 1 { return "1 song queued" }
     return "\(count) songs queued"
@@ -283,23 +304,6 @@ struct PlayerView: View {
       return "\(song.title), \(song.artistName), loading"
     }
     return "\(song.title), \(song.artistName), \(audioManager.isPlaying ? "playing" : "paused")"
-  }
-  @ViewBuilder
-  private var playerContextMenu: some View {
-    Button {
-      togglePlayPause()
-    } label: {
-      Label(
-        audioManager.isPlaying ? "Pause" : "Play",
-        systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill"
-      )
-    }
-    Button {
-      audioManager.playNext()
-      WatchHaptic.play(.next)
-    } label: {
-      Label("Skip", systemImage: "forward.fill")
-    }
   }
   private func formatTime(_ time: Double) -> String {
     if time.isNaN || time.isInfinite { return "0:00" }

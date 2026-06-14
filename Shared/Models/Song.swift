@@ -34,49 +34,115 @@ nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
     case id, title, duration, absolutePath, coverArt, originalArtists, coverArtists, userUploaded
     case cloudflareID = "cloudflareId"
   }
+
+  init(
+    id: String,
+    title: String,
+    duration: Int,
+    absolutePath: String?,
+    cloudflareID: String?,
+    coverArt: Media?,
+    originalArtists: [String]?,
+    coverArtists: [String]?,
+    userUploaded: Bool?
+  ) {
+    self.id = id
+    self.title = title
+    self.duration = duration
+    self.absolutePath = absolutePath
+    self.cloudflareID = cloudflareID
+    self.coverArt = coverArt
+    self.originalArtists = originalArtists
+    self.coverArtists = coverArtists
+    self.userUploaded = userUploaded
+  }
+
+  init(
+    id: String,
+    title: String,
+    duration: Int,
+    absolutePath: String?,
+    coverArt: SongMedia?,
+    coverArtists: [String]?,
+    originalArtists: [String]?,
+    cloudflareId: String?,
+    userUploaded: Bool?
+  ) {
+    self.init(
+      id: id,
+      title: title,
+      duration: duration,
+      absolutePath: absolutePath,
+      cloudflareID: cloudflareId,
+      coverArt: coverArt,
+      originalArtists: originalArtists,
+      coverArtists: coverArtists,
+      userUploaded: userUploaded
+    )
+  }
+
+  var cloudflareId: String? { cloudflareID }
+
   var imageURL: URL? {
-    if let identifier = cloudflareID {
+    if let identifier = cloudflareID, !identifier.isEmpty {
       return URL(string: "\(StorageHost.images)/\(identifier)/public")
     }
     guard let path = coverArt?.absolutePath else { return neuroFallbackImageURL }
-    return URL(string: StorageHost.images + path + "/quality=95")
+    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
   }
+
   var fullHDImageURL: URL? {
-    if let identifier = cloudflareID {
+    if let identifier = cloudflareID, !identifier.isEmpty {
       return URL(string: "\(StorageHost.images)/\(identifier)/quality=95")
     }
     guard let path = coverArt?.absolutePath else { return neuroFallbackImageURL }
-    return URL(string: StorageHost.images + path + "/quality=95")
+    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
   }
+
   var hasOwnArtwork: Bool {
     cloudflareID != nil || coverArt?.absolutePath != nil
   }
+
   private static let neuroArtistNames: Set<String> = ["Neuro", "Neuro v1", "Neuro v2"]
+
   private var neuroFallbackImageURL: URL? {
+    #if os(watchOS)
+    return nil
+    #else
     let artists = coverArtists ?? []
     let isNeuro = artists.contains { Self.neuroArtistNames.contains($0) }
     guard isNeuro || userUploaded == true else { return nil }
     return FallbackArtProvider.shared.url(for: id)
+    #endif
   }
+
   var fallbackArtCredit: String? {
+    #if os(watchOS)
+    return nil
+    #else
     guard !hasOwnArtwork else { return nil }
     let artists = coverArtists ?? []
     let isNeuro = artists.contains { Self.neuroArtistNames.contains($0) }
     guard isNeuro || userUploaded == true else { return nil }
     return FallbackArtProvider.shared.art(for: id)?.artistName
+    #endif
   }
+
   var audioURL: URL? {
     guard let path = absolutePath else { return nil }
     let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
     return URL(string: "\(StorageHost.base)/\(cleanPath)")
   }
+
   var displayTitle: String {
     let artists = originalArtists?.joined(separator: ", ") ?? ""
     return artists.isEmpty ? title : "\(title) - \(artists)"
   }
+
   var displayCoverArtist: String {
     coverArtists?.joined(separator: ", ") ?? ""
   }
+
   var displayArtist: String {
     let original = originalArtists?.filter { !$0.isEmpty }.joined(separator: ", ") ?? ""
     let cover = coverArtists?.filter { !$0.isEmpty }.joined(separator: ", ") ?? ""
@@ -89,18 +155,32 @@ nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
       return apiProvidedArtists ? "Unknown Artist" : ""
     }
   }
+
+  var artistName: String {
+    if let originals = originalArtists, !originals.isEmpty {
+      return originals.joined(separator: ", ")
+    }
+    return coverArtists?.joined(separator: ", ") ?? "Unknown Artist"
+  }
+
   var hasArtistMetadata: Bool {
     let original = originalArtists?.filter { !$0.isEmpty } ?? []
     let cover = coverArtists?.filter { !$0.isEmpty } ?? []
     return !original.isEmpty || !cover.isEmpty
   }
+
   var durationText: String {
     guard duration > 0 else { return "" }
     let m = duration / 60
     let s = duration % 60
     return String(format: "%d:%02d", m, s)
   }
+
   static func == (lhs: Song, rhs: Song) -> Bool { lhs.id == rhs.id }
+
+  private func normalizedImagePath(_ rawPath: String) -> String {
+    rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+  }
 }
 
 nonisolated struct Playlist: Codable, Identifiable, Sendable {
@@ -112,6 +192,11 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
   let mosaicMedia: [Media]?
   let songListDTOs: [Song]?
   var isPersonal: Bool = false
+
+  private enum CodingKeys: String, CodingKey {
+    case id, name, songCount, count, media, mosaicMedia, songListDTOs, items, songs, favorites
+    case isPersonal
+  }
 
   init(
     id: String,
@@ -131,6 +216,38 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
     self.isPersonal = isPersonal
   }
 
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    name = try container.decode(String.self, forKey: .name)
+    if let value = try? container.decode(Int.self, forKey: .songCount) {
+      songCount = value
+    } else {
+      songCount = (try? container.decode(Int.self, forKey: .count)) ?? 0
+    }
+    media = try? container.decodeIfPresent(PlaylistMedia.self, forKey: .media)
+    mosaicMedia =
+      (try? container.decodeIfPresent(LossyArray<Media>.self, forKey: .mosaicMedia)?.elements)
+      ?? (try? container.decodeIfPresent([Media].self, forKey: .mosaicMedia))
+    songListDTOs =
+      Self.decodeSongs(from: container, forKey: .songListDTOs)
+      ?? Self.decodeSongs(from: container, forKey: .items)
+      ?? Self.decodeSongs(from: container, forKey: .songs)
+      ?? Self.decodeSongs(from: container, forKey: .favorites)
+    isPersonal = (try? container.decodeIfPresent(Bool.self, forKey: .isPersonal)) ?? false
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(name, forKey: .name)
+    try container.encode(songCount, forKey: .songCount)
+    try container.encodeIfPresent(media, forKey: .media)
+    try container.encodeIfPresent(mosaicMedia, forKey: .mosaicMedia)
+    try container.encodeIfPresent(songListDTOs, forKey: .songListDTOs)
+    try container.encode(isPersonal, forKey: .isPersonal)
+  }
+
   var imageURL: URL? {
     if let cfId = media?.cloudflareId, !cfId.isEmpty {
       return URL(string: "\(StorageHost.images)/\(cfId)/public")
@@ -143,10 +260,32 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
     }
     return songListDTOs?.first?.imageURL
   }
+
   var isFavorites: Bool { id == Self.favoritesID }
 
   private func normalizedImagePath(_ rawPath: String) -> String {
     rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+  }
+
+  private static func decodeSongs(
+    from container: KeyedDecodingContainer<CodingKeys>,
+    forKey key: CodingKeys
+  ) -> [Song]? {
+    if let decoded = try? container.decode(LossyArray<Song>.self, forKey: key) {
+      return decoded.elements
+    }
+    if let decoded = try? container.decode([Song].self, forKey: key) {
+      return decoded
+    }
+    if let decoded = try? container.decode(LossyArray<FavoriteSongEnvelope>.self, forKey: key) {
+      let songs = decoded.elements.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    if let decoded = try? container.decode([FavoriteSongEnvelope].self, forKey: key) {
+      let songs = decoded.compactMap(\.song)
+      if !songs.isEmpty { return songs }
+    }
+    return nil
   }
 }
 
@@ -172,7 +311,9 @@ nonisolated struct PlaylistListItem: Decodable, Identifiable, Sendable {
       songCount = (try? container.decode(Int.self, forKey: .count)) ?? 0
     }
     media = try? container.decodeIfPresent(PlaylistMedia.self, forKey: .media)
-    mosaicMedia = try? container.decodeIfPresent(LossyArray<Media>.self, forKey: .mosaicMedia)?.elements
+    mosaicMedia =
+      (try? container.decodeIfPresent(LossyArray<Media>.self, forKey: .mosaicMedia)?.elements)
+      ?? (try? container.decodeIfPresent([Media].self, forKey: .mosaicMedia))
     songListDTOs =
       Self.decodeSongs(from: container, forKey: .songListDTOs)
       ?? Self.decodeSongs(from: container, forKey: .items)
@@ -223,8 +364,66 @@ nonisolated struct Media: Codable, Sendable {
   let absolutePath: String?
 }
 
+typealias SongMedia = Media
+
+nonisolated struct PlaylistDetail: Codable, Sendable {
+  let id: String
+  let name: String
+  let songListDTOs: [Song]
+}
+
 nonisolated struct SearchResponse: Codable, Sendable {
   let items: [Song]
+}
+
+nonisolated struct SearchSongItem: Codable, Identifiable, Sendable {
+  let id: String
+  let title: String
+  let duration: Int
+  let absolutePath: String?
+  let originalArtists: [String]?
+  let coverArtists: [String]?
+  let coverArt: SearchMedia?
+  let cloudflareId: String?
+
+  var imageURL: URL? {
+    if let cfId = cloudflareId, !cfId.isEmpty {
+      return URL(string: "\(StorageHost.images)/\(cfId)/public")
+    }
+    guard let path = coverArt?.absolutePath else { return nil }
+    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+  }
+
+  var originalArtistDisplay: String {
+    originalArtists?.joined(separator: ", ") ?? ""
+  }
+
+  func toSong() -> Song? {
+    guard let absPath = absolutePath else { return nil }
+    return Song(
+      id: id,
+      title: title,
+      duration: duration,
+      absolutePath: absPath,
+      coverArt: coverArt.map { SongMedia(absolutePath: $0.absolutePath) },
+      coverArtists: coverArtists,
+      originalArtists: originalArtists,
+      cloudflareId: cloudflareId,
+      userUploaded: nil
+    )
+  }
+
+  private func normalizedImagePath(_ rawPath: String) -> String {
+    rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+  }
+}
+
+nonisolated struct SearchMedia: Codable, Sendable {
+  let absolutePath: String
+}
+
+nonisolated struct SearchResponseRoot: Codable, Sendable {
+  let items: [SearchSongItem]
 }
 
 nonisolated struct FavoriteSongEnvelope: Decodable, Sendable {

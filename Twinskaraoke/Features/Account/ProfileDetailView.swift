@@ -8,19 +8,19 @@ struct ProfileDetailView: View {
   let badges: [Badge]
   let uploadLimits: UploadLimits?
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var selected: Badge?
-  private let cols = [
-    GridItem(.flexible(), spacing: 14),
-    GridItem(.flexible(), spacing: 14),
-    GridItem(.flexible(), spacing: 14),
-  ]
+  private let cols = AM.Layout.adaptiveGridColumns(minimum: 96, spacing: 14)
   private var unlocked: [Badge] { badges.filter { $0.unlocked } }
   private var locked: [Badge] { badges.filter { !$0.unlocked } }
   private var unlockedBadgeCount: Int { profile?.unlockedBadges ?? unlocked.count }
   private var totalBadgeCount: Int { max(profile?.totalBadges ?? badges.count, badges.count) }
   private var nextBadge: Badge? {
     locked.first { $0.conditionValue > 0 } ?? locked.first
+  }
+  private var contentMaxWidth: CGFloat {
+    horizontalSizeClass == .regular ? 760 : .infinity
   }
 
   var body: some View {
@@ -77,7 +77,10 @@ struct ProfileDetailView: View {
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 20)
+      .frame(maxWidth: contentMaxWidth, alignment: .top)
+      .accessibilityIdentifier(horizontalSizeClass == .regular ? "Profile.WideOverview" : "Profile.CompactOverview")
     }
+    .frame(maxWidth: .infinity)
     .scrollIndicators(.hidden)
     .musicScreenBackground()
     .navigationTitle("Profile")

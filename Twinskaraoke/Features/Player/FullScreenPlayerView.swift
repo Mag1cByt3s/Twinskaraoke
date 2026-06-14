@@ -4,6 +4,84 @@ import SwiftUI
   import UIKit
 #endif
 
+private struct PlayerLayoutMetrics {
+  let containerSize: CGSize
+  let safeTop: CGFloat
+  let safeBottom: CGFloat
+
+  private var contentHeight: CGFloat {
+    max(1, containerSize.height - safeTop - safeBottom)
+  }
+
+  private var isCompactHeight: Bool {
+    contentHeight < 760
+  }
+
+  private var isWidePhone: Bool {
+    containerSize.width >= 420
+  }
+
+  var usesTwoColumnPlayer: Bool {
+    containerSize.width >= 700 && contentHeight >= 560
+  }
+
+  var usesTwoColumnLyrics: Bool {
+    usesTwoColumnPlayer
+  }
+
+  var horizontalPadding: CGFloat {
+    if usesTwoColumnPlayer { return 0 }
+    if isWidePhone { return 34 }
+    return isCompactHeight ? 24 : 28
+  }
+
+  var toolbarHorizontalPadding: CGFloat {
+    isCompactHeight ? 38 : 48
+  }
+
+  var artSize: CGFloat {
+    if usesTwoColumnPlayer { return wideArtSize }
+    let widthBound = containerSize.width - (horizontalPadding * 2)
+    let heightFraction = contentHeight * (isCompactHeight ? 0.43 : 0.48)
+    let maxSize: CGFloat = isWidePhone ? 390 : 360
+    return min(widthBound, heightFraction, maxSize)
+  }
+
+  var wideArtSize: CGFloat {
+    min(containerSize.width * 0.44, contentHeight * 0.68, 460)
+  }
+
+  var wideLyricsArtSize: CGFloat {
+    let panelWidth: CGFloat = 330
+    let spacing: CGFloat = 36
+    let available = wideContentMaxWidth - panelWidth - spacing
+    return min(wideArtSize, max(240, min(360, available)))
+  }
+
+  var wideContentMaxWidth: CGFloat {
+    min(containerSize.width - 88, 980)
+  }
+
+  var radioArtSize: CGFloat {
+    min(containerSize.width - 44, contentHeight * 0.50, isWidePhone ? 390 : 360)
+  }
+
+  var artworkTopSpacer: CGFloat { isCompactHeight ? 10 : 20 }
+  var artworkBottomSpacer: CGFloat { isCompactHeight ? 18 : 28 }
+  var progressTopPadding: CGFloat { isCompactHeight ? 10 : 16 }
+  var controlsTopPadding: CGFloat { isCompactHeight ? 28 : 40 }
+  var controlsBottomSpacer: CGFloat { isCompactHeight ? 22 : 36 }
+  var titleSize: CGFloat { isCompactHeight ? 20 : 22 }
+  var artistSize: CGFloat { isCompactHeight ? 15 : 17 }
+  var titleButtonSize: CGFloat { isCompactHeight ? 34 : 36 }
+  var moreButtonIconSize: CGFloat { isCompactHeight ? 18 : 20 }
+  var sideControlSize: CGFloat { isCompactHeight ? 32 : 36 }
+  var primaryControlSize: CGFloat { isCompactHeight ? 52 : 58 }
+  var lyricsArtworkSize: CGFloat { isCompactHeight ? 48 : 52 }
+  var lyricsTitleSize: CGFloat { isCompactHeight ? 15 : 16 }
+  var lyricsSubtitleSize: CGFloat { isCompactHeight ? 12 : 13 }
+}
+
 struct FullScreenPlayerView: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
   @ObservedObject private var favorites = FavoritesManager.shared
@@ -31,8 +109,11 @@ struct FullScreenPlayerView: View {
         GeometryReader { geo in
           let safeTop = geo.safeAreaInsets.top
           let safeBottom = geo.safeAreaInsets.bottom
-          let contentHeight = geo.size.height - safeTop - safeBottom
-          let artSize = min(geo.size.width - 64, contentHeight * 0.45, 360)
+          let metrics = PlayerLayoutMetrics(
+            containerSize: geo.size,
+            safeTop: safeTop,
+            safeBottom: safeBottom
+          )
           ZStack(alignment: .top) {
             Group {
               if audioManager.isRadioMode {
@@ -40,10 +121,10 @@ struct FullScreenPlayerView: View {
                   favorites: favorites,
                   showingQueue: $showingQueue,
                   song: song,
-                  artSize: artSize
+                  artSize: metrics.radioArtSize
                 )
               } else {
-                musicLayout(song: song, artSize: artSize)
+                musicLayout(song: song, metrics: metrics)
               }
             }
             .padding(.top, safeTop + 6)
@@ -54,6 +135,7 @@ struct FullScreenPlayerView: View {
           .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(backgroundView(song: song))
+        .accessibilityIdentifier("FullScreenPlayer")
       }
     }
     .fullScreenCover(isPresented: $showCoverArt) {
@@ -144,12 +226,27 @@ struct FullScreenPlayerView: View {
     }
   }
   @ViewBuilder
-  private func musicLayout(song: Song, artSize: CGFloat) -> some View {
+  private func musicLayout(song: Song, metrics: PlayerLayoutMetrics) -> some View {
+    if showLyrics {
+      if metrics.usesTwoColumnLyrics {
+        wideLyricsLayout(song: song, metrics: metrics)
+      } else {
+        compactMusicLayout(song: song, metrics: metrics)
+      }
+    } else if metrics.usesTwoColumnPlayer {
+      wideMusicLayout(song: song, metrics: metrics)
+    } else {
+      compactMusicLayout(song: song, metrics: metrics)
+    }
+  }
+
+  @ViewBuilder
+  private func compactMusicLayout(song: Song, metrics: PlayerLayoutMetrics) -> some View {
     VStack(spacing: 0) {
       ZStack {
         if showLyrics {
           VStack(spacing: 0) {
-            lyricsHeader(song: song)
+            lyricsHeader(song: song, metrics: metrics)
             LyricsView(
               lyrics: lyricsViewModel.lyrics,
               currentTime: audioManager.playbackTime,
@@ -180,16 +277,16 @@ struct FullScreenPlayerView: View {
           .transition(lyricsSurfaceTransition)
         } else {
           VStack(spacing: 0) {
-            Spacer(minLength: 20)
-            PlayerArtworkView(song: song, size: artSize, onTap: { handleCoverArtTap(song: song) })
+            Spacer(minLength: metrics.artworkTopSpacer)
+            PlayerArtworkView(song: song, size: metrics.artSize, onTap: { handleCoverArtTap(song: song) })
               .contextMenu {
                 songActions(song: song)
               } preview: {
                 SongContextPreview(song: song)
                   .environmentObject(audioManager)
               }
-            Spacer(minLength: 28)
-            titleRow(song: song)
+            Spacer(minLength: metrics.artworkBottomSpacer)
+            titleRow(song: song, metrics: metrics)
           }
           .transition(artworkSurfaceTransition)
         }
@@ -197,12 +294,12 @@ struct FullScreenPlayerView: View {
       .frame(maxHeight: .infinity)
       .clipped()
       .animation(playerSurfaceAnimation, value: showLyrics)
-      progressSection(song: song)
-      controlsRow
+      progressSection(song: song, metrics: metrics)
+      controlsRow(metrics: metrics)
         .padding(.horizontal, 12)
-        .padding(.top, 40)
-      Spacer(minLength: 36)
-      PlayerVolumeRow()
+        .padding(.top, metrics.controlsTopPadding)
+      Spacer(minLength: metrics.controlsBottomSpacer)
+      PlayerVolumeRow(horizontalPadding: metrics.horizontalPadding)
       PlayerBottomToolbar(
         showingQueue: $showingQueue,
         song: song,
@@ -212,11 +309,143 @@ struct FullScreenPlayerView: View {
           }
           if showLyrics { lyricsViewModel.fetch(songID: song.id) }
         },
-        showLyrics: showLyrics
+        showLyrics: showLyrics,
+        horizontalPadding: metrics.toolbarHorizontalPadding
       )
       Spacer(minLength: 8)
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(showLyrics ? "FullScreenPlayer.layout.compactLyrics" : "FullScreenPlayer.layout.compact")
   }
+
+  @ViewBuilder
+  private func wideMusicLayout(song: Song, metrics: PlayerLayoutMetrics) -> some View {
+    HStack(alignment: .center, spacing: 46) {
+      VStack(alignment: .leading, spacing: 22) {
+        PlayerArtworkView(song: song, size: metrics.artSize, onTap: { handleCoverArtTap(song: song) })
+          .contextMenu {
+            songActions(song: song)
+          } preview: {
+            SongContextPreview(song: song)
+              .environmentObject(audioManager)
+          }
+        titleRow(song: song, metrics: metrics, horizontalPadding: 0)
+      }
+      .frame(width: metrics.artSize, alignment: .leading)
+
+      VStack(spacing: 0) {
+        progressSection(song: song, metrics: metrics)
+        controlsRow(metrics: metrics)
+          .padding(.horizontal, 8)
+          .padding(.top, 34)
+        Spacer(minLength: 28)
+        PlayerVolumeRow(horizontalPadding: 0)
+        PlayerBottomToolbar(
+          showingQueue: $showingQueue,
+          song: song,
+          onLyricsToggle: {
+            withAnimation(playerSurfaceAnimation) {
+              showLyrics.toggle()
+            }
+            if showLyrics { lyricsViewModel.fetch(songID: song.id) }
+          },
+          showLyrics: showLyrics,
+          horizontalPadding: 20
+        )
+      }
+      .frame(maxWidth: 420)
+    }
+    .frame(maxWidth: metrics.wideContentMaxWidth, maxHeight: .infinity)
+    .frame(maxWidth: .infinity)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("FullScreenPlayer.layout.wide")
+  }
+
+  @ViewBuilder
+  private func wideLyricsLayout(song: Song, metrics: PlayerLayoutMetrics) -> some View {
+    HStack(alignment: .center, spacing: 36) {
+      VStack(alignment: .leading, spacing: 0) {
+        Spacer(minLength: 0)
+        PlayerArtworkView(
+          song: song,
+          size: metrics.wideLyricsArtSize,
+          onTap: { handleCoverArtTap(song: song) }
+        )
+        .contextMenu {
+          songActions(song: song)
+        } preview: {
+          SongContextPreview(song: song)
+            .environmentObject(audioManager)
+        }
+        .padding(.bottom, 24)
+
+        titleRow(song: song, metrics: metrics, horizontalPadding: 0)
+          .padding(.bottom, 18)
+        progressSection(song: song, metrics: metrics)
+        controlsRow(metrics: metrics)
+          .padding(.horizontal, 8)
+          .padding(.top, 32)
+        Spacer(minLength: 24)
+        PlayerVolumeRow(horizontalPadding: 0)
+        PlayerBottomToolbar(
+          showingQueue: $showingQueue,
+          song: song,
+          onLyricsToggle: {
+            withAnimation(playerSurfaceAnimation) {
+              showLyrics.toggle()
+            }
+            if showLyrics { lyricsViewModel.fetch(songID: song.id) }
+          },
+          showLyrics: showLyrics,
+          horizontalPadding: 20
+        )
+        Spacer(minLength: 0)
+      }
+      .frame(width: metrics.wideLyricsArtSize, alignment: .leading)
+
+      VStack(spacing: 0) {
+        wideLyricsHeader(song: song)
+        LyricsView(
+          lyrics: lyricsViewModel.lyrics,
+          currentTime: audioManager.playbackTime,
+          showTranslations: showTranslatedLyrics,
+          isLoading: lyricsViewModel.isLoading,
+          didFail: lyricsViewModel.didFail,
+          hasNoLyrics: lyricsViewModel.hasNoLyrics,
+          onSeek: { time in
+            let duration = audioManager.playbackDuration
+            guard duration > 0 else { return }
+            audioManager.seek(to: (time + 0.1) / duration)
+          },
+          onRetry: { lyricsViewModel.retry() }
+        )
+      }
+      .padding(.horizontal, 18)
+      .padding(.top, 18)
+      .padding(.bottom, 14)
+      .overlay(alignment: .bottomLeading) {
+        lyricsTranslationButton
+          .padding(.leading, 26)
+          .padding(.bottom, 24)
+      }
+      .overlay(alignment: .bottomTrailing) {
+        if DeviceCapability.supportsKaraoke && audioManager.aiEnabled {
+          KaraokeRightDock(showKaraokeControls: $showKaraokeControls)
+            .padding(.trailing, 26)
+            .padding(.bottom, 24)
+        }
+      }
+      .modifier(GlassRoundedRect(cornerRadius: AM.Radius.sheet))
+      .frame(minWidth: 330, maxWidth: 500, maxHeight: .infinity)
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("FullScreenPlayer.lyricsPanel")
+    }
+    .frame(maxWidth: metrics.wideContentMaxWidth, maxHeight: .infinity)
+    .frame(maxWidth: .infinity)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("FullScreenPlayer.layout.wideLyrics")
+  }
+
   private var dismissBar: some View {
     Capsule()
       .fill(Color.primary.opacity(0.35))
@@ -237,51 +466,140 @@ struct FullScreenPlayerView: View {
       }
   }
   @ViewBuilder
-  private func lyricsHeader(song: Song) -> some View {
-    Button {
-      withAnimation(playerSurfaceAnimation) {
-        showLyrics = false
-      }
-    } label: {
-      HStack(spacing: 12) {
-        LoadingImage(
-          url: audioManager.displayImageURL(for: song), cornerRadius: 8, contentMode: .fill
-        )
-        .frame(width: 52, height: 52)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .id(song.id)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(song.title)
-            .font(.system(size: 16, weight: .bold))
-            .foregroundColor(.primary)
-            .lineLimit(1)
-          Text(song.displayArtist)
-            .font(.system(size: 13))
-            .foregroundColor(.secondary)
-            .lineLimit(1)
+  private func lyricsHeader(song: Song, metrics: PlayerLayoutMetrics) -> some View {
+    HStack(spacing: 12) {
+      Button {
+        withAnimation(playerSurfaceAnimation) {
+          showLyrics = false
         }
-        Spacer()
+      } label: {
+        HStack(spacing: 12) {
+          LoadingImage(
+            url: audioManager.displayImageURL(for: song), cornerRadius: 8, contentMode: .fill
+          )
+          .frame(width: metrics.lyricsArtworkSize, height: metrics.lyricsArtworkSize)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .id(song.id)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(song.title)
+              .font(.system(size: metrics.lyricsTitleSize, weight: .bold))
+              .foregroundColor(.primary)
+              .lineLimit(1)
+            Text(song.displayArtist)
+              .font(.system(size: metrics.lyricsSubtitleSize))
+              .foregroundColor(.secondary)
+              .lineLimit(1)
+          }
+        }
       }
+      .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.7, haptic: .selection))
+      .accessibilityLabel("Hide lyrics")
+      .accessibilityValue("\(song.title), \(song.displayArtist)")
+      .accessibilityHint("Returns to the player controls.")
+
+      Spacer(minLength: 8)
+
+      Button {
+        let wasFavorite = favorites.isFavorite(song.id)
+        favorites.toggle(songID: song.id)
+        if wasFavorite {
+          AppHaptic.selection.play()
+        } else {
+          AppHaptic.success.play()
+        }
+      } label: {
+        Image(systemName: favorites.isFavorite(song.id) ? "star.fill" : "star")
+          .font(.system(size: 22, weight: .regular))
+          .foregroundColor(favorites.isFavorite(song.id) ? .appAccent : .primary)
+          .frame(width: 38, height: 38)
+          .background(Color.white.opacity(0.14), in: Circle())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+      .accessibilityLabel(
+        favorites.isFavorite(song.id) ? "Remove from Favorites" : "Add to Favorites"
+      )
+
+      Menu {
+        songActions(song: song)
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.system(size: 19, weight: .bold))
+          .foregroundColor(.primary)
+          .frame(width: 38, height: 38)
+          .background(Color.white.opacity(0.14), in: Circle())
+          .contentShape(Circle())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
+      .accessibilityLabel("More")
+      .accessibilityValue(song.title)
     }
-    .buttonStyle(PressableButtonStyle(scale: 0.97, dim: 0.7, haptic: .selection))
-    .accessibilityLabel("Hide lyrics")
-    .accessibilityValue("\(song.title), \(song.displayArtist)")
-    .accessibilityHint("Returns to the player controls.")
-    .padding(.horizontal, 32)
-    .padding(.top, 0)
-    .padding(.bottom, 0)
+    .padding(.horizontal, metrics.horizontalPadding)
+    .padding(.bottom, 10)
   }
+
   @ViewBuilder
-  private func titleRow(song: Song) -> some View {
+  private func wideLyricsHeader(song: Song) -> some View {
+    HStack(alignment: .center, spacing: 12) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text("Lyrics")
+          .font(.system(size: 22, weight: .bold))
+          .foregroundColor(.primary)
+          .accessibilityIdentifier("FullScreenPlayer.wideLyricsTitle")
+        Text(song.title)
+          .font(.system(size: 14, weight: .medium))
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+      }
+
+      Spacer(minLength: 8)
+
+      Button {
+        withAnimation(playerSurfaceAnimation) {
+          showLyrics = false
+        }
+      } label: {
+        Image(systemName: "chevron.down")
+          .font(.system(size: 17, weight: .bold))
+          .foregroundColor(.primary)
+          .frame(width: 38, height: 38)
+          .background(Color.white.opacity(0.14), in: Circle())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
+      .accessibilityLabel("Hide lyrics")
+      .accessibilityHint("Returns to the player controls.")
+
+      Menu {
+        songActions(song: song)
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.system(size: 19, weight: .bold))
+          .foregroundColor(.primary)
+          .frame(width: 38, height: 38)
+          .background(Color.white.opacity(0.14), in: Circle())
+          .contentShape(Circle())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
+      .accessibilityLabel("More")
+      .accessibilityValue(song.title)
+    }
+    .padding(.bottom, 10)
+  }
+
+  @ViewBuilder
+  private func titleRow(
+    song: Song,
+    metrics: PlayerLayoutMetrics,
+    horizontalPadding: CGFloat? = nil
+  ) -> some View {
     HStack(alignment: .center, spacing: 12) {
       VStack(alignment: .leading, spacing: 4) {
         Text(song.title)
-          .font(.system(size: 22, weight: .bold))
+          .font(.system(size: metrics.titleSize, weight: .bold))
           .foregroundColor(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
         Text(song.displayArtist)
-          .font(.system(size: 17))
+          .font(.system(size: metrics.artistSize))
           .foregroundColor(.secondary)
           .lineLimit(1)
       }
@@ -309,7 +627,7 @@ struct FullScreenPlayerView: View {
         }
         .font(.system(size: 24, weight: .regular))
         .foregroundColor(favorites.isFavorite(song.id) ? .appAccent : .primary)
-        .frame(width: 36, height: 36)
+        .frame(width: metrics.titleButtonSize, height: metrics.titleButtonSize)
         .contentShape(Rectangle())
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
@@ -318,17 +636,32 @@ struct FullScreenPlayerView: View {
       )
       .accessibilityValue(song.title)
       .accessibilityHint("Updates favorites for the current song.")
+      .background(Color.white.opacity(0.14), in: Circle())
+
+      Menu {
+        songActions(song: song)
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.system(size: metrics.moreButtonIconSize, weight: .bold))
+          .foregroundColor(.primary)
+          .frame(width: metrics.titleButtonSize, height: metrics.titleButtonSize)
+          .background(Color.white.opacity(0.14), in: Circle())
+          .contentShape(Circle())
+      }
+      .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
+      .accessibilityLabel("More")
+      .accessibilityValue(song.title)
     }
-    .padding(.horizontal, 32)
     .contextMenu {
       songActions(song: song)
     } preview: {
       SongContextPreview(song: song)
         .environmentObject(audioManager)
     }
+    .padding(.horizontal, horizontalPadding ?? metrics.horizontalPadding)
   }
   @ViewBuilder
-  private func progressSection(song: Song) -> some View {
+  private func progressSection(song: Song, metrics: PlayerLayoutMetrics) -> some View {
     let duration = max(audioManager.playbackDuration, 0)
     let elapsed = min(max(audioManager.playbackTime, 0), duration)
     AppleMusicProgressBar(
@@ -341,8 +674,8 @@ struct FullScreenPlayerView: View {
       accessibilityHint: "Drag or swipe up and down to seek.",
       scrubValueText: formattedTime(duration * audioManager.progress)
     )
-    .padding(.horizontal, 32)
-    .padding(.top, showLyrics ? 0 : 16)
+    .padding(.horizontal, metrics.horizontalPadding)
+    .padding(.top, showLyrics ? 0 : metrics.progressTopPadding)
     HStack {
       Text(formattedTime(elapsed))
       Spacer()
@@ -355,16 +688,16 @@ struct FullScreenPlayerView: View {
       reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85),
       value: audioManager.isEditingProgress
     )
-    .padding(.horizontal, 32)
+    .padding(.horizontal, metrics.horizontalPadding)
     .padding(.top, 2)
   }
-  private var controlsRow: some View {
+  private func controlsRow(metrics: PlayerLayoutMetrics) -> some View {
     HStack(spacing: 0) {
       Button {
         audioManager.playPrevious()
       } label: {
         Image(systemName: "backward.fill")
-          .font(.system(size: 32))
+          .font(.system(size: metrics.sideControlSize, weight: .bold))
           .foregroundColor(.primary)
           .frame(maxWidth: .infinity)
       }
@@ -382,7 +715,7 @@ struct FullScreenPlayerView: View {
             Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
           }
         }
-        .font(.system(size: 48))
+        .font(.system(size: metrics.primaryControlSize, weight: .bold))
         .foregroundColor(.primary)
         .frame(maxWidth: .infinity)
       }
@@ -393,7 +726,7 @@ struct FullScreenPlayerView: View {
         audioManager.playNextOrRandom()
       } label: {
         Image(systemName: "forward.fill")
-          .font(.system(size: 32))
+          .font(.system(size: metrics.sideControlSize, weight: .bold))
           .foregroundColor(.primary)
           .frame(maxWidth: .infinity)
       }

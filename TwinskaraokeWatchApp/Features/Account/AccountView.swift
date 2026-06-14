@@ -34,14 +34,6 @@ struct AccountView: View {
         .accessibilityLabel("Guest ID")
         .accessibilityValue(showsFullGuestID ? GuestIdentity.current : guestIDText)
         .accessibilityHint(showsFullGuestID ? "Hides the full guest ID." : "Reveals the full guest ID.")
-        .contextMenu {
-          Button {
-            showsFullGuestID.toggle()
-            WatchHaptic.play(.click)
-          } label: {
-            Label(showsFullGuestID ? "Hide ID" : "Reveal ID", systemImage: showsFullGuestID ? "eye.slash" : "eye")
-          }
-        }
 
         WatchAccountStatusRow(
           systemImage: "antenna.radiowaves.left.and.right",

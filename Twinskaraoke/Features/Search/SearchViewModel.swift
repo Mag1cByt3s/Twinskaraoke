@@ -39,6 +39,11 @@ final class PublicPlaylistsViewModel: ObservableObject {
 
   func loadIfNeeded() {
     guard !hasLoaded else { return }
+    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+      hasLoaded = true
+      applyUITestFixture()
+      return
+    }
     hasLoaded = true
     fetchPage(startIndex: 0, replace: true)
   }
@@ -87,6 +92,56 @@ final class PublicPlaylistsViewModel: ObservableObject {
     }
     return []
   }
+
+  private func applyUITestFixture() {
+    playlists = Self.uiTestFixturePlaylists
+    isLoadingMore = false
+    canLoadMore = false
+  }
+
+  private static var uiTestFixturePlaylists: [Playlist] {
+    let songs = uiTestFixtureSongs
+    return [
+      Playlist(
+        id: "ui-search-playlist-essentials",
+        name: "Karaoke Essentials",
+        songCount: songs.count,
+        media: nil,
+        mosaicMedia: nil,
+        songListDTOs: songs
+      ),
+      Playlist(
+        id: "ui-search-playlist-dance",
+        name: "Dance Covers",
+        songCount: 2,
+        media: nil,
+        mosaicMedia: nil,
+        songListDTOs: Array(songs.suffix(2))
+      ),
+    ]
+  }
+
+  private static var uiTestFixtureSongs: [Song] {
+    [
+      fixtureSong(id: "ui-search-song-1", title: "Wake Me Up Before You Go-Go", artist: "Wham!"),
+      fixtureSong(id: "ui-search-song-2", title: "Hero", artist: "Mili"),
+      fixtureSong(id: "ui-search-song-3", title: "Cure For Me", artist: "AURORA"),
+    ]
+  }
+
+  private static func fixtureSong(id: String, title: String, artist: String) -> Song {
+    Song(
+      id: id,
+      title: title,
+      duration: 210,
+      absolutePath: nil,
+      cloudflareID: nil,
+      coverArt: nil,
+      originalArtists: [artist],
+      coverArtists: ["Neuro"],
+      userUploaded: true
+    )
+  }
 }
 
 nonisolated private enum TopChartSection: Sendable {
@@ -98,8 +153,16 @@ nonisolated private enum TopChartSection: Sendable {
 final class TopChartViewModel: ObservableObject {
   @Published var songs: [Song] = []
   @Published var weeklyTrending: [Song] = []
+  private var hasLoaded = false
 
   func loadIfNeeded() {
+    guard !hasLoaded else { return }
+    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+      hasLoaded = true
+      applyUITestFixture()
+      return
+    }
+    hasLoaded = true
     fetch(
       url: "\(StorageHost.api)/api/explore/trendings?days=all",
       target: .songs)
@@ -130,6 +193,33 @@ final class TopChartViewModel: ObservableObject {
     case .weeklyTrending:
       weeklyTrending = list
     }
+  }
+
+  private func applyUITestFixture() {
+    songs = Self.uiTestFixtureSongs
+    weeklyTrending = Array(Self.uiTestFixtureSongs.prefix(2))
+  }
+
+  private static var uiTestFixtureSongs: [Song] {
+    [
+      fixtureSong(id: "ui-top-song-1", title: "Wake Me Up Before You Go-Go", artist: "Wham!"),
+      fixtureSong(id: "ui-top-song-2", title: "Hero", artist: "Mili"),
+      fixtureSong(id: "ui-top-song-3", title: "Cure For Me", artist: "AURORA"),
+    ]
+  }
+
+  private static func fixtureSong(id: String, title: String, artist: String) -> Song {
+    Song(
+      id: id,
+      title: title,
+      duration: 210,
+      absolutePath: nil,
+      cloudflareID: nil,
+      coverArt: nil,
+      originalArtists: [artist],
+      coverArtists: ["Neuro"],
+      userUploaded: true
+    )
   }
 }
 

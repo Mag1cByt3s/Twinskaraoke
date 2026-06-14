@@ -5,10 +5,14 @@ struct PlaylistDetailView: View {
   let playlist: Playlist
   @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @StateObject private var loader = PlaylistDetailViewModel()
   @ObservedObject private var favorites = FavoritesManager.shared
   @State private var scrollOffset: CGFloat = 0
+  private var usesWideOverview: Bool {
+    horizontalSizeClass == .regular
+  }
   private var reduceMotion: Bool {
     AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
@@ -19,56 +23,7 @@ struct PlaylistDetailView: View {
     let songs: [Song] = loader.songs ?? playlist.songListDTOs ?? []
     GeometryReader { geo in
       ScrollView {
-        VStack(spacing: 18) {
-          parallaxHero(width: geo.size.width)
-            .contextMenu {
-              PlaylistActionsMenuItems(playlist: playlist, songs: songs)
-            } preview: {
-              PlaylistDetailContextPreview(
-                playlist: playlist,
-                songs: songs,
-                coverURL: playlistCoverURL
-              )
-            }
-          VStack(spacing: 4) {
-            Text(playlist.name)
-              .font(.title2.bold())
-              .multilineTextAlignment(.center)
-            Text("\(songs.isEmpty ? playlist.songCount : songs.count) songs")
-              .font(.subheadline)
-              .foregroundColor(.secondary)
-          }
-          .padding(.horizontal)
-          if !songs.isEmpty {
-            actionButtons(songs: songs)
-            LazyVStack(spacing: 0) {
-              ForEach(songs) { song in
-                PlaylistRow(song: song)
-                  .contentShape(Rectangle())
-                  .onTapGesture {
-                    play(song, context: songs)
-                  }
-                  .songRowAccessibility(song: song) {
-                    play(song, context: songs)
-                  }
-                Divider().padding(.leading, 76)
-              }
-            }
-            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
-          } else if loader.isLoading {
-            PlaylistLoadingRows()
-              .transition(.opacity)
-          } else {
-            PlaylistEmptyStateView(
-              isFavorites: playlist.isFavorites,
-              message: loader.emptyStateMessage
-            ) {
-              loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
-            }
-            .padding(.top, 14)
-            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-          }
-        }
+        playlistOverview(songs: songs, width: geo.size.width)
         .padding(.bottom, 16)
         .background(
           GeometryReader { proxy in
@@ -115,6 +70,64 @@ struct PlaylistDetailView: View {
       loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
     }
   }
+
+  @ViewBuilder
+  private func playlistOverview(songs: [Song], width: CGFloat) -> some View {
+    if usesWideOverview {
+      widePlaylistOverview(songs: songs)
+    } else {
+      compactPlaylistOverview(songs: songs, width: width)
+    }
+  }
+
+  private func compactPlaylistOverview(songs: [Song], width: CGFloat) -> some View {
+    VStack(spacing: 18) {
+      parallaxHero(width: width)
+        .contextMenu {
+          PlaylistActionsMenuItems(playlist: playlist, songs: songs)
+        } preview: {
+          PlaylistDetailContextPreview(
+            playlist: playlist,
+            songs: songs,
+            coverURL: playlistCoverURL
+          )
+        }
+      playlistTitleBlock(alignment: .center)
+      playlistSongsContent(songs: songs)
+    }
+  }
+
+  private func widePlaylistOverview(songs: [Song]) -> some View {
+    HStack(alignment: .top, spacing: AM.Spacing.xxl) {
+      VStack(alignment: .leading, spacing: AM.Spacing.l) {
+        playlistArtwork(size: 280)
+          .contextMenu {
+            PlaylistActionsMenuItems(playlist: playlist, songs: songs)
+          } preview: {
+            PlaylistDetailContextPreview(
+              playlist: playlist,
+              songs: songs,
+              coverURL: playlistCoverURL
+            )
+          }
+        playlistTitleBlock(alignment: .leading)
+        if !songs.isEmpty {
+          actionButtons(songs: songs, horizontalPadding: 0)
+        }
+      }
+      .frame(width: 320, alignment: .topLeading)
+
+      playlistSongsContent(songs: songs, rowHorizontalPadding: 0)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    .frame(maxWidth: 1120, alignment: .topLeading)
+    .frame(maxWidth: .infinity, alignment: .top)
+    .padding(.horizontal, AM.Spacing.screenMargin)
+    .padding(.top, AM.Spacing.m)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("PlaylistDetail.WideOverview")
+  }
+
   private var playlistCoverURL: URL? {
     playlist.imageURL ?? loader.songs?.first?.imageURL
   }
@@ -127,7 +140,17 @@ struct PlaylistDetailView: View {
     let blur = reduceMotion ? 0 : min(8, max(0, -scrollOffset / 30))
     let yOffset = reduceMotion ? 0 : (scrollOffset > 0 ? -scrollOffset / 2 : 0)
     let artworkOpacity = reduceMotion ? 1 : 1 - min(0.7, max(0, -scrollOffset / 250))
-    return Group {
+    return playlistArtwork(size: size)
+    .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+    .blur(radius: blur)
+    .opacity(artworkOpacity)
+    .frame(width: width)
+    .offset(y: yOffset)
+    .padding(.top, 12)
+  }
+
+  private func playlistArtwork(size: CGFloat) -> some View {
+    Group {
       if playlist.isFavorites {
         FavoritesArtworkTile()
       } else if let url = playlistCoverURL {
@@ -138,15 +161,69 @@ struct PlaylistDetailView: View {
     }
     .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-    .blur(radius: blur)
-    .opacity(artworkOpacity)
-    .frame(width: width)
-    .offset(y: yOffset)
-    .padding(.top, 12)
   }
+
+  private func playlistTitleBlock(alignment: TextAlignment) -> some View {
+    VStack(alignment: alignment == .leading ? .leading : .center, spacing: 4) {
+      Text(playlist.name)
+        .font(.title2.bold())
+        .multilineTextAlignment(alignment)
+      Text("\(songCountText) songs")
+        .font(.subheadline)
+        .foregroundColor(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .center)
+    .padding(.horizontal, alignment == .leading ? 0 : AM.Spacing.screenMargin)
+  }
+
+  private var songCountText: String {
+    let songs = loader.songs ?? playlist.songListDTOs ?? []
+    return "\(songs.isEmpty ? playlist.songCount : songs.count)"
+  }
+
   @ViewBuilder
-  private func actionButtons(songs: [Song]) -> some View {
+  private func playlistSongsContent(songs: [Song], rowHorizontalPadding: CGFloat = AM.Spacing.screenMargin) -> some View {
+    if !songs.isEmpty {
+      VStack(spacing: 0) {
+        if !usesWideOverview {
+          actionButtons(songs: songs)
+        }
+        LazyVStack(spacing: 0) {
+          ForEach(songs) { song in
+            PlaylistRow(song: song, horizontalPadding: rowHorizontalPadding)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                play(song, context: songs)
+              }
+              .songRowAccessibility(song: song) {
+                play(song, context: songs)
+              }
+              .accessibilityIdentifier("PlaylistDetail.song.\(song.id)")
+            Divider().padding(.leading, rowHorizontalPadding + 60)
+          }
+        }
+      }
+      .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+    } else if loader.isLoading {
+      PlaylistLoadingRows(horizontalPadding: rowHorizontalPadding)
+        .transition(.opacity)
+    } else {
+      PlaylistEmptyStateView(
+        isFavorites: playlist.isFavorites,
+        message: loader.emptyStateMessage
+      ) {
+        loader.reload(playlistID: playlist.id, fallback: playlist.songListDTOs)
+      }
+      .padding(.top, 14)
+      .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+    }
+  }
+
+  @ViewBuilder
+  private func actionButtons(
+    songs: [Song],
+    horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  ) -> some View {
     HStack(spacing: 12) {
       Button {
         if let first = songs.first {
@@ -167,7 +244,7 @@ struct PlaylistDetailView: View {
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
       .accessibilityLabel("Shuffle playlist")
     }
-    .padding(.horizontal)
+    .padding(.horizontal, horizontalPadding)
   }
   private func actionLabel(symbol: String, text: String, isPrimary: Bool) -> some View {
     HStack(spacing: 6) {
@@ -188,6 +265,8 @@ struct PlaylistDetailView: View {
 }
 
 private struct PlaylistLoadingRows: View {
+  var horizontalPadding: CGFloat = AM.Spacing.screenMargin
+
   var body: some View {
     LazyVStack(spacing: 0) {
       ForEach(0..<7, id: \.self) { _ in
@@ -206,9 +285,9 @@ private struct PlaylistLoadingRows: View {
           Spacer()
           LoadingIndicator(size: 16)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 10)
-        Divider().padding(.leading, 76)
+        Divider().padding(.leading, horizontalPadding + 60)
       }
     }
     .accessibilityLabel("Loading playlist songs")
@@ -392,9 +471,11 @@ private struct ScrollOffsetKey: PreferenceKey {
 
 struct PlaylistRow: View {
   let song: Song
+  var horizontalPadding: CGFloat = AM.Spacing.screenMargin
+
   var body: some View {
     SongRow(song: song, size: .regular, showsArtwork: true)
-      .padding(.horizontal)
+      .padding(.horizontal, horizontalPadding)
       .padding(.vertical, 8)
   }
 }
@@ -421,6 +502,14 @@ class PlaylistDetailViewModel: ObservableObject {
     loadedID = playlistID
     if songs?.isEmpty ?? true, let fallback = fallback, !fallback.isEmpty {
       self.songs = fallback
+    }
+    if ProcessInfo.processInfo.arguments.contains("-UITestMode"),
+      let fallback = fallback, !fallback.isEmpty
+    {
+      songs = fallback
+      isLoading = false
+      loadFailed = false
+      return
     }
     let isFavorites = playlistID == Playlist.favoritesID
     let urlString =

@@ -2,6 +2,7 @@ import SDWebImageSwiftUI
 import SwiftUI
 
 struct AboutView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   private var appVersion: String {
     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -10,6 +11,30 @@ struct AboutView: View {
   @State private var versionTapCount = 0
   @State private var showEasterEgg = false
   var body: some View {
+    aboutContent
+      .navigationTitle("About")
+      .navigationBarTitleDisplayMode(.inline)
+      .sheet(isPresented: $showEasterEgg) {
+        EasterEggView()
+      }
+  }
+
+  @ViewBuilder
+  private var aboutContent: some View {
+    if horizontalSizeClass == .regular {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        aboutList
+          .frame(maxWidth: 700, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("About.WideOverview")
+      }
+    } else {
+      aboutList
+    }
+  }
+
+  private var aboutList: some View {
     List {
       Section {
         VStack(spacing: 14) {
@@ -122,12 +147,11 @@ struct AboutView: View {
           .listRowBackground(Color.clear)
       }
     }
-    .navigationTitle("About")
-    .navigationBarTitleDisplayMode(.inline)
-    .sheet(isPresented: $showEasterEgg) {
-      EasterEggView()
-    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.appGroupedBackground.ignoresSafeArea())
   }
+
   private func longText(_ title: String, body: String) -> some View {
     ScrollView {
       LinkifiedText(text: body)
@@ -135,7 +159,10 @@ struct AboutView: View {
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
+        .frame(maxWidth: horizontalSizeClass == .regular ? 700 : .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
+    .musicScreenBackground()
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
   }

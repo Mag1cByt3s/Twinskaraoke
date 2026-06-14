@@ -36,27 +36,9 @@ struct QueueView: View {
             WatchHaptic.play(.next)
           }
         )
+        .accessibilityIdentifier("WatchQueue.summary")
         .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 4, trailing: 0))
         .listRowBackground(Color.clear)
-        .contextMenu {
-          Button {
-            toggleCurrentPlayback()
-          } label: {
-            Label(audioManager.isPlaying ? "Pause" : "Play", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-          }
-          Button {
-            audioManager.playPrevious()
-            WatchHaptic.play(.previous)
-          } label: {
-            Label("Previous", systemImage: "backward.fill")
-          }
-          Button {
-            audioManager.playNext()
-            WatchHaptic.play(.next)
-          } label: {
-            Label("Skip", systemImage: "forward.fill")
-          }
-        }
 
         Section("Now Playing") {
           Button {
@@ -73,19 +55,7 @@ struct QueueView: View {
           .accessibilityLabel(audioManager.isPlaying ? "Pause \(current.title)" : "Play \(current.title)")
           .accessibilityValue("\(current.artistName), \(audioManager.isPlaying ? "Playing" : "Paused")")
           .accessibilityHint("Controls the current song.")
-          .contextMenu {
-            Button {
-              toggleCurrentPlayback()
-            } label: {
-              Label(audioManager.isPlaying ? "Pause" : "Play", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-            }
-            Button {
-              audioManager.playNext()
-              WatchHaptic.play(.next)
-            } label: {
-              Label("Skip", systemImage: "forward.fill")
-            }
-          }
+          .accessibilityIdentifier("WatchQueue.nowPlaying")
         }
       }
       if !upNext.isEmpty {
@@ -103,20 +73,7 @@ struct QueueView: View {
               "\(song.artistName), \(queuePositionText(offset: offset, total: upNext.count)), \(song.durationText)"
             )
             .accessibilityHint("Double tap to play this song now.")
-            .contextMenu {
-              Button {
-                audioManager.play(song: song, context: audioManager.queue)
-                WatchHaptic.play(.start)
-              } label: {
-                Label("Play Now", systemImage: "play.fill")
-              }
-              Button {
-                audioManager.playNext()
-                WatchHaptic.play(.next)
-              } label: {
-                Label("Skip Current", systemImage: "forward.fill")
-              }
-            }
+            .accessibilityIdentifier("WatchQueue.upNext.\(offset)")
           }
         }
       } else {
@@ -142,11 +99,7 @@ struct QueueView: View {
     .animation(queueAnimation, value: audioManager.queue.map(\.id))
   }
   private var upNextSongs: [Song] {
-    guard let current = audioManager.currentSong,
-      let idx = audioManager.queue.firstIndex(of: current),
-      idx + 1 < audioManager.queue.count
-    else { return [] }
-    return Array(audioManager.queue[(idx + 1)...])
+    audioManager.upNextSongs
   }
   private func toggleCurrentPlayback() {
     let wasPlaying = audioManager.isPlaying

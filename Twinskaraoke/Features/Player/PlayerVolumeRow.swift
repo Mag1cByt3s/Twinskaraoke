@@ -2,6 +2,8 @@ import SwiftUI
 
 struct PlayerVolumeRow: View {
   @EnvironmentObject var audioManager: AudioPlayerManager
+  var horizontalPadding: CGFloat = 32
+
   var body: some View {
     HStack(spacing: 12) {
       Image(systemName: "speaker.fill")
@@ -25,7 +27,7 @@ struct PlayerVolumeRow: View {
         .foregroundColor(.secondary)
         .accessibilityHidden(true)
     }
-    .padding(.horizontal, 32)
+    .padding(.horizontal, horizontalPadding)
     #if canImport(UIKit)
       .background(
         SystemVolumeBridge(

@@ -120,6 +120,11 @@
 			path = TwinskaraokeWatchApp;
 			sourceTree = "<group>";
 		};
+		D0A500002FBD000100000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		D1A000052FAD000100000005 /* TwinskaraokeTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = TwinskaraokeTests;
@@ -203,6 +208,7 @@
 			children = (
 				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
 				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
+				D0A500002FBD000100000001 /* Shared */,
 				D1A000052FAD000100000005 /* TwinskaraokeTests */,
 				D1A000062FAD000100000006 /* TwinskaraokeUITests */,
 				D1A000072FAD000100000007 /* TwinskaraokeWatchAppTests */,
@@ -245,6 +251,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
+				D0A500002FBD000100000001 /* Shared */,
 			);
 			name = Twinskaraoke;
 			packageProductDependencies = (
@@ -270,6 +277,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
+				D0A500002FBD000100000001 /* Shared */,
 			);
 			name = "Twinskaraoke Watch App";
 			packageProductDependencies = (

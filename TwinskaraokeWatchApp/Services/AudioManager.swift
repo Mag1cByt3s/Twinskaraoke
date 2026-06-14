@@ -52,14 +52,24 @@ class AudioManager: ObservableObject {
     guard duration > 0 else { return 0 }
     return currentTime / duration
   }
+
+  var upNextSongs: [Song] {
+    guard let index = resolvedCurrentQueueIndex else { return [] }
+    let nextIndex = index + 1
+    guard nextIndex < queue.endIndex else { return [] }
+    return Array(queue[nextIndex...])
+  }
+
   func play(song: Song, context: [Song] = []) {
-    currentSong = song
-    if !context.isEmpty {
-      queue = context
-      if let idx = context.firstIndex(of: song) {
-        currentIndex = idx
-      }
+    var playbackQueue = context.isEmpty ? [song] : context
+    if let index = playbackQueue.firstIndex(of: song) {
+      currentIndex = index
+    } else {
+      playbackQueue.insert(song, at: 0)
+      currentIndex = 0
     }
+    queue = playbackQueue
+    currentSong = song
     prepareAndPlay()
   }
   private func prepareAndPlay() {
@@ -238,6 +248,7 @@ class AudioManager: ObservableObject {
   }
   func playNext() {
     guard !queue.isEmpty else { return }
+    currentIndex = resolvedCurrentQueueIndex ?? queue.startIndex
     if isShuffleOn && queue.count > 1 {
       var nextIndex = currentIndex
       while nextIndex == currentIndex {
@@ -253,7 +264,16 @@ class AudioManager: ObservableObject {
   func playPrevious() {
     if currentTime > 3.0 {
       player?.seek(to: .zero)
-    } else if currentIndex > 0 {
+      return
+    }
+    guard !queue.isEmpty else {
+      player?.seek(to: .zero)
+      return
+    }
+    if let index = resolvedCurrentQueueIndex {
+      currentIndex = index
+    }
+    if currentIndex > 0 {
       currentIndex -= 1
       currentSong = queue[currentIndex]
       prepareAndPlay()
@@ -291,6 +311,13 @@ class AudioManager: ObservableObject {
   private static func storedVolume() -> Double {
     guard UserDefaults.standard.object(forKey: volumeDefaultsKey) != nil else { return 1 }
     return min(max(UserDefaults.standard.double(forKey: volumeDefaultsKey), 0), 1)
+  }
+  private var resolvedCurrentQueueIndex: Int? {
+    guard !queue.isEmpty, let currentSong else { return nil }
+    if queue.indices.contains(currentIndex), queue[currentIndex] == currentSong {
+      return currentIndex
+    }
+    return queue.firstIndex(of: currentSong)
   }
   private func cleanupPlayer() {
     if let observer = timeObserver {

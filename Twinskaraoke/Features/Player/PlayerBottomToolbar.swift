@@ -10,6 +10,8 @@ struct PlayerBottomToolbar: View {
   let song: Song
   let onLyricsToggle: () -> Void
   let showLyrics: Bool
+  var horizontalPadding: CGFloat = 48
+
   var body: some View {
     HStack(spacing: audioManager.isRadioMode ? 56 : 0) {
       if !audioManager.isRadioMode {
@@ -54,8 +56,9 @@ struct PlayerBottomToolbar: View {
       .buttonStyle(PressableButtonStyle(scale: 0.85, dim: 0.55))
       .accessibilityLabel("Playing Next")
       .accessibilityHint("Show the queue for \(song.title)")
+      .accessibilityIdentifier("PlayerToolbar.PlayingNext")
     }
-    .padding(.horizontal, audioManager.isRadioMode ? 0 : 48)
+    .padding(.horizontal, audioManager.isRadioMode ? 0 : horizontalPadding)
     .padding(.top, 16)
     .frame(maxWidth: .infinity)
   }

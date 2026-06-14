@@ -1,8 +1,31 @@
 import SwiftUI
 
 struct iOSAppDevelopmentView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   private let repoURL = URL(string: "https://github.com/Evil-Project/Twinskaraoke")!
+
   var body: some View {
+    developmentContent
+      .navigationTitle("iOS App Development")
+      .navigationBarTitleDisplayMode(.inline)
+  }
+
+  @ViewBuilder
+  private var developmentContent: some View {
+    if horizontalSizeClass == .regular {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        developmentList
+          .frame(maxWidth: 700, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("iOSAppDevelopment.WideOverview")
+      }
+    } else {
+      developmentList
+    }
+  }
+
+  private var developmentList: some View {
     List {
       Section {
         VStack(alignment: .leading, spacing: 8) {
@@ -57,9 +80,11 @@ struct iOSAppDevelopmentView: View {
         .padding(.vertical, 2)
       }
     }
-    .navigationTitle("iOS App Development")
-    .navigationBarTitleDisplayMode(.inline)
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.appGroupedBackground.ignoresSafeArea())
   }
+
   @ViewBuilder
   private func techRow(_ name: String, detail: String) -> some View {
     HStack {

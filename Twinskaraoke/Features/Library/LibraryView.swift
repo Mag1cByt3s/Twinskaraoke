@@ -91,13 +91,24 @@ struct PlaylistSongCountLabel: View {
 
 struct LibraryView: View {
   @StateObject var viewModel = PlaylistsViewModel()
+  @StateObject private var recentSongsViewModel = LibrarySongsViewModel()
   @ObservedObject private var savedStore = SavedPlaylistsStore.shared
   @ObservedObject private var addedTracker = RecentlyAddedTracker.shared
   @ObservedObject private var favorites = FavoritesManager.shared
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var showCreateSheet = false
   @State private var path = NavigationPath()
-  let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+  let cols = AM.Layout.playlistGridColumns
+
+  private var usesCompactToolbar: Bool {
+    horizontalSizeClass == .compact
+  }
+
+  private var usesWideOverview: Bool {
+    horizontalSizeClass == .regular
+  }
 
   private var reduceMotion: Bool {
     AppMotion.reduceMotion(
@@ -107,123 +118,35 @@ struct LibraryView: View {
   }
 
   var body: some View {
-    let recents = viewModel.recentlyAddedPlaylists(saved: savedStore.playlists)
+    let recentlyAddedSongs = Array(recentSongsViewModel.songs.prefix(12))
     NavigationStack(path: $path) {
-      List {
-        Section {
-          NavigationLink {
-            PlaylistsGridScreen(viewModel: viewModel)
-          } label: {
-            LibraryRow(
-              icon: "music.note.list",
-              color: .appAccent,
-              title: "Playlists",
-              subtitle: "Curated sets and saved mixes")
-          }
-          NavigationLink {
-            ArtistsView()
-          } label: {
-            LibraryRow(
-              icon: "music.mic",
-              color: .purple,
-              title: "Artists",
-              subtitle: "Browse original and cover voices")
-          }
-          NavigationLink {
-            LibraryCollectionListView(kind: .albums)
-          } label: {
-            LibraryRow(
-              icon: "square.stack",
-              color: .orange,
-              title: "Albums",
-              subtitle: "Grouped from the karaoke catalog")
-          }
-          NavigationLink {
-            LibrarySongsView()
-          } label: {
-            LibraryRow(
-              icon: "music.note",
-              color: .blue,
-              title: "Songs",
-              subtitle: "All playable tracks")
-          }
-          NavigationLink {
-            VideoGalleryView()
-          } label: {
-            LibraryRow(
-              icon: "play.rectangle",
-              color: .red,
-              title: "Video Gallery",
-              subtitle: "Watch karaoke videos")
-          }
-          NavigationLink {
-            ArtGalleryView()
-          } label: {
-            LibraryRow(
-              icon: "paintpalette",
-              color: .pink,
-              title: "Art Gallery",
-              subtitle: "Browse HD artwork")
-          }
-          NavigationLink {
-            LibraryCollectionListView(kind: .composers)
-          } label: {
-            LibraryRow(
-              icon: "music.quarternote.3",
-              color: .teal,
-              title: "Composers",
-              subtitle: "Songs by creator")
-          }
-          NavigationLink {
-            LibraryCollectionListView(kind: .compilations)
-          } label: {
-            LibraryRow(
-              icon: "rectangle.stack",
-              color: .indigo,
-              title: "Compilations",
-              subtitle: "Smart karaoke collections")
-          }
-          NavigationLink {
-            DownloadedSongsView()
-          } label: {
-            LibraryRow(
-              icon: "arrow.down.circle",
-              color: .green,
-              title: "Downloaded",
-              subtitle: "Saved for offline playback")
-          }
-          NavigationLink {
-            RandomSongsView()
-          } label: {
-            LibraryRow(
-              icon: "shuffle",
-              color: .cyan,
-              title: "Random Songs",
-              subtitle: "Discover something unexpected")
-          }
-        }
-        if !recents.isEmpty {
-          Section {
-            RecentlyAddedSection(playlists: recents) { playlist in
-              path.append(playlist)
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-          }
-          .listSectionSpacing(8)
-        }
+      ScrollView {
+        libraryOverview(recentlyAddedSongs: recentlyAddedSongs)
+        .padding(.top, AM.Spacing.s)
+        .padding(.bottom, AM.Spacing.l)
       }
-      .listStyle(.plain)
-      .scrollContentBackground(.hidden)
+      .scrollIndicators(.hidden)
+      .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Library")
       .navigationBarTitleDisplayMode(.large)
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          HStack(spacing: usesCompactToolbar ? 4 : 10) {
+            LibraryToolbarActions(
+              compact: usesCompactToolbar,
+              onCreatePlaylist: {
+                AppHaptic.selection.play()
+                showCreateSheet = true
+              },
+              onRefresh: refreshLibrary
+            )
+            AccountToolbarButton()
+          }
+        }
+      }
       .refreshable {
-        AppHaptic.selection.play()
-        favorites.loadIfNeeded()
-        viewModel.fetchPlaylists()
-        viewModel.fetchFavoriteSongs()
+        refreshLibrary()
       }
       .navigationDestination(for: Playlist.self) { playlist in
         PlaylistDetailView(playlist: playlist)
@@ -232,11 +155,259 @@ struct LibraryView: View {
         favorites.loadIfNeeded()
         viewModel.fetchPlaylists()
         viewModel.fetchFavoriteSongs()
+        recentSongsViewModel.loadIfNeeded()
       }
       .onChange(of: favorites.favoriteIDs) { _, _ in
         viewModel.fetchFavoriteSongs()
       }
-      .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: recents.map(\.id))
+      .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: recentlyAddedSongs.map(\.id))
+      .sheet(isPresented: $showCreateSheet) {
+        CreatePlaylistSheet()
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func libraryOverview(recentlyAddedSongs: [Song]) -> some View {
+    if usesWideOverview {
+      wideLibraryOverview(recentlyAddedSongs: recentlyAddedSongs)
+    } else {
+      compactLibraryOverview(recentlyAddedSongs: recentlyAddedSongs)
+    }
+  }
+
+  private func compactLibraryOverview(recentlyAddedSongs: [Song]) -> some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
+      libraryPrimaryLinks
+
+      if !recentlyAddedSongs.isEmpty {
+        RecentlyAddedSection(songs: recentlyAddedSongs)
+      }
+
+      librarySecondaryLinks
+    }
+  }
+
+  private func wideLibraryOverview(recentlyAddedSongs: [Song]) -> some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
+      HStack(alignment: .top, spacing: AM.Spacing.xxl) {
+        VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
+          LibraryOverviewGroup(title: "Collection") {
+            libraryPrimaryLinksContent
+          }
+          LibraryOverviewGroup(title: "More") {
+            librarySecondaryLinksContent
+          }
+        }
+        .frame(minWidth: 300, idealWidth: 360, maxWidth: 400)
+
+        if !recentlyAddedSongs.isEmpty {
+          RecentlyAddedSection(songs: recentlyAddedSongs, horizontalPadding: 0, headerHorizontalPadding: 0)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+      }
+      .frame(maxWidth: 1120, alignment: .topLeading)
+      .padding(.horizontal, AM.Spacing.screenMargin)
+      .accessibilityIdentifier("Library.WideOverview")
+    }
+    .frame(maxWidth: .infinity, alignment: .top)
+  }
+
+  private var libraryPrimaryLinks: some View {
+    libraryPrimaryLinksContent
+      .padding(.horizontal, AM.Spacing.screenMargin)
+  }
+
+  private var libraryPrimaryLinksContent: some View {
+    VStack(spacing: 0) {
+      libraryLink(
+        icon: "music.note.list",
+        title: "Playlists",
+        destination: PlaylistsGridScreen(viewModel: viewModel)
+      )
+      libraryLink(icon: "music.mic", title: "Artists", destination: ArtistsView())
+      libraryLink(
+        icon: "square.stack",
+        title: "Albums",
+        destination: LibraryCollectionListView(kind: .albums)
+      )
+      libraryLink(icon: "music.note", title: "Songs", destination: LibrarySongsView())
+      libraryLink(
+        icon: "arrow.down.circle",
+        title: "Downloaded",
+        destination: DownloadedSongsView(),
+        showsDivider: false
+      )
+    }
+  }
+
+  private var librarySecondaryLinks: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.s) {
+      Text("More")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.secondary)
+        .textCase(.uppercase)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+
+      librarySecondaryLinksContent
+        .padding(.horizontal, AM.Spacing.screenMargin)
+    }
+  }
+
+  private var librarySecondaryLinksContent: some View {
+    VStack(spacing: 0) {
+      libraryLink(icon: "play.rectangle", title: "Video Gallery", destination: VideoGalleryView())
+      libraryLink(icon: "paintpalette", title: "Art Gallery", destination: ArtGalleryView())
+      libraryLink(
+        icon: "music.quarternote.3",
+        title: "Composers",
+        destination: LibraryCollectionListView(kind: .composers)
+      )
+      libraryLink(
+        icon: "rectangle.stack",
+        title: "Compilations",
+        destination: LibraryCollectionListView(kind: .compilations)
+      )
+      libraryLink(
+        icon: "shuffle",
+        title: "Random Songs",
+        destination: RandomSongsView(),
+        showsDivider: false
+      )
+    }
+  }
+
+  @ViewBuilder
+  private func libraryLink<Destination: View>(
+    icon: String,
+    title: String,
+    subtitle: String? = nil,
+    destination: Destination,
+    showsDivider: Bool = true
+  ) -> some View {
+    NavigationLink {
+      destination
+    } label: {
+      HStack(spacing: 0) {
+        LibraryRow(icon: icon, color: .appAccent, title: title, subtitle: subtitle)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundColor(.secondary.opacity(0.55))
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(PressableButtonStyle(scale: 0.985, dim: 0.78, haptic: .selection))
+
+    if showsDivider {
+      Divider()
+        .padding(.leading, 68)
+    }
+  }
+
+  private func refreshLibrary() {
+    AppHaptic.selection.play()
+    favorites.loadIfNeeded()
+    viewModel.fetchPlaylists()
+    viewModel.fetchFavoriteSongs()
+    recentSongsViewModel.refresh()
+  }
+}
+
+private struct LibraryToolbarActions: View {
+  var compact = false
+  let onCreatePlaylist: () -> Void
+  let onRefresh: () -> Void
+
+  var body: some View {
+    if compact {
+      compactMenu
+    } else {
+      expandedActions
+    }
+  }
+
+  private var compactMenu: some View {
+    Menu {
+      Button(action: onCreatePlaylist) {
+        Label("New Playlist", systemImage: "text.badge.plus")
+      }
+      Button(action: onRefresh) {
+        Label("Refresh Library", systemImage: "arrow.clockwise")
+      }
+    } label: {
+      Image(systemName: "ellipsis")
+        .font(.system(size: 20, weight: .bold))
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
+    }
+    .foregroundColor(.primary)
+    .background(Color.appGlassFill, in: Circle())
+    .overlay(
+      Circle()
+        .stroke(Color.appDivider, lineWidth: 1)
+    )
+    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+    .accessibilityLabel("More Library Actions")
+  }
+
+  private var expandedActions: some View {
+    HStack(spacing: 0) {
+      Button(action: onCreatePlaylist) {
+        Image(systemName: "text.badge.plus")
+          .font(.system(size: 21, weight: .semibold))
+          .frame(width: 56, height: 44)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("New Playlist")
+
+      Rectangle()
+        .fill(Color.appDivider)
+        .frame(width: 1, height: 22)
+
+      Menu {
+        Button(action: onCreatePlaylist) {
+          Label("New Playlist", systemImage: "text.badge.plus")
+        }
+        Button(action: onRefresh) {
+          Label("Refresh Library", systemImage: "arrow.clockwise")
+        }
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.system(size: 20, weight: .bold))
+          .frame(width: 56, height: 44)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("More Library Actions")
+    }
+    .foregroundColor(.primary)
+    .background(Color.appGlassFill, in: Capsule())
+    .overlay(
+      Capsule()
+        .stroke(Color.appDivider, lineWidth: 1)
+    )
+    .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+  }
+}
+
+private struct LibraryOverviewGroup<Content: View>: View {
+  let title: String
+  let content: Content
+
+  init(title: String, @ViewBuilder content: () -> Content) {
+    self.title = title
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.s) {
+      Text(title)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.secondary)
+        .textCase(.uppercase)
+        .padding(.horizontal, AM.Spacing.s)
+
+      content
+        .padding(.horizontal, 0)
     }
   }
 }
@@ -356,6 +527,8 @@ final class LibrarySongsViewModel: ObservableObject {
       "page": page,
       "pageSize": pageSize,
       "search": "",
+      "sortBy": "CreatedAt",
+      "sortDescending": true,
     ])
 
     URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -1256,24 +1429,16 @@ struct LibraryRow: View {
   var subtitle: String? = nil
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 18) {
       Image(systemName: icon)
-        .font(.system(size: 17, weight: .semibold))
+        .font(.system(size: 26, weight: .medium))
         .foregroundColor(color)
-        .frame(width: 38, height: 38)
-        .background(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(color.opacity(0.14))
-        )
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(color.opacity(0.08), lineWidth: 1)
-        )
+        .frame(width: 34, height: 34)
         .accessibilityHidden(true)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
-          .font(.system(size: 17, weight: .semibold))
+          .font(.system(size: 20, weight: .regular))
           .foregroundColor(.primary)
           .lineLimit(1)
         if let subtitle {
@@ -1287,7 +1452,7 @@ struct LibraryRow: View {
 
       Spacer()
     }
-    .padding(.vertical, 6)
+    .padding(.vertical, 10)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(title)
     .accessibilityValue(subtitle ?? "")
@@ -1324,7 +1489,7 @@ struct PlaylistsGridScreen: View {
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var showCreateSheet = false
   @State private var searchText = ""
-  let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+  let cols = AM.Layout.playlistGridColumns
 
   private var reduceMotion: Bool {
     AppMotion.reduceMotion(
@@ -1452,32 +1617,24 @@ struct PlaylistGridCell: View {
 }
 
 struct RecentlyAddedSection: View {
-  let playlists: [Playlist]
-  let onSelect: (Playlist) -> Void
-  private let cols = [
-    GridItem(.flexible(), spacing: 14),
-    GridItem(.flexible(), spacing: 14),
-  ]
+  let songs: [Song]
+  var horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  var headerHorizontalPadding: CGFloat = AM.Spacing.screenMargin
+  private let cols = AM.Layout.songGridColumns
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      AMSectionHeader("Recently Added")
+      Text("Recently Added")
+        .font(AM.Font.sectionHeader)
+        .foregroundColor(.primary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, headerHorizontalPadding)
+        .padding(.top, 2)
       LazyVGrid(columns: cols, spacing: 22) {
-        ForEach(playlists) { playlist in
-          Button {
-            AppHaptic.selection.play()
-            onSelect(playlist)
-          } label: {
-            PlaylistGridCell(playlist: playlist)
-          }
-          .buttonStyle(.plain)
-          .contextMenu {
-            PlaylistActionsMenuItems(playlist: playlist, songs: playlist.songListDTOs ?? [])
-          } preview: {
-            PlaylistContextPreview(playlist: playlist)
-          }
+        ForEach(songs) { song in
+          MusicGridCard(song: song, context: songs, fillsWidth: true)
         }
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, horizontalPadding)
       .padding(.bottom, 16)
     }
     .frame(maxWidth: .infinity, alignment: .leading)

@@ -3,151 +3,208 @@ import SwiftUI
 struct SettingsView: View {
   @StateObject private var audioManager = AudioPlayerManager.shared
   @StateObject private var cacheManager = CacheManager.shared
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @AppStorage("nk.addPlaylistSongsToLibrary") private var addPlaylistSongsToLibrary: Bool = false
+  @AppStorage("nk.addFavoriteSongsToLibrary") private var addFavoriteSongsToLibrary: Bool = true
+  @AppStorage("nk.syncLibrary") private var syncLibrary: Bool = true
   @AppStorage("nk.streamingQuality") private var streamingQuality: String = "high"
   @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
   @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var pendingAction: SettingsDestructiveAction?
   @State private var showAutoAnalyzeAlert = false
-  var body: some View {
-    List {
-      Section {
-        SettingsOverviewCard(
-          title: audioManager.currentSong?.title ?? "Ready to Play",
-          subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twins Karaoke",
-          isPlaying: audioManager.isPlaying,
-          badges: settingsBadges
-        )
-        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
-        .listRowBackground(Color.clear)
-      }
-      .listSectionSpacing(8)
+  private var visibleEQPresets: [EQPreset] {
+    EQPreset.allCases.filter { preset in
+      preset != .custom || audioManager.eqPreset == .custom
+    }
+  }
 
-      Section {
-        Toggle("Auto Mix", isOn: $audioManager.autoMixEnabled)
-          .tint(.appAccent)
-        Toggle("Crossfade", isOn: $audioManager.crossfadeEnabled)
-          .tint(.appAccent)
-        if audioManager.crossfadeEnabled {
-          CrossfadeDurationRow(
-            seconds: Binding(
-              get: { audioManager.crossfadeSeconds },
-              set: { audioManager.crossfadeSeconds = $0 }
-            )
-          )
+  private var usesWideOverview: Bool {
+    horizontalSizeClass == .regular
+  }
+
+  var body: some View {
+    settingsContent
+      .navigationTitle("Music")
+      .navigationBarTitleDisplayMode(.inline)
+      .alert(
+        pendingAction?.title ?? "",
+        isPresented: Binding(
+          get: { pendingAction != nil },
+          set: { if !$0 { pendingAction = nil } }
+        ),
+        presenting: pendingAction
+      ) { action in
+        Button("Cancel", role: .cancel) {}
+          .tint(Color(uiColor: .systemBlue))
+        Button(action.actionLabel, role: .destructive) {
+          perform(action)
         }
-        Toggle(
-          "Autoplay Similar Songs",
-          isOn: Binding(
-            get: { audioManager.autoplayEnabled },
-            set: { _ in audioManager.toggleAutoplay() }
-          )
-        )
-        .tint(.appAccent)
-        Picker("Audio Quality", selection: $streamingQuality) {
-          Text("High Efficiency").tag("low")
-          Text("High Quality").tag("medium")
-          Text("Lossless").tag("high")
+      } message: { action in
+        Text(action.message)
+      }
+      .alert(
+        "Turn on auto-analyze during playback?",
+        isPresented: $showAutoAnalyzeAlert
+      ) {
+        Button("Turn On") {
+          AppHaptic.success.play()
+          audioManager.aiAutoAnalyze = true
         }
-      } header: {
-        Text("Playback")
-      } footer: {
+        Button("Cancel", role: .cancel) {
+          AppHaptic.selection.play()
+        }
+      } message: {
         Text(
-          "Auto Mix uses beat detection to blend tracks seamlessly — songs with similar tempos get a smooth crossfade, while different tempos get a quick cut. Crossfade uses a fixed duration you choose."
+          "Songs will be analyzed in the background so karaoke modes can switch instantly during playback.\n\nThis uses more battery and processing power. Separated stems count toward the 4 GB music cache limit."
         )
       }
-      Section {
-        Toggle("Auto-Download Played Songs", isOn: $downloadOnPlay)
-          .tint(.appAccent)
-      } header: {
-        Text("Downloads")
-      } footer: {
-        Text("When enabled, songs you play are saved for offline listening.")
+  }
+
+  @ViewBuilder
+  private var settingsContent: some View {
+    if usesWideOverview {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        settingsList
+          .frame(maxWidth: 700, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("Settings.WideOverview")
       }
+    } else {
+      settingsList
+    }
+  }
+
+  private var settingsList: some View {
+    List {
+      overviewSection
+      librarySection
+      audioSection
+      downloadsSection
       if DeviceCapability.supportsKaraoke {
         aiAudioSection
         if audioManager.aiEnabled {
           karaokeSection
         }
       }
-      Section {
-        Toggle("Equalizer", isOn: $audioManager.eqEnabled)
-          .tint(.appAccent)
-        if audioManager.eqEnabled {
-          Picker("Preset", selection: $audioManager.eqPreset) {
-            ForEach(EQPreset.allCases.filter { $0 != .custom || audioManager.eqPreset == .custom })
-            { preset in
-              Text(preset.rawValue).tag(preset)
-            }
-          }
-          EqualizerBands(gainsDB: $audioManager.eqGainsDB)
-            .padding(.vertical, 8)
-          Button("Reset Equalizer") {
-            audioManager.eqPreset = .flat
-          }
-          .foregroundStyle(Color.appAccent)
-        }
-      } header: {
-        Text("Equalizer")
-      } footer: {
-        Text("10-band parametric EQ. Drag each band between −12 dB and +12 dB.")
-      }
-      Section("Appearance") {
-        Picker("Theme", selection: $appearanceMode) {
-          ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
-            Text(mode.label).tag(mode.rawValue)
-          }
-        }
-        Toggle("Respect Reduce Motion", isOn: $respectReducedMotion)
-          .tint(.appAccent)
-      }
+      equalizerSection
+      lyricsSection
+      appearanceSection
       storageSection
-      if DeveloperMode.isEnabled {
-        Section {
-          NavigationLink {
-            DeveloperMenuView()
-          } label: {
-            Text("Developer")
-          }
-        }
-      }
+      developerSection
     }
     .listStyle(.insetGrouped)
     .scrollContentBackground(.hidden)
     .background(Color.appGroupedBackground.ignoresSafeArea())
-    .navigationTitle("Settings")
-    .navigationBarTitleDisplayMode(.inline)
-    .alert(
-      pendingAction?.title ?? "",
-      isPresented: Binding(
-        get: { pendingAction != nil },
-        set: { if !$0 { pendingAction = nil } }
-      ),
-      presenting: pendingAction
-    ) { action in
-      Button("Cancel", role: .cancel) {}
-        .tint(Color(uiColor: .systemBlue))
-      Button(action.actionLabel, role: .destructive) {
-        perform(action)
-      }
-    } message: { action in
-      Text(action.message)
+  }
+
+  private var librarySection: some View {
+    Section {
+      Toggle("Add Playlist Songs", isOn: $addPlaylistSongsToLibrary)
+        .tint(.appAccent)
+      Toggle("Add Favorite Songs", isOn: $addFavoriteSongsToLibrary)
+        .tint(.appAccent)
+      Toggle("Sync Library", isOn: $syncLibrary)
+        .tint(.appAccent)
+    } header: {
+      Text("Library")
+    } footer: {
+      Text("Add songs to your library when you add them to playlists or favorite them. Sync keeps library changes available across this app on your devices.")
     }
-    .alert(
-      "Turn on auto-analyze during playback?",
-      isPresented: $showAutoAnalyzeAlert
-    ) {
-      Button("Turn On") {
-        AppHaptic.success.play()
-        audioManager.aiAutoAnalyze = true
-      }
-      Button("Cancel", role: .cancel) {
-        AppHaptic.selection.play()
-      }
-    } message: {
-      Text(
-        "Songs will be analyzed in the background so karaoke modes can switch instantly during playback.\n\nThis uses more battery and processing power. Separated stems count toward the 4 GB music cache limit."
+  }
+
+  private var overviewSection: some View {
+    Section {
+      SettingsOverviewCard(
+        title: audioManager.currentSong?.title ?? "Ready to Play",
+        subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twins Karaoke",
+        isPlaying: audioManager.isPlaying,
+        badges: settingsBadges
       )
+      .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
+      .listRowBackground(Color.clear)
+    }
+    .listSectionSpacing(8)
+  }
+
+  @ViewBuilder
+  private var audioSection: some View {
+    Section {
+      Toggle("Auto Mix", isOn: $audioManager.autoMixEnabled)
+        .tint(.appAccent)
+      Toggle("Crossfade", isOn: $audioManager.crossfadeEnabled)
+        .tint(.appAccent)
+      if audioManager.crossfadeEnabled {
+        CrossfadeDurationRow(
+          seconds: Binding(
+            get: { audioManager.crossfadeSeconds },
+            set: { audioManager.crossfadeSeconds = $0 }
+          )
+        )
+      }
+      Toggle(
+        "Autoplay Similar Songs",
+        isOn: Binding(
+          get: { audioManager.autoplayEnabled },
+          set: { _ in audioManager.toggleAutoplay() }
+        )
+      )
+      .tint(.appAccent)
+      Picker("Audio Quality", selection: $streamingQuality) {
+        Text("High Efficiency").tag("low")
+        Text("High Quality").tag("medium")
+        Text("Lossless").tag("high")
+      }
+    } header: {
+      Text("Audio")
+    } footer: {
+      Text("Auto Mix blends compatible songs automatically. Crossfade uses the fixed duration you choose.")
+    }
+  }
+
+  private var downloadsSection: some View {
+    Section {
+      Toggle("Auto-Download Played Songs", isOn: $downloadOnPlay)
+        .tint(.appAccent)
+    } header: {
+      Text("Downloads")
+    } footer: {
+      Text("When enabled, songs you play are saved for offline listening.")
+    }
+  }
+
+  private var lyricsSection: some View {
+    Section {
+      Toggle("Respect Reduce Motion", isOn: $respectReducedMotion)
+        .tint(.appAccent)
+    } header: {
+      Text("Lyrics")
+    } footer: {
+      Text("Animated lyrics and transitions follow your motion preference.")
+    }
+  }
+
+  private var appearanceSection: some View {
+    Section("Appearance") {
+      Picker("Theme", selection: $appearanceMode) {
+        ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+          Text(mode.label).tag(mode.rawValue)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var developerSection: some View {
+    if DeveloperMode.isEnabled {
+      Section {
+        NavigationLink {
+          DeveloperMenuView()
+        } label: {
+          Text("Developer")
+        }
+      }
     }
   }
 
@@ -175,6 +232,31 @@ struct SettingsView: View {
       badges.append(SettingsOverviewBadge(title: "Auto Download", symbol: "arrow.down.circle"))
     }
     return badges.isEmpty ? [SettingsOverviewBadge(title: "Default", symbol: "checkmark.circle")] : badges
+  }
+
+  @ViewBuilder
+  private var equalizerSection: some View {
+    Section {
+      Toggle("Equalizer", isOn: $audioManager.eqEnabled)
+        .tint(.appAccent)
+      if audioManager.eqEnabled {
+        Picker("Preset", selection: $audioManager.eqPreset) {
+          ForEach(visibleEQPresets) { preset in
+            Text(preset.rawValue).tag(preset)
+          }
+        }
+        EqualizerBands(gainsDB: $audioManager.eqGainsDB)
+          .padding(.vertical, 8)
+        Button("Reset Equalizer") {
+          audioManager.eqPreset = .flat
+        }
+        .foregroundStyle(Color.appAccent)
+      }
+    } header: {
+      Text("Equalizer")
+    } footer: {
+      Text("10-band parametric EQ. Drag each band between -12 dB and +12 dB.")
+    }
   }
 
   @ViewBuilder

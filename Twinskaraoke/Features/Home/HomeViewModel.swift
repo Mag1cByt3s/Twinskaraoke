@@ -26,6 +26,11 @@ final class HomeViewModel: ObservableObject {
   }
 
   func fetchHomeData(force: Bool = false) {
+    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+      applyUITestFixture()
+      return
+    }
+
     if hasLoaded && !force { return }
     hasLoaded = true
     isLoading = true
@@ -200,5 +205,108 @@ final class HomeViewModel: ObservableObject {
         completion(nil)
       }
     }.resume()
+  }
+
+  private func applyUITestFixture() {
+    hasLoaded = true
+    isLoading = false
+    isLoadingMoreTopPicks = false
+    canLoadMoreTopPicks = false
+    topPicksSource = .setlists
+
+    let fixtureSongs = Self.fixtureSongs
+    trending = Array(fixtureSongs.suffix(4))
+    suggestions = Array(fixtureSongs.prefix(4))
+    newReleases = fixtureSongs
+    latestSingle = fixtureSongs.first
+    latestSingleContext = fixtureSongs
+    recentPlaylists = [
+      fixturePlaylist(
+        id: "ui-home-playlist-essentials",
+        name: "Karaoke Essentials",
+        songs: Array(fixtureSongs.prefix(4))
+      ),
+      fixturePlaylist(
+        id: "ui-home-playlist-pop",
+        name: "Pop Covers",
+        songs: Array(fixtureSongs.dropFirst(2).prefix(4))
+      ),
+      fixturePlaylist(
+        id: "ui-home-playlist-night",
+        name: "Late Night Singalong",
+        songs: Array(fixtureSongs.suffix(4))
+      ),
+    ]
+  }
+
+  private static var fixtureSongs: [Song] {
+    [
+      fixtureSong(
+        id: "ui-home-song-1",
+        title: "Wake Me Up Before You Go-Go",
+        originalArtists: ["Wham!"],
+        coverArtists: ["Neuro"]
+      ),
+      fixtureSong(
+        id: "ui-home-song-2",
+        title: "Hero",
+        originalArtists: ["Mili"],
+        coverArtists: ["Neuro"]
+      ),
+      fixtureSong(
+        id: "ui-home-song-3",
+        title: "Cure For Me",
+        originalArtists: ["AURORA"],
+        coverArtists: ["Neuro"]
+      ),
+      fixtureSong(
+        id: "ui-home-song-4",
+        title: "Be My Star",
+        originalArtists: ["LEVEL NINE"],
+        coverArtists: ["Neuro"]
+      ),
+      fixtureSong(
+        id: "ui-home-song-5",
+        title: "Young and Beautiful",
+        originalArtists: ["Lana Del Rey"],
+        coverArtists: ["Neuro"]
+      ),
+      fixtureSong(
+        id: "ui-home-song-6",
+        title: "Send Me an Angel",
+        originalArtists: ["Scorpions"],
+        coverArtists: ["Neuro"]
+      ),
+    ]
+  }
+
+  private static func fixtureSong(
+    id: String,
+    title: String,
+    originalArtists: [String],
+    coverArtists: [String]
+  ) -> Song {
+    Song(
+      id: id,
+      title: title,
+      duration: 210,
+      absolutePath: nil,
+      cloudflareID: nil,
+      coverArt: nil,
+      originalArtists: originalArtists,
+      coverArtists: coverArtists,
+      userUploaded: true
+    )
+  }
+
+  private func fixturePlaylist(id: String, name: String, songs: [Song]) -> Playlist {
+    Playlist(
+      id: id,
+      name: name,
+      songCount: songs.count,
+      media: nil,
+      mosaicMedia: nil,
+      songListDTOs: songs
+    )
   }
 }

@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 enum AppearanceMode: String, CaseIterable {
   case system, light, dark
   var label: String {
@@ -130,7 +134,59 @@ enum AM {
     static let xxl: CGFloat = 28
     static let screenMargin: CGFloat = 16
     static let shelfSpacing: CGFloat = 30
-    static let shelfTile: CGFloat = 168
+    static let shelfTile: CGFloat = 162
+    static let compactShelfTile: CGFloat = 132
+    static let tabBarContentInset: CGFloat = 132
+    static let sidebarContentInset: CGFloat = 32
+  }
+
+  enum Layout {
+    static func shelfTileWidth(for availableWidth: CGFloat, compact: Bool = false) -> CGFloat {
+      let sidePadding = Spacing.screenMargin * 2
+      let visibleItems: CGFloat
+      if availableWidth >= 900 {
+        visibleItems = compact ? 5.4 : 4.6
+      } else if availableWidth >= 700 {
+        visibleItems = compact ? 4.4 : 3.6
+      } else if availableWidth <= 360 {
+        visibleItems = compact ? 2.35 : 1.92
+      } else {
+        visibleItems = compact ? 2.85 : 2.22
+      }
+      let spacing = Spacing.l * max(visibleItems - 1, 0)
+      let rawWidth = (availableWidth - sidePadding - spacing) / visibleItems
+      let minimum = compact ? 118.0 : 148.0
+      let maximum = compact ? 152.0 : 190.0
+      return min(max(rawWidth, minimum), maximum)
+    }
+
+    static func adaptiveGridColumns(
+      minimum: CGFloat,
+      spacing: CGFloat = Spacing.l
+    ) -> [GridItem] {
+      [
+        GridItem(
+          .adaptive(minimum: minimum, maximum: minimum + 72),
+          spacing: spacing,
+          alignment: .top
+        )
+      ]
+    }
+
+    static let playlistGridColumns = adaptiveGridColumns(minimum: 156)
+    static let songGridColumns = adaptiveGridColumns(minimum: 154)
+    static let categoryGridColumns = adaptiveGridColumns(minimum: 160, spacing: Spacing.m)
+
+    static func mediaShelfHeight(tileWidth: CGFloat) -> CGFloat {
+      tileWidth + 92
+    }
+
+    static func compactMediaShelfHeight(tileWidth: CGFloat) -> CGFloat {
+      tileWidth + 78
+    }
+
+    static let mediaShelfHeight = mediaShelfHeight(tileWidth: 190)
+    static let compactMediaShelfHeight = compactMediaShelfHeight(tileWidth: 152)
   }
 
   enum Font {
@@ -165,6 +221,129 @@ extension View {
   }
   func musicScreenBackground() -> some View {
     self.background(Color.appBackground.ignoresSafeArea())
+  }
+  func tabBarScrollInset() -> some View {
+    self.modifier(TabBarScrollInsetModifier())
+  }
+  func tabBarBottomPadding() -> some View {
+    self.modifier(TabBarBottomPaddingModifier())
+  }
+}
+
+private enum AdaptiveBottomChrome {
+  static func inset(horizontalSizeClass: UserInterfaceSizeClass?) -> CGFloat {
+    #if canImport(UIKit)
+      if horizontalSizeClass == .regular {
+        let idiom = UIDevice.current.userInterfaceIdiom
+        if idiom == .pad || idiom == .mac {
+          return AM.Spacing.sidebarContentInset
+        }
+      }
+    #endif
+    return AM.Spacing.tabBarContentInset
+  }
+}
+
+private struct TabBarScrollInsetModifier: ViewModifier {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+  func body(content: Content) -> some View {
+    content.contentMargins(
+      .bottom,
+      AdaptiveBottomChrome.inset(horizontalSizeClass: horizontalSizeClass),
+      for: .scrollContent
+    )
+  }
+}
+
+private struct TabBarBottomPaddingModifier: ViewModifier {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+  func body(content: Content) -> some View {
+    content.padding(
+      .bottom,
+      AdaptiveBottomChrome.inset(horizontalSizeClass: horizontalSizeClass)
+    )
+  }
+}
+
+struct AccountToolbarButton: View {
+  @AppStorage("nk.username") private var username: String = ""
+  @AppStorage("nk.avatar") private var avatar: String = ""
+
+  var body: some View {
+    NavigationLink {
+      AccountView()
+    } label: {
+      avatarView
+        .frame(width: 30, height: 30)
+        .clipShape(Circle())
+        .overlay(
+          Circle()
+            .stroke(Color.appDivider.opacity(0.75), lineWidth: 0.8)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 5, y: 2)
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
+    }
+    .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.8, haptic: .selection))
+    .accessibilityIdentifier("AccountToolbarButton")
+    .accessibilityLabel(accessibilityLabel)
+    .accessibilityHint("Opens account and settings.")
+  }
+
+  @ViewBuilder
+  private var avatarView: some View {
+    if let url = avatarURL {
+      AsyncImage(url: url) { phase in
+        switch phase {
+        case .success(let image):
+          image.resizable().scaledToFill()
+        default:
+          fallbackAvatar
+        }
+      }
+    } else {
+      fallbackAvatar
+    }
+  }
+
+  private var fallbackAvatar: some View {
+    ZStack {
+      Circle()
+        .fill(Color.appSecondaryBackground)
+      Circle()
+        .strokeBorder(Color.appDivider.opacity(0.9), lineWidth: 0.8)
+      if let initial = displayInitial {
+        Text(initial)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(.primary)
+      } else {
+        Image(systemName: "person.crop.circle.fill")
+          .font(.system(size: 28, weight: .regular))
+          .symbolRenderingMode(.hierarchical)
+          .foregroundColor(.secondary)
+      }
+    }
+  }
+
+  private var displayName: String {
+    username.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var displayInitial: String? {
+    guard let first = displayName.first else { return nil }
+    return String(first).uppercased()
+  }
+
+  private var avatarURL: URL? {
+    let trimmed = avatar.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed.lowercased() != "null" else { return nil }
+    return URL(string: trimmed)
+  }
+
+  private var accessibilityLabel: String {
+    displayName.isEmpty ? "Account" : "Account, \(displayName)"
   }
 }
 

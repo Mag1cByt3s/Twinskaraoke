@@ -16,6 +16,15 @@ final class RadioController: ObservableObject {
   private var lastMetadataSignature: String?
   private init() {}
   func start() {
+    if Self.isUITestMode {
+      pollTimer?.invalidate()
+      pollTimer = nil
+      refreshTask?.cancel()
+      refreshTask = nil
+      applyUITestFixture()
+      return
+    }
+
     scheduleRefresh()
     pollTimer?.invalidate()
     let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -62,6 +71,11 @@ final class RadioController: ObservableObject {
     }
   }
   func refresh() async {
+    if Self.isUITestMode {
+      applyUITestFixture()
+      return
+    }
+
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
@@ -97,5 +111,72 @@ final class RadioController: ObservableObject {
       info.artist ?? "",
       info.art ?? ""
     ].joined(separator: "|")
+  }
+
+  private static var isUITestMode: Bool {
+    ProcessInfo.processInfo.arguments.contains("-UITestMode")
+  }
+
+  private func applyUITestFixture() {
+    nowPlaying = Self.uiTestNowPlaying
+    refreshErrorMessage = nil
+    isRefreshing = false
+    lastUpdated = Date()
+    if let info = nowPlaying?.nowPlaying?.song {
+      lastMetadataSignature = metadataSignature(for: info)
+    }
+  }
+
+  private static var uiTestNowPlaying: RadioNowPlaying {
+    RadioNowPlaying(
+      station: RadioNowPlaying.Station(
+        name: "Twinskaraoke Radio",
+        description: "Neuro 21 live from the karaoke room",
+        listenUrl: "https://radio.twinskaraoke.com/listen/neuro_21/radio.mp3"
+      ),
+      listeners: RadioNowPlaying.Listeners(total: 42, unique: 24),
+      nowPlaying: RadioNowPlaying.NowPlayingItem(
+        song: RadioNowPlaying.SongInfo(
+          id: "ui-radio-song-1",
+          art: nil,
+          text: "Wake Me Up Before You Go-Go - Wham!",
+          artist: "Wham!",
+          title: "Wake Me Up Before You Go-Go",
+          customFields: RadioNowPlaying.CustomFields(songID: "ui-radio-song-1")
+        )
+      ),
+      playingNext: RadioNowPlaying.NowPlayingItem(
+        song: RadioNowPlaying.SongInfo(
+          id: "ui-radio-song-2",
+          art: nil,
+          text: "Hero - Mili",
+          artist: "Mili",
+          title: "Hero",
+          customFields: RadioNowPlaying.CustomFields(songID: "ui-radio-song-2")
+        )
+      ),
+      songHistory: [
+        RadioNowPlaying.HistoryItem(
+          song: RadioNowPlaying.SongInfo(
+            id: "ui-radio-song-3",
+            art: nil,
+            text: "Cure For Me - AURORA",
+            artist: "AURORA",
+            title: "Cure For Me",
+            customFields: RadioNowPlaying.CustomFields(songID: "ui-radio-song-3")
+          )
+        ),
+        RadioNowPlaying.HistoryItem(
+          song: RadioNowPlaying.SongInfo(
+            id: "ui-radio-song-4",
+            art: nil,
+            text: "Bad Apple!! - Nomico",
+            artist: "Nomico",
+            title: "Bad Apple!!",
+            customFields: RadioNowPlaying.CustomFields(songID: "ui-radio-song-4")
+          )
+        ),
+      ]
+    )
   }
 }

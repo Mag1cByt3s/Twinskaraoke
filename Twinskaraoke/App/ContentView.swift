@@ -1,6 +1,10 @@
 import LNPopupUI
 import SwiftUI
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 struct ContentView: View {
   @StateObject var audioManager = AudioPlayerManager.shared
 
@@ -22,6 +26,8 @@ private struct PopupHostView: View {
       .modifier(PopupModifier())
       .environmentObject(audioManager)
       .onAppear {
+        configureTabBarAppearance()
+        applyUITestInitialSectionIfNeeded()
         if DeveloperMode.shouldTriggerEasterEgg() {
           showCaptcha = true
         }
@@ -37,11 +43,21 @@ private struct PopupHostView: View {
 
   @ViewBuilder
   private var rootShell: some View {
-    if horizontalSizeClass == .regular {
+    if usesSidebarShell {
       sidebarShell
     } else {
       rootTabs
     }
+  }
+
+  private var usesSidebarShell: Bool {
+    guard horizontalSizeClass == .regular else { return false }
+    #if canImport(UIKit)
+      let idiom = UIDevice.current.userInterfaceIdiom
+      return idiom == .pad || idiom == .mac
+    #else
+      return true
+    #endif
   }
 
   private var rootTabs: some View {
@@ -49,18 +65,18 @@ private struct PopupHostView: View {
       HomeView()
         .tabItem { Label(RootSection.home.title, systemImage: RootSection.home.selectedSystemImage) }
         .tag(RootSection.home)
+      NewView()
+        .tabItem { Label(RootSection.new.title, systemImage: RootSection.new.selectedSystemImage) }
+        .tag(RootSection.new)
       RadioView()
-        .tabItem { Label(RootSection.radio.title, systemImage: RootSection.radio.systemImage) }
+        .tabItem { Label(RootSection.radio.title, systemImage: RootSection.radio.selectedSystemImage) }
         .tag(RootSection.radio)
       LibraryView()
-        .tabItem { Label(RootSection.library.title, systemImage: RootSection.library.systemImage) }
+        .tabItem { Label(RootSection.library.title, systemImage: RootSection.library.selectedSystemImage) }
         .tag(RootSection.library)
       SearchView()
-        .tabItem { Label(RootSection.search.title, systemImage: RootSection.search.systemImage) }
+        .tabItem { Label(RootSection.search.title, systemImage: RootSection.search.selectedSystemImage) }
         .tag(RootSection.search)
-      AccountView()
-        .tabItem { Label(RootSection.account.title, systemImage: RootSection.account.systemImage) }
-        .tag(RootSection.account)
     }
     .tint(.appAccent)
   }
@@ -68,14 +84,13 @@ private struct PopupHostView: View {
   private var sidebarShell: some View {
     NavigationSplitView {
       List(selection: $selectedSection) {
-        Section {
-          ForEach(RootSection.allCases) { section in
-            Label {
-              Text(section.title)
-            } icon: {
-              Image(systemName: currentSection == section ? section.selectedSystemImage : section.systemImage)
+        ForEach(RootSectionGroup.allCases) { group in
+          Section(group.title) {
+            ForEach(group.sections) { section in
+              SidebarSectionRow(section: section, isSelected: currentSection == section)
+                .tag(Optional(section))
+                .accessibilityIdentifier(section.sidebarAccessibilityIdentifier)
             }
-            .tag(Optional(section))
           }
         }
       }
@@ -101,7 +116,12 @@ private struct PopupHostView: View {
   private var selectedTabBinding: Binding<RootSection> {
     Binding(
       get: { currentSection },
-      set: { selectedSection = $0 }
+      set: { newSection in
+        if selectedSection != newSection {
+          AppHaptic.selection.play()
+        }
+        selectedSection = newSection
+      }
     )
   }
 
@@ -123,44 +143,76 @@ private struct PopupHostView: View {
       respectPreference: respectReducedMotion
     )
   }
+
+  private func configureTabBarAppearance() {
+    #if canImport(UIKit)
+      let appearance = UITabBarAppearance()
+      appearance.configureWithOpaqueBackground()
+      appearance.backgroundEffect = nil
+      appearance.backgroundColor = UIColor { trait in
+        trait.userInterfaceStyle == .dark
+          ? UIColor.black
+          : UIColor.white
+      }
+      appearance.shadowColor = UIColor.separator.withAlphaComponent(0.18)
+      UITabBar.appearance().isTranslucent = false
+      UITabBar.appearance().standardAppearance = appearance
+      UITabBar.appearance().scrollEdgeAppearance = appearance
+    #endif
+  }
+
+  private func applyUITestInitialSectionIfNeeded() {
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let flagIndex = arguments.firstIndex(of: "-UITestInitialSection"),
+      arguments.indices.contains(flagIndex + 1),
+      let section = RootSection(rawValue: arguments[flagIndex + 1].lowercased())
+    else {
+      return
+    }
+    selectedSection = section
+  }
 }
 
 private enum RootSection: String, CaseIterable, Identifiable {
   case home
+  case new
   case radio
   case library
   case search
-  case account
 
   var id: String { rawValue }
+
+  var sidebarAccessibilityIdentifier: String {
+    "RootSection.\(rawValue)"
+  }
 
   var title: String {
     switch self {
     case .home: return "Home"
+    case .new: return "New"
     case .radio: return "Radio"
     case .library: return "Library"
     case .search: return "Search"
-    case .account: return "Account"
     }
   }
 
   var systemImage: String {
     switch self {
     case .home: return "house"
+    case .new: return "square.grid.2x2"
     case .radio: return "dot.radiowaves.left.and.right"
     case .library: return "music.note.list"
     case .search: return "magnifyingglass"
-    case .account: return "person"
     }
   }
 
   var selectedSystemImage: String {
     switch self {
     case .home: return "house.fill"
+    case .new: return "square.grid.2x2.fill"
     case .radio: return "dot.radiowaves.left.and.right"
     case .library: return "music.note.list"
     case .search: return "magnifyingglass"
-    case .account: return "person.fill"
     }
   }
 
@@ -169,14 +221,77 @@ private enum RootSection: String, CaseIterable, Identifiable {
     switch self {
     case .home:
       HomeView()
+    case .new:
+      NewView()
     case .radio:
       RadioView()
     case .library:
       LibraryView()
     case .search:
       SearchView()
-    case .account:
-      AccountView()
+    }
+  }
+}
+
+private enum RootSectionGroup: String, CaseIterable, Identifiable {
+  case discover
+  case collection
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .discover: return "Discover"
+    case .collection: return "Collection"
+    }
+  }
+
+  var sections: [RootSection] {
+    switch self {
+    case .discover: return [.home, .new, .radio, .search]
+    case .collection: return [.library]
+    }
+  }
+}
+
+private struct SidebarSectionRow: View {
+  let section: RootSection
+  let isSelected: Bool
+
+  var body: some View {
+    Label {
+      Text(section.title)
+        .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+    } icon: {
+      ZStack {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .fill(section.sidebarTint.opacity(isSelected ? 1 : 0.14))
+        Image(systemName: isSelected ? section.selectedSystemImage : section.systemImage)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(isSelected ? Color.white : section.sidebarTint)
+      }
+      .frame(width: 25, height: 25)
+      .accessibilityHidden(true)
+    }
+    .padding(.vertical, 2)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(section.title)
+  }
+}
+
+private extension RootSection {
+  var sidebarTint: Color {
+    switch self {
+    case .home:
+      return .appAccent
+    case .new:
+      return Color(red: 0.63, green: 0.34, blue: 0.98)
+    case .radio:
+      return Color(red: 0.98, green: 0.42, blue: 0.18)
+    case .library:
+      return Color(red: 0.18, green: 0.58, blue: 0.98)
+    case .search:
+      return Color(red: 0.23, green: 0.68, blue: 0.48)
     }
   }
 }
@@ -197,6 +312,11 @@ private struct PopupModifier: ViewModifier {
       .popupCloseButtonStyle(.none)
       .popupInteractionStyle(.drag)
       .popupBarMarqueeScrollEnabled(false)
+      .popupBarCustomizer { popupBar in
+        popupBar.accessibilityIdentifier = "MiniPlayerBar"
+        popupBar.accessibilityLabel = "Now Playing"
+        popupBar.accessibilityHint = "Opens the full-screen player."
+      }
   }
 }
 

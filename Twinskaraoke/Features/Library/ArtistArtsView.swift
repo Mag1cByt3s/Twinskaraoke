@@ -4,7 +4,7 @@ struct ArtistArtsView: View {
   let artist: GalleryArtist
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  private let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+  private let cols = AM.Layout.adaptiveGridColumns(minimum: 148, spacing: 10)
   private var arts: [GalleryArt] { artist.arts ?? [] }
   private var heroArt: GalleryArt? { arts.first }
   private var totalUpvotes: Int {

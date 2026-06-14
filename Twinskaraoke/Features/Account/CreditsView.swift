@@ -1,7 +1,30 @@
 import SwiftUI
 
 struct CreditsView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
   var body: some View {
+    creditsContent
+      .navigationTitle("Credits")
+      .navigationBarTitleDisplayMode(.inline)
+  }
+
+  @ViewBuilder
+  private var creditsContent: some View {
+    if horizontalSizeClass == .regular {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        creditsList
+          .frame(maxWidth: 700, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("Credits.WideOverview")
+      }
+    } else {
+      creditsList
+    }
+  }
+
+  private var creditsList: some View {
     List {
       Section("Site Creation & Management") {
         creditRow(name: "Soul", detail: "Creator & Developer")
@@ -70,9 +93,11 @@ struct CreditsView: View {
         }
       }
     }
-    .navigationTitle("Credits")
-    .navigationBarTitleDisplayMode(.inline)
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.appGroupedBackground.ignoresSafeArea())
   }
+
   @ViewBuilder
   private func creditRow(name: String, detail: String, url: String? = nil) -> some View {
     VStack(alignment: .leading, spacing: 3) {

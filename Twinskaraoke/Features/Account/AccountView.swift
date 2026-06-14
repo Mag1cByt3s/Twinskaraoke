@@ -3,6 +3,7 @@ import SwiftUI
 struct AccountView: View {
   @StateObject private var auth = AuthManager()
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var showLoginSheet = false
   @State private var showQRApprove = false
   @State private var showSignOutConfirm = false
@@ -10,24 +11,16 @@ struct AccountView: View {
   @State private var badges: [Badge] = []
   @State private var uploadLimits: UploadLimits?
   @State private var levelUpAnnouncement: LevelUpAnnouncement?
+
+  private var usesWideOverview: Bool {
+    horizontalSizeClass == .regular
+  }
+
   var body: some View {
     NavigationStack {
-      List {
-        profileSection
-        generalSection
-        if auth.isLoggedIn { signOutSection }
-      }
-      .listStyle(.insetGrouped)
-      .scrollContentBackground(.hidden)
-      .background(Color.appGroupedBackground.ignoresSafeArea())
+      accountContent
       .navigationTitle("Account")
       .navigationBarTitleDisplayMode(.large)
-      .refreshable {
-        if auth.isLoggedIn {
-          AppHaptic.selection.play()
-          await loadData()
-        }
-      }
       .sheet(isPresented: $showLoginSheet) {
         LoginSheet(auth: auth)
       }
@@ -53,6 +46,39 @@ struct AccountView: View {
       }
     }
   }
+
+  @ViewBuilder
+  private var accountContent: some View {
+    if usesWideOverview {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        accountList
+          .frame(maxWidth: 640, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("Account.WideOverview")
+      }
+    } else {
+      accountList
+    }
+  }
+
+  private var accountList: some View {
+    List {
+      profileSection
+      generalSection
+      if auth.isLoggedIn { signOutSection }
+    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.appGroupedBackground.ignoresSafeArea())
+    .refreshable {
+      if auth.isLoggedIn {
+        AppHaptic.selection.play()
+        await loadData()
+      }
+    }
+  }
+
   @ViewBuilder
   private var profileSection: some View {
     if auth.isLoggedIn {
@@ -235,6 +261,7 @@ private struct SignInPromptRow: View {
 }
 
 private struct NotificationsView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.notifications.newSongs") private var newSongs = true
   @AppStorage("nk.notifications.radio") private var radio = true
   @AppStorage("nk.notifications.downloads") private var downloads = true
@@ -245,6 +272,27 @@ private struct NotificationsView: View {
   }
 
   var body: some View {
+    notificationsContent
+      .navigationTitle("Notifications")
+      .navigationBarTitleDisplayMode(.inline)
+  }
+
+  @ViewBuilder
+  private var notificationsContent: some View {
+    if horizontalSizeClass == .regular {
+      ZStack(alignment: .top) {
+        Color.appGroupedBackground.ignoresSafeArea()
+        notificationsList
+          .frame(maxWidth: 640, maxHeight: .infinity, alignment: .top)
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .accessibilityIdentifier("Notifications.WideOverview")
+      }
+    } else {
+      notificationsList
+    }
+  }
+
+  private var notificationsList: some View {
     List {
       Section {
         summaryRow
@@ -288,8 +336,6 @@ private struct NotificationsView: View {
     .listStyle(.insetGrouped)
     .scrollContentBackground(.hidden)
     .background(Color.appGroupedBackground.ignoresSafeArea())
-    .navigationTitle("Notifications")
-    .navigationBarTitleDisplayMode(.inline)
   }
 
   private var summaryRow: some View {

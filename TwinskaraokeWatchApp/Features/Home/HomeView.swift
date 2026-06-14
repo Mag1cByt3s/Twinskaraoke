@@ -25,6 +25,13 @@ struct HomeView: View {
   var body: some View {
     NavigationStack {
       List {
+        WatchHomeHeader(
+          isPlaying: audioManager.isPlaying,
+          currentSongTitle: audioManager.currentSong?.title)
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
+        .listRowBackground(Color.clear)
+        .accessibilityIdentifier("WatchHome.listenNow")
+
         if let currentSong = audioManager.currentSong {
           Section("Now Playing") {
             NavigationLink(destination: PlayerView().environmentObject(audioManager)) {
@@ -42,24 +49,11 @@ struct HomeView: View {
               TapGesture().onEnded {
                 WatchHaptic.play(.click)
               })
-            .contextMenu {
-              Button {
-                toggleCurrentPlayback()
-              } label: {
-                Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-              }
-              Button {
-                audioManager.playNext()
-                WatchHaptic.play(.next)
-              } label: {
-                Label("Skip", systemImage: "forward.fill")
-              }
-            }
           }
         }
         if !homeViewModel.trending.isEmpty {
           Section("Trending") {
-            ForEach(homeViewModel.trending.prefix(5)) { song in
+            ForEach(Array(homeViewModel.trending.prefix(5).enumerated()), id: \.element.id) { index, song in
               let isCurrent = audioManager.currentSong?.id == song.id
               Button {
                 play(song, context: homeViewModel.trending)
@@ -73,23 +67,10 @@ struct HomeView: View {
                     : nil)
               }
               .buttonStyle(.watchPressable)
+              .accessibilityIdentifier("WatchHome.trending.\(index)")
               .accessibilityLabel(isCurrent && audioManager.isPlaying ? "Open \(song.title)" : song.title)
               .accessibilityValue("\(song.artistName), \(song.durationText)")
               .accessibilityHint(isCurrent ? "Double tap to open the current song." : "Double tap to play this song.")
-              .contextMenu {
-                Button {
-                  play(song, context: homeViewModel.trending)
-                } label: {
-                  Label(isCurrent && audioManager.isPlaying ? "Open Player" : "Play", systemImage: "play.fill")
-                }
-                if isCurrent {
-                  Button {
-                    toggleCurrentPlayback()
-                  } label: {
-                    Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-                  }
-                }
-              }
             }
           }
         } else if homeViewModel.isLoading {
@@ -109,6 +90,7 @@ struct HomeView: View {
               systemImage: "music.note.list",
               tint: .appAccent)
           }
+          .accessibilityIdentifier("WatchHome.playlists")
           .buttonStyle(.watchPressable)
           .accessibilityLabel("Playlists")
           .accessibilityHint("Opens curated karaoke playlists.")
@@ -120,6 +102,7 @@ struct HomeView: View {
               systemImage: "music.note",
               tint: .purple)
           }
+          .accessibilityIdentifier("WatchHome.songs")
           .buttonStyle(.watchPressable)
           .accessibilityLabel("Songs")
           .accessibilityHint("Opens the full song catalog.")
@@ -131,6 +114,7 @@ struct HomeView: View {
               systemImage: "magnifyingglass",
               tint: .blue)
           }
+          .accessibilityIdentifier("WatchHome.search")
           .buttonStyle(.watchPressable)
           .accessibilityLabel("Search")
           .accessibilityHint("Opens karaoke search.")
@@ -142,13 +126,15 @@ struct HomeView: View {
               systemImage: "person.crop.circle",
               tint: .green)
           }
+          .accessibilityIdentifier("WatchHome.account")
           .buttonStyle(.watchPressable)
           .accessibilityLabel("Account")
           .accessibilityHint("Opens account and sync status.")
           .simultaneousGesture(TapGesture().onEnded { WatchHaptic.play(.click) })
         }
       }
-      .navigationTitle("Twins Karaoke")
+      .navigationTitle("")
+      .navigationBarTitleDisplayMode(.inline)
       .animation(songStateAnimation, value: audioManager.currentSong?.id)
       .animation(playbackAnimation, value: audioManager.isPlaying)
       .navigationDestination(isPresented: $navigateToPlayer) {
@@ -171,14 +157,50 @@ struct HomeView: View {
     }
     navigateToPlayer = true
   }
+}
 
-  private func toggleCurrentPlayback() {
-    let wasPlaying = audioManager.isPlaying
-    if audioManager.togglePlayPause() {
-      WatchHaptic.play(wasPlaying ? .stop : .start)
-    } else {
-      WatchHaptic.play(.failure)
+private struct WatchHomeHeader: View {
+  let isPlaying: Bool
+  let currentSongTitle: String?
+
+  var body: some View {
+    HStack(spacing: 8) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(Color.appAccent)
+        Image(systemName: isPlaying ? "waveform" : "music.note")
+          .font(.system(size: 15, weight: .bold))
+          .foregroundStyle(.white)
+      }
+      .frame(width: 34, height: 34)
+      .accessibilityHidden(true)
+
+      VStack(alignment: .leading, spacing: 1) {
+        Text("Listen Now")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+
+        Text(statusText)
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.75)
+      }
+
+      Spacer(minLength: 0)
     }
+    .padding(.vertical, 2)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Listen Now")
+    .accessibilityValue(statusText)
+  }
+
+  private var statusText: String {
+    guard let currentSongTitle, !currentSongTitle.isEmpty else {
+      return "Trending and library"
+    }
+    return isPlaying ? "Playing \(currentSongTitle)" : "Paused \(currentSongTitle)"
   }
 }
 

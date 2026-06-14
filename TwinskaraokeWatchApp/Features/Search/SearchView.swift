@@ -122,23 +122,6 @@ struct SearchView: View {
             }
             .buttonStyle(.watchPressable)
             .accessibilityHint(accessibilityHint(for: item))
-            .contextMenu {
-              if let song = item.toSong() {
-                let isCurrent = audioManager.currentSong?.id == song.id
-                Button {
-                  play(song, context: playableSongs)
-                } label: {
-                  Label(isCurrent && audioManager.isPlaying ? "Open Player" : "Play", systemImage: "play.fill")
-                }
-                if isCurrent {
-                  Button {
-                    toggleCurrentPlayback()
-                  } label: {
-                    Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-                  }
-                }
-              }
-            }
           }
         }
       }
@@ -170,15 +153,6 @@ struct SearchView: View {
       WatchHaptic.play(.click)
     }
     showPlayer = true
-  }
-
-  private func toggleCurrentPlayback() {
-    let wasPlaying = audioManager.isPlaying
-    if audioManager.togglePlayPause() {
-      WatchHaptic.play(wasPlaying ? .stop : .start)
-    } else {
-      WatchHaptic.play(.failure)
-    }
   }
 
   private func accessibilityHint(for item: SearchSongItem) -> String {

@@ -63,20 +63,6 @@ struct SongsView: View {
           .buttonStyle(.watchPressable)
           .accessibilityLabel(isCurrent && audioManager.isPlaying ? "Pause \(song.title)" : song.title)
           .accessibilityHint(isCurrent ? "Double tap to open the current song." : "Double tap to play this song.")
-          .contextMenu {
-            Button {
-              play(song)
-            } label: {
-              Label(isCurrent && audioManager.isPlaying ? "Open Player" : "Play", systemImage: "play.fill")
-            }
-            if isCurrent {
-              Button {
-                toggleCurrentPlayback()
-              } label: {
-                Label(audioManager.isPlaying ? "Pause" : "Resume", systemImage: audioManager.isPlaying ? "pause.fill" : "play.fill")
-              }
-            }
-          }
         }
       }
     }
@@ -137,15 +123,6 @@ struct SongsView: View {
     audioManager.play(song: randomSong, context: viewModel.songs)
     WatchHaptic.play(.start)
     showPlayer = true
-  }
-
-  private func toggleCurrentPlayback() {
-    let wasPlaying = audioManager.isPlaying
-    if audioManager.togglePlayPause() {
-      WatchHaptic.play(wasPlaying ? .stop : .start)
-    } else {
-      WatchHaptic.play(.failure)
-    }
   }
 }
 

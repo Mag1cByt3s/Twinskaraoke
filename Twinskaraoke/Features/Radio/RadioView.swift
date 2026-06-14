@@ -4,6 +4,7 @@ struct RadioView: View {
   @StateObject private var radio = RadioController.shared
   @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var showingRadioSchedule = false
   var body: some View {
@@ -23,21 +24,7 @@ struct RadioView: View {
             RadioSkeletonView()
               .transition(.opacity)
           } else {
-            VStack(spacing: AM.Spacing.shelfSpacing) {
-              if let message = radio.refreshErrorMessage, !radio.isRefreshing {
-                RadioRefreshBanner(message: message) {
-                  Task { await retryRadioRefresh() }
-                }
-                .padding(.horizontal, 16)
-                .transition(refreshBannerTransition)
-              }
-              stationCard
-              hostedStationsSection
-              featuredShowsSection
-              if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
-                historySection(history: history)
-              }
-            }
+            radioOverview
             .transition(.opacity)
           }
         }
@@ -45,18 +32,27 @@ struct RadioView: View {
         .padding(.top, AM.Spacing.l)
         .padding(.bottom, AM.Spacing.l)
       }
+      .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Radio")
       .navigationBarTitleDisplayMode(.large)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          Button {
-            showLiveSchedule()
-          } label: {
-            Image(systemName: "list.bullet")
+          HStack(spacing: 12) {
+            Button {
+              showLiveSchedule()
+            } label: {
+              Image(systemName: "list.bullet")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .background(Color.appControlInactiveFill, in: Circle())
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.72, haptic: .selection))
+            .accessibilityLabel("Live Schedule")
+            .accessibilityHint("Shows live now, up next, and recently played songs.")
+
+            AccountToolbarButton()
           }
-          .accessibilityLabel("Live Schedule")
-          .accessibilityHint("Shows live now, up next, and recently played songs.")
         }
       }
       .refreshable {
@@ -112,6 +108,68 @@ struct RadioView: View {
     )
   }
 
+  private var usesWideOverview: Bool {
+    horizontalSizeClass == .regular
+  }
+
+  @ViewBuilder
+  private var radioOverview: some View {
+    if usesWideOverview {
+      wideRadioOverview
+    } else {
+      compactRadioOverview
+    }
+  }
+
+  private var compactRadioOverview: some View {
+    VStack(spacing: AM.Spacing.shelfSpacing) {
+      refreshBanner(horizontalPadding: AM.Spacing.screenMargin)
+      stationCard()
+      hostedStationsSection()
+      featuredShowsSection()
+      if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
+        historySection(history: history)
+      }
+    }
+  }
+
+  private var wideRadioOverview: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
+      refreshBanner(horizontalPadding: 0)
+
+      HStack(alignment: .top, spacing: AM.Spacing.xxl) {
+        stationCard(horizontalPadding: 0)
+          .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+
+        VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
+          featuredShowsSection(horizontalPadding: 0)
+          if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
+            historySection(history: history, horizontalPadding: 0)
+          }
+        }
+        .frame(minWidth: 300, idealWidth: 360, maxWidth: 420, alignment: .topLeading)
+      }
+
+      hostedStationsSection(horizontalPadding: 0)
+    }
+    .frame(maxWidth: 1120, alignment: .topLeading)
+    .frame(maxWidth: .infinity, alignment: .top)
+    .padding(.horizontal, AM.Spacing.screenMargin)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("Radio.WideOverview")
+  }
+
+  @ViewBuilder
+  private func refreshBanner(horizontalPadding: CGFloat) -> some View {
+    if let message = radio.refreshErrorMessage, !radio.isRefreshing {
+      RadioRefreshBanner(message: message) {
+        Task { await retryRadioRefresh() }
+      }
+      .padding(.horizontal, horizontalPadding)
+      .transition(refreshBannerTransition)
+    }
+  }
+
   @ViewBuilder
   private var radioActions: some View {
     Button {
@@ -135,12 +193,26 @@ struct RadioView: View {
   }
 
   @ViewBuilder
-  private var stationCard: some View {
+  private func stationCard(horizontalPadding: CGFloat = AM.Spacing.screenMargin) -> some View {
     let np = radio.nowPlaying
     let song = np?.nowPlaying?.song
     let isLivePlaying = audioManager.isRadioMode && audioManager.isPlaying
-    VStack(spacing: 14) {
-      ZStack(alignment: .topLeading) {
+    VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Featured Episode")
+          .font(.system(size: 12, weight: .bold))
+          .foregroundStyle(.secondary)
+          .textCase(.uppercase)
+          .accessibilityIdentifier("Radio.FeaturedEpisode.Label")
+        Text(song?.displayTitle ?? np?.station.name ?? "Twinskaraoke Radio")
+          .font(.system(size: 30, weight: .semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(2)
+          .accessibilityIdentifier("Radio.FeaturedEpisode.Title")
+      }
+      .padding(.horizontal, horizontalPadding)
+
+      ZStack(alignment: .bottomLeading) {
         Group {
           if let art = song?.art, let url = URL(string: art) {
             LoadingImage(url: url, cornerRadius: AM.Radius.hero, contentMode: .fill)
@@ -148,56 +220,62 @@ struct RadioView: View {
             artPlaceholder
           }
         }
-        RadioLiveBadge(isActive: isLivePlaying, reduceMotion: reduceMotion)
-          .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 236, maxHeight: 236)
+        .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
+
+        LinearGradient(
+          colors: [.black.opacity(0.0), .black.opacity(0.52)],
+          startPoint: .center,
+          endPoint: .bottom
+        )
+        .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
+
+        VStack(alignment: .leading, spacing: 8) {
+          RadioLiveBadge(isActive: isLivePlaying, reduceMotion: reduceMotion)
+          Text(song?.displayArtist ?? np?.station.description ?? "Live radio")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.white.opacity(0.9))
+            .lineLimit(1)
+        }
+        .padding(16)
+
+        Button {
+          AppHaptic.medium.play()
+          playOrPauseLiveStation()
+        } label: {
+          ZStack {
+            Circle()
+              .fill(.white)
+              .frame(width: 48, height: 48)
+            if audioManager.isBuffering && audioManager.isRadioMode && !audioManager.isPlaying {
+              LoadingIndicator(size: 28)
+            } else {
+              Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.black)
+                .offset(x: isLivePlaying ? 0 : 2)
+            }
+          }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.85))
+        .accessibilityLabel(isLivePlaying ? "Pause live station" : "Play live station")
+        .accessibilityValue(song?.displayTitle ?? np?.station.name ?? "Twinskaraoke Radio")
+        .accessibilityHint("Controls the live radio stream.")
       }
-      .frame(maxWidth: 280, maxHeight: 280)
-      .aspectRatio(1, contentMode: .fit)
-      .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
+      .padding(.horizontal, horizontalPadding)
       .amShadow(
         audioManager.isPlaying && audioManager.isRadioMode
           ? AM.Shadow.heroPlaying : AM.Shadow.heroIdle
       )
-      .padding(.horizontal, 32)
-      VStack(spacing: 6) {
-        Text(song?.title ?? np?.station.name ?? "Neuro 21 Station")
-          .font(AM.Font.nowPlayingTitle)
-          .multilineTextAlignment(.center)
-          .lineLimit(2)
-        Text(song?.artist ?? np?.station.description ?? "")
-          .font(AM.Font.nowPlayingArtist)
-          .foregroundColor(.secondary)
-          .multilineTextAlignment(.center)
-          .lineLimit(1)
-      }
-      .padding(.horizontal, 24)
+
       RadioLiveStatusStrip(
         isPlaying: isLivePlaying,
         listenerCount: np?.listeners?.unique,
         lastUpdated: radio.lastUpdated)
-      .padding(.horizontal, 24)
-      Button {
-        AppHaptic.medium.play()
-        playOrPauseLiveStation()
-      } label: {
-        ZStack {
-          Circle()
-            .fill(Color.appAccent)
-            .frame(width: 64, height: 64)
-          if audioManager.isBuffering && audioManager.isRadioMode && !audioManager.isPlaying {
-            LoadingIndicator(size: 36)
-          } else {
-            Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
-              .font(.system(size: 26, weight: .medium))
-              .foregroundColor(.white)
-              .offset(x: isLivePlaying ? 0 : 2)
-          }
-        }
-      }
-      .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.85))
-      .accessibilityLabel(isLivePlaying ? "Pause live station" : "Play live station")
-      .accessibilityValue(song?.displayTitle ?? np?.station.name ?? "Neuro 21 Station")
-      .accessibilityHint("Controls the live radio stream.")
+      .padding(.horizontal, horizontalPadding)
+
       if let next = np?.playingNext?.song {
         Button {
           showLiveSchedule()
@@ -242,6 +320,7 @@ struct RadioView: View {
         .accessibilityLabel("Up Next")
         .accessibilityValue("\(next.displayTitle), \(next.displayArtist)")
         .accessibilityHint("Shows the live radio schedule.")
+        .padding(.horizontal, horizontalPadding)
         .contextMenu {
           radioActions
         } preview: {
@@ -271,13 +350,17 @@ struct RadioView: View {
         .foregroundColor(.white.opacity(0.85))
     )
   }
-  private func historySection(history: [RadioNowPlaying.HistoryItem]) -> some View {
+  private func historySection(
+    history: [RadioNowPlaying.HistoryItem],
+    horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  ) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      AMSectionHeader("Recently Played")
+      RadioSectionHeader("New & Recent")
+        .padding(.horizontal, horizontalPadding)
       LazyVStack(spacing: 0) {
         ForEach(Array(history.prefix(10).enumerated()), id: \.offset) { _, item in
           RadioHistoryRow(song: item.song)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, horizontalPadding)
             .padding(.vertical, 8)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Recently played")
@@ -291,10 +374,14 @@ struct RadioView: View {
         }
       }
     }
+    .accessibilityIdentifier("Radio.HistorySection")
   }
-  private var hostedStationsSection: some View {
+  private func hostedStationsSection(
+    horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  ) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      AMSectionHeader("Hosted Stations")
+      RadioSectionHeader("Hosted Stations")
+        .padding(.horizontal, horizontalPadding)
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 14) {
           ForEach(RadioStationTile.hosted) { tile in
@@ -313,13 +400,17 @@ struct RadioView: View {
             }
           }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
       }
     }
+    .accessibilityIdentifier("Radio.HostedStationsSection")
   }
-  private var featuredShowsSection: some View {
+  private func featuredShowsSection(
+    horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  ) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      AMSectionHeader("Featured Shows")
+      RadioSectionHeader("Featured Shows")
+        .padding(.horizontal, horizontalPadding)
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 14) {
           ForEach(RadioShowTile.featured) { tile in
@@ -344,9 +435,28 @@ struct RadioView: View {
             }
           }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
       }
     }
+    .accessibilityIdentifier("Radio.FeaturedShowsSection")
+  }
+}
+
+private struct RadioSectionHeader: View {
+  let title: String
+
+  init(_ title: String) {
+    self.title = title
+  }
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: AM.Spacing.s) {
+      Text(title)
+        .font(AM.Font.sectionHeader)
+        .foregroundColor(.primary)
+      Spacer()
+    }
+    .padding(.top, 2)
   }
 }
 

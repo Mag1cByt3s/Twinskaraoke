@@ -138,7 +138,7 @@ final class VideoGalleryViewModel: ObservableObject {
 
 struct VideoGalleryView: View {
   @StateObject private var viewModel = VideoGalleryViewModel()
-  private let cols = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+  private let cols = AM.Layout.adaptiveGridColumns(minimum: 164, spacing: 16)
   var body: some View {
     ScrollView {
       if viewModel.videos.isEmpty && viewModel.isLoading {

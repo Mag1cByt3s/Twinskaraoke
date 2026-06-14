@@ -653,6 +653,23 @@ class AudioPlayerManager: ObservableObject {
     backgroundAnalysisRetryTask = nil
   }
 
+  private func cancelDownloadSession() {
+    downloadSession?.cancel()
+    downloadSession = nil
+    #if canImport(UIKit)
+      endAudioCacheBackgroundTask()
+    #endif
+  }
+
+  private func completeDownloadSession(_ session: AudioDownloadSession?) -> Bool {
+    guard let session, downloadSession === session else { return false }
+    downloadSession = nil
+    #if canImport(UIKit)
+      endAudioCacheBackgroundTask()
+    #endif
+    return true
+  }
+
   private func localPlaybackFileURL(for song: Song) -> URL? {
     if let downloaded = DownloadManager.shared.playableURL(for: song) {
       return downloaded
@@ -907,6 +924,7 @@ class AudioPlayerManager: ObservableObject {
     streamFadeTimer = nil
     if resetVolume { streamPlayer?.volume = 1.0 }
     transitionCoordinator.reset()
+    upcomingSong = nil
     cancelBackgroundAnalysisRetry()
     #if canImport(UIKit)
       endTrackTransitionBackgroundTask()
@@ -918,11 +936,7 @@ class AudioPlayerManager: ObservableObject {
       "Memory warning received — cancelling AI work and reclaiming caches",
       category: .playback)
     cancelPendingTransitionWork()
-    downloadSession?.cancel()
-    downloadSession = nil
-    #if canImport(UIKit)
-      endAudioCacheBackgroundTask()
-    #endif
+    cancelDownloadSession()
     instrumentalTask?.cancel()
     instrumentalTask = nil
     cancelBackgroundAnalysisRetry()
@@ -1124,8 +1138,7 @@ class AudioPlayerManager: ObservableObject {
         originalQueue = []
       }
     }
-    downloadSession?.cancel()
-    downloadSession = nil
+    cancelDownloadSession()
     let fileURL = localPlaybackFileURL(for: song)
     if let fileURL, let stems = stemsForCachedAIMode(song: song) {
       instrumentalTask?.cancel()
@@ -1170,17 +1183,15 @@ class AudioPlayerManager: ObservableObject {
     let songID = song.id
     let session = AudioDownloadSession(songID: songID)
     downloadSession = session
-    session.onPlayableFallbackReady = { [weak self] fallbackURL in
+    session.onPlayableFallbackReady = { [weak self, weak session] fallbackURL in
       guard let self else { return }
+      guard self.downloadSession === session else { return }
       guard let currentSong = self.currentSong, currentSong.id == songID else { return }
       self.switchSilentStreamToLocalFallback(fallbackURL, for: currentSong)
     }
-    session.onCompletion = { [weak self] url in
+    session.onCompletion = { [weak self, weak session] url in
       guard let self else { return }
-      self.downloadSession = nil
-      #if canImport(UIKit)
-        self.endAudioCacheBackgroundTask()
-      #endif
+      guard self.completeDownloadSession(session) else { return }
       guard let url else { return }
       CacheManager.shared.recordAccess(for: url)
       let protectedIDs = self.activeSongIDs()
@@ -1667,8 +1678,7 @@ class AudioPlayerManager: ObservableObject {
     deferredAIEffect = nil
     VocalSeparator.shared.cancel()
     VocalSeparator.shared.cancelBackgroundAnalysis()
-    downloadSession?.cancel()
-    downloadSession = nil
+    cancelDownloadSession()
     scheduleIdleCacheCompression(excluding: Set<String>())
     isRadioMode = true
     radioArtworkURL = artworkURL
@@ -1848,8 +1858,7 @@ class AudioPlayerManager: ObservableObject {
     DebugLogger.log("Clearing all cache", category: .cache)
     cancelPendingTransitionWork()
     cacheCompressionTask?.cancel()
-    downloadSession?.cancel()
-    downloadSession = nil
+    cancelDownloadSession()
     instrumentalTask?.cancel()
     instrumentalTask = nil
     preparedStemSongID = nil
@@ -2494,7 +2503,7 @@ class AudioPlayerManager: ObservableObject {
     }
     stopStreamPlayer()
     clearPreferredStreamResumeTime()
-    downloadSession = nil
+    cancelDownloadSession()
     let song = plan.nextSong
     currentPlaybackURL = plan.nextFileURL
     CacheManager.shared.recordAccess(for: plan.nextFileURL)
