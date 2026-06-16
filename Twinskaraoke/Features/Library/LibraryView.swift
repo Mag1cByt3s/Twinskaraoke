@@ -126,6 +126,7 @@ struct LibraryView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .scrollIndicators(.hidden)
+      .scrollDismissesKeyboard(.interactively)
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Library")
@@ -281,8 +282,7 @@ struct LibraryView: View {
     .buttonStyle(PressableButtonStyle(scale: 0.985, dim: 0.78, haptic: .selection))
 
     if showsDivider {
-      Divider()
-        .padding(.leading, 66)
+      LibraryLinkSeparator()
     }
   }
 
@@ -309,6 +309,27 @@ private struct LibraryToolbarActions: View {
         Label("Refresh Library", systemImage: "arrow.clockwise")
       }
     }
+  }
+}
+
+private struct LibraryLinkSeparator: View {
+  var body: some View {
+    Rectangle()
+      .fill(Color.appDivider.opacity(0.42))
+      .frame(height: 0.5)
+      .padding(.leading, 66)
+      .padding(.trailing, 12)
+      .mask(
+        LinearGradient(
+          colors: [
+            .black,
+            .black.opacity(0.92),
+            .black.opacity(0.18)
+          ],
+          startPoint: .leading,
+          endPoint: .trailing
+        )
+      )
   }
 }
 
@@ -557,6 +578,7 @@ struct LibrarySongsView: View {
         Section {
           ForEach(songs) { song in
             SongRow(song: song, size: .regular)
+              .id(song.id)
               .padding(.vertical, 6)
               .contentShape(Rectangle())
               .onTapGesture {
@@ -577,6 +599,7 @@ struct LibrarySongsView: View {
               LoadingIndicator(size: 28)
               Spacer()
             }
+            .frame(height: 44)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
           }
@@ -585,6 +608,7 @@ struct LibrarySongsView: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
+    .scrollDismissesKeyboard(.interactively)
     .musicScreenBackground()
     .navigationTitle("Songs")
     .navigationBarTitleDisplayMode(.large)
@@ -906,6 +930,7 @@ struct LibraryCollectionListView: View {
             } label: {
               LibraryCollectionRow(collection: collection, symbol: kind.symbol)
             }
+            .id(collection.id)
             .contextMenu {
               LibraryCollectionActionsMenu(collection: collection)
             } preview: {
@@ -925,6 +950,7 @@ struct LibraryCollectionListView: View {
               LoadingIndicator(size: 28)
               Spacer()
             }
+            .frame(height: 44)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
           }
@@ -933,6 +959,7 @@ struct LibraryCollectionListView: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
+    .scrollDismissesKeyboard(.interactively)
     .musicScreenBackground()
     .navigationTitle(kind.title)
     .navigationBarTitleDisplayMode(.large)
@@ -1007,8 +1034,9 @@ struct LibraryCollectionRow: View {
         .foregroundColor(.secondary)
         .lineLimit(1)
       }
-      Spacer()
+      Spacer(minLength: 0)
     }
+    .frame(height: 64)
     .padding(.vertical, 4)
   }
 }

@@ -84,19 +84,27 @@ nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
   var cloudflareId: String? { cloudflareID }
 
   var imageURL: URL? {
-    if let identifier = cloudflareID, !identifier.isEmpty {
-      return URL(string: "\(StorageHost.images)/\(identifier)/public")
-    }
-    guard let path = coverArt?.absolutePath else { return neuroFallbackImageURL }
-    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+    imageURL(width: 480, quality: 85)
   }
 
   var fullHDImageURL: URL? {
+    imageURL(width: 1920, quality: 90)
+  }
+
+  var thumbnailURL: URL? {
+    imageURL(width: 240, quality: 80)
+  }
+
+  private func imageURL(width: Int, quality: Int) -> URL? {
     if let identifier = cloudflareID, !identifier.isEmpty {
-      return URL(string: "\(StorageHost.images)/\(identifier)/quality=95")
+      let urlString = "\(StorageHost.images)/\(identifier)/width=\(width),quality=\(quality),format=auto"
+      guard let url = URL(string: urlString) else { return neuroFallbackImageURL }
+      return url
     }
-    guard let path = coverArt?.absolutePath else { return neuroFallbackImageURL }
-    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+    guard let path = coverArt?.absolutePath, !path.isEmpty else { return neuroFallbackImageURL }
+    let urlString = StorageHost.images + normalizedImagePath(path) + "/width=\(width),quality=\(quality),format=auto"
+    guard let url = URL(string: urlString) else { return neuroFallbackImageURL }
+    return url
   }
 
   var hasOwnArtwork: Bool {
@@ -250,13 +258,13 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
 
   var imageURL: URL? {
     if let cfId = media?.cloudflareId, !cfId.isEmpty {
-      return URL(string: "\(StorageHost.images)/\(cfId)/public")
+      return URL(string: "\(StorageHost.images)/\(cfId)/width=480,quality=85,format=auto")
     }
     if let path = media?.absolutePath, !path.isEmpty {
-      return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+      return URL(string: StorageHost.images + normalizedImagePath(path) + "/width=480,quality=85,format=auto")
     }
     if let path = mosaicMedia?.first?.absolutePath {
-      return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+      return URL(string: StorageHost.images + normalizedImagePath(path) + "/width=480,quality=85,format=auto")
     }
     return songListDTOs?.first?.imageURL
   }
@@ -388,10 +396,10 @@ nonisolated struct SearchSongItem: Codable, Identifiable, Sendable {
 
   var imageURL: URL? {
     if let cfId = cloudflareId, !cfId.isEmpty {
-      return URL(string: "\(StorageHost.images)/\(cfId)/public")
+      return URL(string: "\(StorageHost.images)/\(cfId)/width=480,quality=85,format=auto")
     }
     guard let path = coverArt?.absolutePath else { return nil }
-    return URL(string: StorageHost.images + normalizedImagePath(path) + "/quality=95")
+    return URL(string: StorageHost.images + normalizedImagePath(path) + "/width=480,quality=85,format=auto")
   }
 
   var originalArtistDisplay: String {

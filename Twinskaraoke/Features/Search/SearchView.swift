@@ -446,12 +446,112 @@ struct GenreDetailView: View {
   @ObservedObject var viewModel: GenresViewModel
   let palette: [Color]
   @EnvironmentObject var audioManager: AudioPlayerManager
+  @State private var isLoadingDetail = false
+
   var body: some View {
     let songs = viewModel.allSongs[genre.id] ?? []
-    BrowseSongCollectionView(
-      title: genre.name,
-      songs: songs
-    )
+    Group {
+      if isLoadingDetail && songs.isEmpty {
+        GenreDetailLoadingView(genre: genre)
+          .transition(.opacity)
+      } else {
+        BrowseSongCollectionView(
+          title: genre.name,
+          songs: songs
+        )
+        .transition(.opacity)
+      }
+    }
+    .task {
+      await loadGenreDetail()
+    }
+  }
+
+  private func loadGenreDetail() async {
+    guard viewModel.allSongs[genre.id] == nil else { return }
+    isLoadingDetail = true
+    defer { isLoadingDetail = false }
+
+    guard let url = URL(string: "\(StorageHost.api)/api/genres/\(genre.id)") else {
+      return
+    }
+
+    var request = URLRequest(url: url)
+    GuestIdentity.applyIfNeeded(to: &request)
+
+    do {
+      let (data, _) = try await URLSession.shared.data(for: request)
+      if let detail = try? JSONDecoder().decode(GenreDetail.self, from: data),
+         let songs = detail.songs {
+        await MainActor.run {
+          viewModel.allSongs[genre.id] = songs
+          if let first = songs.first {
+            viewModel.firstSongs[genre.id] = first
+          }
+          let artURL = songs.first(where: { $0.hasOwnArtwork })?.imageURL
+          if let artURL {
+            viewModel.artworkURLs[genre.id] = artURL
+          }
+        }
+      }
+    } catch {
+      // Silent failure - will show empty state
+    }
+  }
+}
+
+private struct GenreDetailLoadingView: View {
+  let genre: GenreSummary
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 18) {
+        RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
+          .fill(Color.appPlaceholderPrimary)
+          .frame(width: 228, height: 228)
+          .overlay {
+            LoadingIndicator(size: 34)
+          }
+          .amShadow(AM.Shadow.heroIdle)
+          .padding(.top, 8)
+
+        VStack(spacing: 8) {
+          Text(genre.name)
+            .font(.title2.bold())
+            .multilineTextAlignment(.center)
+          Text("Loading songs")
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+        }
+
+        LazyVStack(spacing: 0) {
+          ForEach(0..<7, id: \.self) { _ in
+            HStack(spacing: 12) {
+              RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: 48, height: 48)
+              VStack(alignment: .leading, spacing: 8) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderSecondary)
+                  .frame(width: 180, height: 11)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                  .fill(Color.appPlaceholderPrimary)
+                  .frame(width: 124, height: 9)
+              }
+              Spacer()
+            }
+            .padding(.horizontal, AM.Spacing.screenMargin)
+            .padding(.vertical, 10)
+            Divider().padding(.leading, 76)
+          }
+        }
+      }
+      .padding(.bottom, AM.Spacing.l)
+    }
+    .scrollBounceBehavior(.basedOnSize)
+    .bottomChromeScrollTracking()
+    .tabBarScrollInset()
+    .accessibilityLabel("Loading \(genre.name) songs")
   }
 }
 

@@ -7,18 +7,19 @@ enum ImageCacheConfig {
     guard !didApply else { return }
     didApply = true
     let cfg = SDImageCache.shared.config
-    cfg.maxMemoryCost = 24 * 1024 * 1024
-    cfg.maxMemoryCount = 36
-    cfg.maxDiskSize = 512 * 1024 * 1024
+    cfg.maxMemoryCost = 32 * 1024 * 1024
+    cfg.maxMemoryCount = 48
+    cfg.maxDiskSize = 256 * 1024 * 1024
     cfg.shouldCacheImagesInMemory = true
     cfg.shouldUseWeakMemoryCache = true
-    cfg.maxDiskAge = 90 * 24 * 60 * 60
+    cfg.maxDiskAge = 30 * 24 * 60 * 60
     SDImageCache.shared.clearMemory()
     let dl = SDWebImageDownloader.shared
-    dl.config.maxConcurrentDownloads = 4
+    dl.config.maxConcurrentDownloads = 6
     dl.requestModifier = SDWebImageDownloaderRequestModifier { request in
       var r = request
       r.cachePolicy = .returnCacheDataElseLoad
+      r.timeoutInterval = 15
       return r
     }
     #if canImport(UIKit)
@@ -31,7 +32,12 @@ enum ImageCacheConfig {
     #endif
   }
   static let thumbnailPixelSize = CGSize(width: 480, height: 480)
-  static let defaultOptions: SDWebImageOptions = [.retryFailed, .scaleDownLargeImages]
+  static let defaultOptions: SDWebImageOptions = [
+    .retryFailed,
+    .scaleDownLargeImages,
+    .continueInBackground,
+    .highPriority
+  ]
 }
 
 struct LoadingImage: View {
@@ -48,7 +54,10 @@ struct LoadingImage: View {
       let pixelSize = NSValue(cgSize: thumbnailPixelSize(for: geo.size))
       let context: [SDWebImageContextOption: Any] =
         fullResolution
-        ? [:] : [.imageThumbnailPixelSize: pixelSize]
+        ? [:] : [
+          .imageThumbnailPixelSize: pixelSize,
+          .imageDecodeOptions: [SDImageCoderOption.decodeScaleFactor: 1.0]
+        ]
       ZStack {
         if !transparentBackground {
           MusicArtworkPlaceholder()
@@ -56,14 +65,15 @@ struct LoadingImage: View {
         if let lowResURL, !fullLoaded {
           WebImage(
             url: lowResURL,
-            options: ImageCacheConfig.defaultOptions,
-            context: [.imageThumbnailPixelSize: pixelSize]
+            options: [.retryFailed, .scaleDownLargeImages, .fromCacheOnly],
+            context: [.imageThumbnailPixelSize: NSValue(cgSize: CGSize(width: 120, height: 120))]
           ) { image in
             image
               .resizable()
               .aspectRatio(contentMode: contentMode)
               .frame(width: geo.size.width, height: geo.size.height)
               .clipped()
+              .blur(radius: 2)
           } placeholder: {
             Color.clear
           }
@@ -86,12 +96,16 @@ struct LoadingImage: View {
           }
         }
         .onSuccess { _, _, _ in
-          DispatchQueue.main.async { fullLoaded = true }
+          withAnimation(.easeOut(duration: 0.15)) {
+            fullLoaded = true
+          }
         }
-        .transaction { $0.animation = nil }
+        .transition(.opacity.animation(.easeOut(duration: 0.15)))
       }
-      .frame(width: geo.size.width, height: geo.size.height)
+      .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+      .drawingGroup(opaque: !transparentBackground)
     }
+    .aspectRatio(1, contentMode: .fit)
     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     .onChange(of: url) { fullLoaded = false }
   }

@@ -44,9 +44,6 @@ struct PlayerArtworkView: View {
       RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
         .fill(Color.appArtworkOverlay)
         .frame(width: size, height: size)
-      Circle()
-        .fill(.ultraThinMaterial)
-        .frame(width: min(88, max(58, size * 0.24)), height: min(88, max(58, size * 0.24)))
       LoadingIndicator(size: min(48, max(30, size * 0.13)))
     }
     .accessibilityHidden(true)

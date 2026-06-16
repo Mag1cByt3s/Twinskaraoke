@@ -40,6 +40,7 @@ struct HomeView: View {
         .padding(.top, AM.Spacing.l)
         .padding(.bottom, AM.Spacing.l)
       }
+      .scrollDismissesKeyboard(.interactively)
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Home")
@@ -191,6 +192,7 @@ struct NewView: View {
         .padding(.top, AM.Spacing.m)
         .padding(.bottom, AM.Spacing.l)
       }
+      .scrollDismissesKeyboard(.interactively)
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("New")
@@ -389,6 +391,7 @@ struct PlaylistListView: View {
             NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
               PlaylistGridCell(playlist: playlist)
             }
+            .id(playlist.id)
             .buttonStyle(PressableButtonStyle())
             .accessibilityIdentifier("PlaylistList.\(playlist.id)")
             .contextMenu {
@@ -409,9 +412,11 @@ struct PlaylistListView: View {
       if loader.isLoadingMore {
         LoadingIndicator(size: 32)
           .frame(maxWidth: .infinity, alignment: .center)
+          .frame(height: 44)
           .padding(.vertical, AM.Spacing.m)
       }
     }
+    .scrollDismissesKeyboard(.interactively)
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .searchable(
@@ -981,6 +986,7 @@ struct BrowseSongCollectionView: View {
           }
         )
       }
+      .scrollDismissesKeyboard(.interactively)
       .coordinateSpace(name: "browseScroll")
       .onPreferenceChange(BrowseScrollOffsetKey.self) { scrollOffset = $0 }
     }

@@ -23,7 +23,7 @@ nonisolated struct GenreSummary: Decodable, Identifiable, Sendable {
   }
 }
 
-nonisolated private struct GenreDetail: Decodable, Sendable {
+struct GenreDetail: Decodable, Sendable {
   let id: String
   let name: String
   let songs: [Song]?
