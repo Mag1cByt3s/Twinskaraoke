@@ -81,21 +81,12 @@ struct QueueView: View {
           ) {
             audioManager.toggleAutoplay()
           }
-          QueueModeButton(
-            symbol: "wand.and.stars",
-            isActive: audioManager.autoMixEnabled,
-            accessibilityLabel: "Auto-Mix",
-            accessibilityValue: audioManager.autoMixEnabled ? "On" : "Off"
-          ) {
-            audioManager.autoMixEnabled.toggle()
-          }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .animation(queueToggleAnimation, value: audioManager.isShuffled)
         .animation(queueToggleAnimation, value: audioManager.repeatMode.isActive)
         .animation(queueToggleAnimation, value: audioManager.autoplayEnabled)
-        .animation(queueToggleAnimation, value: audioManager.autoMixEnabled)
         if let current = audioManager.currentSong {
           currentSongRow(current)
             .padding(.horizontal, 20)
@@ -235,7 +226,7 @@ struct QueueView: View {
       .accessibilityHint("Dismisses Playing Next.")
     }
     .padding(.horizontal, 20)
-    .padding(.top, 12)
+    .padding(.top, 26)
     .padding(.bottom, 14)
     .animation(headerAnimation, value: upNextCount)
   }

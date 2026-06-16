@@ -104,6 +104,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D0A500002FBD000100000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		D0F981B72F94C10900FD69AB /* Twinskaraoke */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -118,11 +123,6 @@
 				D01D91D02FB1000100E30001 /* Exceptions for "TwinskaraokeWatchApp" folder in "Twinskaraoke Watch App" target */,
 			);
 			path = TwinskaraokeWatchApp;
-			sourceTree = "<group>";
-		};
-		D0A500002FBD000100000001 /* Shared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
 			sourceTree = "<group>";
 		};
 		D1A000052FAD000100000005 /* TwinskaraokeTests */ = {
@@ -250,8 +250,8 @@
 				D0F981DB2F94C10A00FD69AB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
 				D0A500002FBD000100000001 /* Shared */,
+				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
 			);
 			name = Twinskaraoke;
 			packageProductDependencies = (
@@ -261,29 +261,6 @@
 			);
 			productName = Twinskaraoke;
 			productReference = D0F981B52F94C10900FD69AB /* Twinskaraoke.app */;
-			productType = "com.apple.product-type.application";
-		};
-		D0F981D72F94C10A00FD69AB /* Twinskaraoke Watch App */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D0F981FB2F94C10B00FD69AB /* Build configuration list for PBXNativeTarget "Twinskaraoke Watch App" */;
-			buildPhases = (
-				D0F981D42F94C10A00FD69AB /* Sources */,
-				D0F981D52F94C10A00FD69AB /* Frameworks */,
-				D0F981D62F94C10A00FD69AB /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
-				D0A500002FBD000100000001 /* Shared */,
-			);
-			name = "Twinskaraoke Watch App";
-			packageProductDependencies = (
-			);
-			productName = "Twinskaraoke Watch App";
-			productReference = D0F981D82F94C10A00FD69AB /* Twinskaraoke Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 		D0F981C12F94C10A00FD69AB /* TwinskaraokeTests */ = {
@@ -331,6 +308,29 @@
 			productName = TwinskaraokeUITests;
 			productReference = D1A000022FAD000100000002 /* TwinskaraokeUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		D0F981D72F94C10A00FD69AB /* Twinskaraoke Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0F981FB2F94C10B00FD69AB /* Build configuration list for PBXNativeTarget "Twinskaraoke Watch App" */;
+			buildPhases = (
+				D0F981D42F94C10A00FD69AB /* Sources */,
+				D0F981D52F94C10A00FD69AB /* Frameworks */,
+				D0F981D62F94C10A00FD69AB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D0A500002FBD000100000001 /* Shared */,
+				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
+			);
+			name = "Twinskaraoke Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Twinskaraoke Watch App";
+			productReference = D0F981D82F94C10A00FD69AB /* Twinskaraoke Watch App.app */;
+			productType = "com.apple.product-type.application";
 		};
 		D0F981E62F94C10B00FD69AB /* Twinskaraoke Watch AppTests */ = {
 			isa = PBXNativeTarget;

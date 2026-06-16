@@ -76,7 +76,10 @@ struct DownloadedSongsView: View {
           )
         }
       }
+      .scrollBounceBehavior(.basedOnSize)
+      .scrollDismissesKeyboard(.interactively)
       .coordinateSpace(name: "downloadedScroll")
+      .bottomChromeScrollTracking()
       .onPreferenceChange(DownloadedScrollOffsetKey.self) { scrollOffset = $0 }
     }
     .navigationTitle(scrollOffset < -180 ? "Downloaded" : "")
@@ -181,20 +184,20 @@ struct DownloadedSongsView: View {
       Button {
         playInOrder()
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play", isPrimary: true)
+        actionLabel(symbol: "play.fill", text: "Play")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       .accessibilityLabel("Play downloaded songs")
       Button {
         shuffle()
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle", isPrimary: false)
+        actionLabel(symbol: "shuffle", text: "Shuffle")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       .accessibilityLabel("Shuffle downloaded songs")
     }
   }
-  private func actionLabel(symbol: String, text: String, isPrimary: Bool) -> some View {
+  private func actionLabel(symbol: String, text: String) -> some View {
     HStack(spacing: 6) {
       Image(systemName: symbol)
         .font(.system(size: 15, weight: .semibold))
@@ -202,8 +205,8 @@ struct DownloadedSongsView: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 12)
-    .foregroundColor(isPrimary ? .appControlActiveForeground : .appAccent)
-    .background(isPrimary ? Color.appControlActiveFill : Color.appControlInactiveFill)
+    .foregroundColor(.appAccent)
+    .background(Color.appControlInactiveFill)
     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
   }
   private func refresh() {

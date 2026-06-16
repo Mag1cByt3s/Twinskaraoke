@@ -53,6 +53,7 @@ final class UserPlaylistsManager: ObservableObject {
 
         if let decoded = try? JSONDecoder().decode([UserPlaylist].self, from: data) {
           self?.playlists = decoded
+          RecentlyAddedTracker.shared.registerIfNew(decoded.map(\.id))
         }
       }
     }.resume()

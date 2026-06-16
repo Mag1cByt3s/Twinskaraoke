@@ -510,9 +510,10 @@ struct FullScreenPlayerView: View {
       } label: {
         Image(systemName: favorites.isFavorite(song.id) ? "star.fill" : "star")
           .font(.system(size: 22, weight: .regular))
-          .foregroundColor(favorites.isFavorite(song.id) ? .appAccent : .primary)
+          .foregroundColor(playerTitleIconColor(isActive: favorites.isFavorite(song.id)))
           .frame(width: 38, height: 38)
-          .background(Color.white.opacity(0.14), in: Circle())
+          .background(playerTitleButtonBackground, in: Circle())
+          .overlay(playerTitleButtonBorder)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
       .accessibilityLabel(
@@ -524,9 +525,10 @@ struct FullScreenPlayerView: View {
       } label: {
         Image(systemName: "ellipsis")
           .font(.system(size: 19, weight: .bold))
-          .foregroundColor(.primary)
+          .foregroundColor(playerTitleIconColor())
           .frame(width: 38, height: 38)
-          .background(Color.white.opacity(0.14), in: Circle())
+          .background(playerTitleButtonBackground, in: Circle())
+          .overlay(playerTitleButtonBorder)
           .contentShape(Circle())
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
@@ -560,9 +562,10 @@ struct FullScreenPlayerView: View {
       } label: {
         Image(systemName: "chevron.down")
           .font(.system(size: 17, weight: .bold))
-          .foregroundColor(.primary)
+          .foregroundColor(playerTitleIconColor())
           .frame(width: 38, height: 38)
-          .background(Color.white.opacity(0.14), in: Circle())
+          .background(playerTitleButtonBackground, in: Circle())
+          .overlay(playerTitleButtonBorder)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
       .accessibilityLabel("Hide lyrics")
@@ -573,9 +576,10 @@ struct FullScreenPlayerView: View {
       } label: {
         Image(systemName: "ellipsis")
           .font(.system(size: 19, weight: .bold))
-          .foregroundColor(.primary)
+          .foregroundColor(playerTitleIconColor())
           .frame(width: 38, height: 38)
-          .background(Color.white.opacity(0.14), in: Circle())
+          .background(playerTitleButtonBackground, in: Circle())
+          .overlay(playerTitleButtonBorder)
           .contentShape(Circle())
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
@@ -626,7 +630,7 @@ struct FullScreenPlayerView: View {
           }
         }
         .font(.system(size: 24, weight: .regular))
-        .foregroundColor(favorites.isFavorite(song.id) ? .appAccent : .primary)
+        .foregroundColor(playerTitleIconColor(isActive: favorites.isFavorite(song.id)))
         .frame(width: metrics.titleButtonSize, height: metrics.titleButtonSize)
         .contentShape(Rectangle())
       }
@@ -636,16 +640,18 @@ struct FullScreenPlayerView: View {
       )
       .accessibilityValue(song.title)
       .accessibilityHint("Updates favorites for the current song.")
-      .background(Color.white.opacity(0.14), in: Circle())
+      .background(playerTitleButtonBackground, in: Circle())
+      .overlay(playerTitleButtonBorder)
 
       Menu {
         songActions(song: song)
       } label: {
         Image(systemName: "ellipsis")
           .font(.system(size: metrics.moreButtonIconSize, weight: .bold))
-          .foregroundColor(.primary)
+          .foregroundColor(playerTitleIconColor())
           .frame(width: metrics.titleButtonSize, height: metrics.titleButtonSize)
-          .background(Color.white.opacity(0.14), in: Circle())
+          .background(playerTitleButtonBackground, in: Circle())
+          .overlay(playerTitleButtonBorder)
           .contentShape(Circle())
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .selection))
@@ -660,6 +666,20 @@ struct FullScreenPlayerView: View {
     }
     .padding(.horizontal, horizontalPadding ?? metrics.horizontalPadding)
   }
+
+  private var playerTitleButtonBackground: Color {
+    Color.clear
+  }
+
+  private var playerTitleButtonBorder: some View {
+    Circle()
+      .stroke(Color.white.opacity(0.08), lineWidth: 0.6)
+  }
+
+  private func playerTitleIconColor(isActive _: Bool = false) -> Color {
+    Color.white.opacity(0.92)
+  }
+
   @ViewBuilder
   private func progressSection(song: Song, metrics: PlayerLayoutMetrics) -> some View {
     let duration = max(audioManager.playbackDuration, 0)
@@ -675,7 +695,7 @@ struct FullScreenPlayerView: View {
       scrubValueText: formattedTime(duration * audioManager.progress)
     )
     .padding(.horizontal, metrics.horizontalPadding)
-    .padding(.top, showLyrics ? 0 : metrics.progressTopPadding)
+    .padding(.top, metrics.progressTopPadding)
     HStack {
       Text(formattedTime(elapsed))
       Spacer()

@@ -2163,11 +2163,11 @@ class AudioPlayerManager: ObservableObject {
   private func setupRemoteCommands() {
     let cc = MPRemoteCommandCenter.shared()
     cc.playCommand.addTarget { [weak self] _ in
-      guard let self = self, !self.isPlaybackRequested else { return .commandFailed }
+      guard let self = self else { return .commandFailed }
       return self.resumeCurrentPlayback() ? .success : .commandFailed
     }
     cc.pauseCommand.addTarget { [weak self] _ in
-      guard let self = self, self.isPlaybackRequested else { return .commandFailed }
+      guard let self = self else { return .commandFailed }
       return self.pauseCurrentPlayback() ? .success : .commandFailed
     }
     cc.togglePlayPauseCommand.addTarget { [weak self] _ in

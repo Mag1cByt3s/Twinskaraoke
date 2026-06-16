@@ -237,7 +237,7 @@ struct AccountView: View {
 private struct SignInPromptRow: View {
   var body: some View {
     HStack(spacing: 14) {
-      Image(systemName: "person.circle.fill")
+      Image(systemName: "person.fill")
         .font(.system(size: 60))
         .foregroundStyle(Color(.systemGray3))
       VStack(alignment: .leading, spacing: 3) {

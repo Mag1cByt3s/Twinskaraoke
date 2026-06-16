@@ -158,7 +158,7 @@ struct VideoGalleryView: View {
         VideoGalleryStateView(
           systemImage: "play.rectangle",
           title: "No Videos",
-          message: "Recent Twins Karaoke videos will appear here.",
+          message: "Recent Twinskaraoke videos will appear here.",
           buttonTitle: "Refresh"
         ) {
           viewModel.refresh()
@@ -454,7 +454,7 @@ private struct VideoGalleryStateView: View {
         VideoGalleryHintRow(
           systemImage: "play.rectangle.on.rectangle",
           title: "Karaoke videos",
-          message: "New uploads from the Twins Karaoke feed appear here."
+          message: "New uploads from the Twinskaraoke feed appear here."
         )
         VideoGalleryHintRow(
           systemImage: "wifi",

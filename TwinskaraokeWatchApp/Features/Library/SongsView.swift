@@ -34,7 +34,7 @@ struct SongsView: View {
         WatchEmptyState(
           systemImage: "music.note.list",
           title: "No Songs",
-          message: "Songs from Twins Karaoke will appear here.")
+          message: "Songs from Twinskaraoke will appear here.")
         .listRowBackground(Color.clear)
       } else {
         WatchSongsLibraryHeader(

@@ -1,4 +1,4 @@
-# Twins Karaoke client for Apple Mobile Devices
+# Twinskaraoke client for Apple Mobile Devices
 ![Platform](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%20%7C%20watchOS-black?logo=apple) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![Language](https://img.shields.io/badge/Language-Swift-FA7343?logo=swift&logoColor=white)
 
 A karaoke player for [twinskaraoke.com](https://neurokaraoke.com) — available for iPhone, iPad and Apple Watch

@@ -118,7 +118,7 @@ struct SettingsView: View {
     Section {
       SettingsOverviewCard(
         title: audioManager.currentSong?.title ?? "Ready to Play",
-        subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twins Karaoke",
+        subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twinskaraoke",
         isPlaying: audioManager.isPlaying,
         badges: settingsBadges
       )

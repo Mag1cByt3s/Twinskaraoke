@@ -180,7 +180,7 @@ struct NewView: View {
       ScrollView {
         Group {
           if viewModel.isLoading {
-            HomeSkeletonView()
+            NewSkeletonView()
               .transition(.opacity)
           } else {
             newOverview
@@ -214,7 +214,7 @@ struct NewView: View {
   }
 
   private var compactNewOverview: some View {
-    VStack(alignment: .leading, spacing: 26) {
+    VStack(alignment: .leading, spacing: 18) {
       if !viewModel.newReleases.isEmpty {
         NewFeaturedRail(
           primary: viewModel.newReleases.first,
@@ -476,7 +476,8 @@ private struct NewFeaturedRail: View {
               subtitle: primary.displayArtist.isEmpty ? "Twinskaraoke" : primary.displayArtist,
               song: primary,
               context: songs,
-              width: cardWidth
+              width: cardWidth,
+              artworkSize: cardWidth * 0.56
             )
           }
           if let secondary {
@@ -486,7 +487,8 @@ private struct NewFeaturedRail: View {
               subtitle: secondary.displayArtist,
               song: secondary,
               context: songs,
-              width: cardWidth
+              width: cardWidth,
+              artworkSize: cardWidth * 0.56
             )
           }
         }
@@ -508,6 +510,7 @@ private struct NewFeatureCard: View {
   let song: Song
   let context: [Song]
   let width: CGFloat
+  let artworkSize: CGFloat
   @EnvironmentObject private var audioManager: AudioPlayerManager
 
   var body: some View {
@@ -544,7 +547,7 @@ private struct NewFeatureCard: View {
             .background(.black.opacity(0.32), in: Circle())
             .padding(10)
         }
-        .frame(width: width, height: width * 0.56)
+        .frame(width: width, height: artworkSize)
         .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
       }
       .frame(width: width, alignment: .leading)
@@ -747,6 +750,89 @@ private struct LatestSingleSection: View {
   }
 }
 
+struct NewSkeletonView: View {
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @State private var pulse = false
+
+  private var reduceMotion: Bool {
+    AppMotion.reduceMotion(
+      systemReduceMotion: systemReduceMotion,
+      respectPreference: respectReducedMotion
+    )
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      // Title placeholder
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(Color.appPlaceholderSecondary)
+        .frame(width: 80, height: 22)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+        .padding(.top, 8)
+
+      // 2-column grid
+      LazyVGrid(
+        columns: [
+          GridItem(.flexible(), spacing: AM.Spacing.m),
+          GridItem(.flexible(), spacing: AM.Spacing.m)
+        ],
+        spacing: AM.Spacing.l
+      ) {
+        ForEach(0..<6, id: \.self) { index in
+          skeletonGridTile(index: index)
+        }
+      }
+      .padding(.horizontal, AM.Spacing.screenMargin)
+    }
+    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading New")
+    .onAppear {
+      guard !reduceMotion else {
+        pulse = false
+        return
+      }
+      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+        pulse = true
+      }
+    }
+    .onChange(of: reduceMotion) { _, reduceMotion in
+      if reduceMotion {
+        withAnimation(nil) {
+          pulse = false
+        }
+      } else {
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+          pulse = true
+        }
+      }
+    }
+  }
+
+  private func skeletonGridTile(index: Int) -> some View {
+    GeometryReader { geo in
+      let tileWidth = geo.size.width
+      VStack(alignment: .leading, spacing: AM.Spacing.s) {
+        // Square artwork placeholder
+        RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+          .fill(Color.appPlaceholderPrimary)
+          .frame(width: tileWidth, height: tileWidth)
+
+        // Text placeholders
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .fill(Color.appPlaceholderSecondary)
+          .frame(width: tileWidth * 0.72, height: 12)
+
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .fill(Color.appPlaceholderTertiary)
+          .frame(width: tileWidth * 0.54, height: 10)
+      }
+    }
+    .aspectRatio(1.0, contentMode: .fit)
+  }
+}
+
 struct HomeSkeletonView: View {
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
@@ -860,7 +946,6 @@ struct HomeSkeletonView: View {
 
 struct BrowseSongCollectionView: View {
   let title: String
-  let subtitle: String?
   let songs: [Song]
   @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -877,9 +962,8 @@ struct BrowseSongCollectionView: View {
       respectPreference: respectReducedMotion
     )
   }
-  init(title: String, subtitle: String? = nil, songs: [Song]) {
+  init(title: String, songs: [Song]) {
     self.title = title
-    self.subtitle = subtitle
     self.songs = songs
   }
   var body: some View {
@@ -975,7 +1059,7 @@ struct BrowseSongCollectionView: View {
       Text(title)
         .font(.title2.bold())
         .multilineTextAlignment(alignment)
-      Text(subtitle ?? "\(songs.count) songs")
+      Text("\(songs.count) songs")
         .font(.subheadline)
         .foregroundColor(.secondary)
     }
@@ -1043,7 +1127,7 @@ struct BrowseSongCollectionView: View {
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
       .accessibilityLabel("Play \(title)")
-      .accessibilityValue(subtitle ?? "\(songs.count) songs")
+      .accessibilityValue("\(songs.count) songs")
       Button {
         AppHaptic.selection.play()
         audioManager.playShuffled(from: songs)
@@ -1058,7 +1142,7 @@ struct BrowseSongCollectionView: View {
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
       .accessibilityLabel("Shuffle \(title)")
-      .accessibilityValue(subtitle ?? "\(songs.count) songs")
+      .accessibilityValue("\(songs.count) songs")
     }
     .padding(.horizontal, horizontalPadding)
   }

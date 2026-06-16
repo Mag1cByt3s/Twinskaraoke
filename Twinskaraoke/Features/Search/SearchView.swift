@@ -70,6 +70,7 @@ struct SearchView: View {
           }
           .listStyle(.plain)
           .scrollContentBackground(.hidden)
+          .scrollDismissesKeyboard(.interactively)
           .scrollIndicators(.hidden)
           .frame(maxWidth: resultsMaxWidth)
           .frame(maxWidth: .infinity)
@@ -164,74 +165,6 @@ private struct BrowseCategoriesView: View {
   @StateObject private var topChartVM = TopChartViewModel()
   @StateObject private var publicPlaylistsVM = PublicPlaylistsViewModel()
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-  private let topPicks: [(String, [Color])] = [
-    (
-      "Electronic",
-      [Color(red: 0.33, green: 0.74, blue: 0.50), Color(red: 0.13, green: 0.42, blue: 0.30)]
-    ),
-    (
-      "International",
-      [Color(red: 0.92, green: 0.34, blue: 0.52), Color(red: 0.62, green: 0.16, blue: 0.34)]
-    ),
-    (
-      "Dance",
-      [Color(red: 0.34, green: 0.76, blue: 0.51), Color(red: 0.12, green: 0.46, blue: 0.34)]
-    ),
-    (
-      "C-Pop",
-      [Color(red: 0.91, green: 0.36, blue: 0.56), Color(red: 0.54, green: 0.15, blue: 0.33)]
-    ),
-    (
-      "Spatial Audio",
-      [Color(red: 0.97, green: 0.18, blue: 0.28), Color(red: 0.58, green: 0.06, blue: 0.16)]
-    ),
-    (
-      "Mandopop",
-      [Color(red: 0.90, green: 0.38, blue: 0.57), Color(red: 0.55, green: 0.14, blue: 0.34)]
-    ),
-    (
-      "DJ Mixes",
-      [Color(red: 0.33, green: 0.73, blue: 0.48), Color(red: 0.12, green: 0.38, blue: 0.30)]
-    ),
-    (
-      "Replay Monthly",
-      [Color(red: 0.95, green: 0.54, blue: 0.20), Color(red: 0.45, green: 0.38, blue: 0.95)]
-    ),
-    (
-      "Charts",
-      [Color(red: 0.45, green: 0.46, blue: 0.12), Color(red: 0.22, green: 0.22, blue: 0.08)]
-    ),
-    (
-      "Jazz",
-      [Color(red: 0.31, green: 0.67, blue: 0.82), Color(red: 0.10, green: 0.32, blue: 0.48)]
-    ),
-  ]
-  private let activitiesAndMoods: [(String, [Color])] = [
-    (
-      "Workout",
-      [Color(red: 0.95, green: 0.20, blue: 0.20), Color(red: 0.40, green: 0.05, blue: 0.05)]
-    ),
-    (
-      "Chill",
-      [Color(red: 0.20, green: 0.55, blue: 0.65), Color(red: 0.05, green: 0.20, blue: 0.30)]
-    ),
-    (
-      "Focus",
-      [Color(red: 0.30, green: 0.30, blue: 0.55), Color(red: 0.05, green: 0.05, blue: 0.20)]
-    ),
-    (
-      "Sleep",
-      [Color(red: 0.20, green: 0.20, blue: 0.45), Color(red: 0.05, green: 0.05, blue: 0.20)]
-    ),
-    (
-      "Party",
-      [Color(red: 0.90, green: 0.30, blue: 0.75), Color(red: 0.40, green: 0.05, blue: 0.40)]
-    ),
-    (
-      "Romance",
-      [Color(red: 0.95, green: 0.40, blue: 0.55), Color(red: 0.45, green: 0.10, blue: 0.20)]
-    ),
-  ]
   private let genres: [(String, [Color])] = [
     (
       "Pop", [Color(red: 0.90, green: 0.20, blue: 0.55), Color(red: 0.40, green: 0.05, blue: 0.30)]
@@ -293,17 +226,30 @@ private struct BrowseCategoriesView: View {
   }
 
   private var categoryColumns: [GridItem] {
-    AM.Layout.adaptiveGridColumns(
-      minimum: horizontalSizeClass == .compact ? 160 : 178,
+    if horizontalSizeClass == .compact {
+      return compactTwoColumns
+    }
+    return AM.Layout.adaptiveGridColumns(
+      minimum: 178,
       spacing: AM.Spacing.m
     )
   }
 
   private var featuredColumns: [GridItem] {
-    AM.Layout.adaptiveGridColumns(
-      minimum: horizontalSizeClass == .compact ? 160 : 232,
+    if horizontalSizeClass == .compact {
+      return compactTwoColumns
+    }
+    return AM.Layout.adaptiveGridColumns(
+      minimum: 232,
       spacing: AM.Spacing.m
     )
+  }
+
+  private var compactTwoColumns: [GridItem] {
+    [
+      GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: AM.Spacing.m, alignment: .top),
+      GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: AM.Spacing.m, alignment: .top),
+    ]
   }
 
   var body: some View {
@@ -313,19 +259,17 @@ private struct BrowseCategoriesView: View {
           wideHighlightsSection
         } else {
           featuredSection
-          topPicksSection
         }
-        section(title: "Activities & Moods", items: activitiesAndMoods)
         genresSection
-        if !topChartVM.weeklyTrending.isEmpty {
-          moreToExploreSection
-        }
       }
       .frame(maxWidth: contentMaxWidth, alignment: .leading)
       .frame(maxWidth: .infinity)
       .padding(.top, AM.Spacing.s)
       .padding(.bottom, AM.Spacing.l)
     }
+    .scrollBounceBehavior(.basedOnSize)
+    .scrollDismissesKeyboard(.interactively)
+    .bottomChromeScrollTracking()
     .musicScreenBackground()
     .scrollIndicators(.hidden)
     .tabBarScrollInset()
@@ -343,12 +287,7 @@ private struct BrowseCategoriesView: View {
   }
 
   private var wideHighlightsSection: some View {
-    HStack(alignment: .top, spacing: AM.Spacing.xxl) {
-      featuredSectionContent
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-      topPicksSectionContent
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
+    featuredSectionContent
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("SearchBrowse.WideHighlights")
   }
@@ -372,8 +311,6 @@ private struct BrowseCategoriesView: View {
       ) {
         SearchFeaturedShortcutTile(
           title: "Twinskaraoke Top 100",
-          subtitle: topChartVM.songs.isEmpty ? "Top songs" : "\(topChartVM.songs.count) songs",
-          systemImage: "chart.line.uptrend.xyaxis",
           gradient: [
             Color(red: 0.98, green: 0.12, blue: 0.22),
             Color(red: 0.56, green: 0.02, blue: 0.12),
@@ -395,7 +332,6 @@ private struct BrowseCategoriesView: View {
           subtitle: publicPlaylistsVM.playlists.isEmpty
             ? "Community mixes"
             : "\(publicPlaylistsVM.playlists.count) playlists",
-          systemImage: "music.note.list",
           gradient: [
             Color(red: 0.19, green: 0.55, blue: 0.96),
             Color(red: 0.12, green: 0.22, blue: 0.58),
@@ -410,44 +346,6 @@ private struct BrowseCategoriesView: View {
       .accessibilityHint("Opens public karaoke playlists")
     }
     .padding(.horizontal, sectionHorizontalPadding)
-  }
-
-  private var topPicksSection: some View {
-    topPicksSectionContent
-  }
-
-  private var topPicksSectionContent: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader("Browse Categories")
-      LazyVGrid(columns: categoryColumns, spacing: AM.Spacing.m) {
-        categoryLinks(for: topPicks)
-      }
-      .padding(.horizontal, sectionHorizontalPadding)
-    }
-    .accessibilityIdentifier("SearchBrowse.Categories")
-  }
-
-  @ViewBuilder
-  private func categoryLinks(for items: [(String, [Color])]) -> some View {
-    ForEach(items, id: \.0) { item in
-      NavigationLink(destination: SearchCategorySongCollectionView(title: item.0, query: item.0)) {
-        CategoryTile(title: item.0, gradient: item.1)
-      }
-      .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.78, haptic: .selection))
-      .accessibilityLabel(item.0)
-      .accessibilityIdentifier("SearchCategory.\(item.0.accessibilitySlug)")
-      .accessibilityHint("Opens \(item.0) songs")
-    }
-  }
-
-  private func section(title: String, items: [(String, [Color])]) -> some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader(title)
-      LazyVGrid(columns: categoryColumns, spacing: AM.Spacing.m) {
-        categoryLinks(for: items)
-      }
-      .padding(.horizontal, sectionHorizontalPadding)
-    }
   }
 
   private var genresSection: some View {
@@ -500,22 +398,7 @@ private struct BrowseCategoriesView: View {
       }
     }
   }
-  private var moreToExploreSection: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      AMSectionHeader(
-        "More to Explore",
-        destination: BrowseSongCollectionView(
-          title: "More to Explore", songs: topChartVM.weeklyTrending))
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
-          ForEach(topChartVM.weeklyTrending) { song in
-            MusicGridCard(song: song, context: topChartVM.weeklyTrending)
-          }
-        }
-        .padding(.horizontal, sectionHorizontalPadding)
-      }
-    }
-  }
+
   private func paletteForGenre(_ name: String) -> [Color] {
     if let match = genres.first(where: {
       $0.0.localizedCaseInsensitiveCompare(name) == .orderedSame
@@ -533,7 +416,6 @@ private struct TopChartCollectionView: View {
   var body: some View {
     BrowseSongCollectionView(
       title: "Twinskaraoke Top 100",
-      subtitle: "\(viewModel.songs.count) songs",
       songs: viewModel.songs
     )
     .task {
@@ -568,7 +450,6 @@ struct GenreDetailView: View {
     let songs = viewModel.allSongs[genre.id] ?? []
     BrowseSongCollectionView(
       title: genre.name,
-      subtitle: "\(genre.songCount) songs",
       songs: songs
     )
   }
@@ -611,7 +492,6 @@ struct SearchCategorySongCollectionView: View {
       } else {
         BrowseSongCollectionView(
           title: title,
-          subtitle: "\(loader.songs.count) songs",
           songs: loader.songs
         )
       }
@@ -646,6 +526,8 @@ private struct SearchResultsLoadingView: View {
       .padding(.top, 8)
       .padding(.bottom, AM.Spacing.l)
     }
+    .scrollBounceBehavior(.basedOnSize)
+    .bottomChromeScrollTracking()
     .scrollIndicators(.hidden)
     .tabBarScrollInset()
     .accessibilityLabel("Searching songs")
@@ -926,6 +808,8 @@ private struct SearchCategoryLoadingView: View {
       }
       .padding(.bottom, AM.Spacing.l)
     }
+    .scrollBounceBehavior(.basedOnSize)
+    .bottomChromeScrollTracking()
     .tabBarScrollInset()
     .accessibilityLabel("Loading \(title) songs")
   }
@@ -954,8 +838,7 @@ private struct SearchCategoryEmptyView: View {
 
 private struct SearchFeaturedShortcutTile: View {
   let title: String
-  let subtitle: String
-  let systemImage: String
+  var subtitle: String? = nil
   let gradient: [Color]
   var artworkURL: URL? = nil
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -974,22 +857,18 @@ private struct SearchFeaturedShortcutTile: View {
       )
       .allowsHitTesting(false)
 
-      Image(systemName: systemImage)
-        .font(.system(size: isCompactWidth ? 52 : 60, weight: .bold))
-        .foregroundStyle(.white.opacity(0.20))
-        .offset(x: isCompactWidth ? 96 : 128, y: isCompactWidth ? -42 : -50)
-        .allowsHitTesting(false)
-
       VStack(alignment: .leading, spacing: 5) {
         Text(title)
           .font(.system(size: isCompactWidth ? 20 : 22, weight: .bold))
           .foregroundColor(.white)
           .lineLimit(2)
           .minimumScaleFactor(0.82)
-        Text(subtitle)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.82))
-          .lineLimit(1)
+        if let subtitle {
+          Text(subtitle)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.82))
+            .lineLimit(1)
+        }
       }
       .shadow(color: .black.opacity(0.34), radius: 4, x: 0, y: 1)
       .padding(AM.Spacing.l)
@@ -1049,11 +928,6 @@ private struct CategoryTile: View {
         endPoint: .bottom
       )
       .allowsHitTesting(false)
-      Image(systemName: symbol)
-        .font(.system(size: isCompactWidth ? 48 : 54, weight: .bold))
-        .foregroundStyle(.white.opacity(0.18))
-        .offset(x: isCompactWidth ? 64 : 70, y: isCompactWidth ? -18 : -22)
-        .allowsHitTesting(false)
       Text(title)
         .font(.system(size: isCompactWidth ? 19 : 20, weight: .bold))
         .foregroundColor(.white)
@@ -1067,19 +941,6 @@ private struct CategoryTile: View {
     .clipShape(RoundedRectangle(cornerRadius: AM.Radius.tile, style: .continuous))
     .amShadow(AM.Shadow.card)
     .contentShape(RoundedRectangle(cornerRadius: AM.Radius.tile, style: .continuous))
-  }
-
-  private var symbol: String {
-    switch title {
-    case "Charts": return "chart.bar.fill"
-    case "Public Playlists": return "music.note.list"
-    case "Jazz": return "music.quarternote.3"
-    case "Replay Monthly": return "clock.arrow.circlepath"
-    case "Spatial Audio": return "airpodspro"
-    case "Twinskaraoke Top 100": return "chart.line.uptrend.xyaxis"
-    case "Behind the Songs": return "slider.horizontal.3"
-    default: return "music.note"
-    }
   }
 }
 

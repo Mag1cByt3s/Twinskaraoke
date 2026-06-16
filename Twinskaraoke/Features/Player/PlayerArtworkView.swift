@@ -17,7 +17,6 @@ struct PlayerArtworkView: View {
       .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
       .id(song.id)
       .amShadow(audioManager.isPlaying ? AM.Shadow.heroPlaying : AM.Shadow.heroIdle)
-      .scaleEffect(reduceMotion ? 1.0 : (audioManager.isPlaying ? 1.0 : 0.93))
       .animation(artworkPlaybackAnimation, value: audioManager.isPlaying)
       if audioManager.isBuffering {
         bufferingOverlay

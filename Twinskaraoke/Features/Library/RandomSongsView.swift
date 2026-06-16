@@ -70,6 +70,7 @@ struct RandomSongsView: View {
         value: viewModel.songs.map(\.id))
       .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: viewModel.isLoading)
     }
+    .bottomChromeScrollTracking()
     .scrollIndicators(.hidden)
     .musicScreenBackground()
     .navigationTitle("Random")

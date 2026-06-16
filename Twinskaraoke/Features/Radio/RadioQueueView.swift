@@ -122,7 +122,7 @@ struct RadioQueueView: View {
       .accessibilityHint("Dismisses the radio queue.")
     }
     .padding(.horizontal, 20)
-    .padding(.top, 12)
+    .padding(.top, 26)
     .padding(.bottom, 12)
   }
 

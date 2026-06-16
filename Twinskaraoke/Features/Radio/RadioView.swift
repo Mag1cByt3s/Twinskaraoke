@@ -39,16 +39,12 @@ struct RadioView: View {
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           HStack(spacing: 12) {
-            Button {
+            ToolbarIconButton(
+              systemImage: "list.bullet",
+              accessibilityLabel: "Live Schedule"
+            ) {
               showLiveSchedule()
-            } label: {
-              Image(systemName: "list.bullet")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 34, height: 34)
-                .background(Color.appControlInactiveFill, in: Circle())
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.9, dim: 0.72, haptic: .selection))
-            .accessibilityLabel("Live Schedule")
             .accessibilityHint("Shows live now, up next, and recently played songs.")
 
             AccountToolbarButton()
@@ -125,8 +121,6 @@ struct RadioView: View {
     VStack(spacing: AM.Spacing.shelfSpacing) {
       refreshBanner(horizontalPadding: AM.Spacing.screenMargin)
       stationCard()
-      hostedStationsSection()
-      featuredShowsSection()
       if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
         historySection(history: history)
       }
@@ -142,15 +136,12 @@ struct RadioView: View {
           .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
 
         VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
-          featuredShowsSection(horizontalPadding: 0)
           if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
             historySection(history: history, horizontalPadding: 0)
           }
         }
         .frame(minWidth: 300, idealWidth: 360, maxWidth: 420, alignment: .topLeading)
       }
-
-      hostedStationsSection(horizontalPadding: 0)
     }
     .frame(maxWidth: 1120, alignment: .topLeading)
     .frame(maxWidth: .infinity, alignment: .top)
@@ -858,45 +849,8 @@ struct RadioSkeletonView: View {
 
   var body: some View {
     VStack(spacing: AM.Spacing.shelfSpacing) {
-      VStack(spacing: 14) {
-        RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
-          .fill(Color.appPlaceholderPrimary)
-          .frame(maxWidth: 280)
-          .aspectRatio(1, contentMode: .fit)
-          .padding(.horizontal, 32)
-        VStack(spacing: 8) {
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(Color.appPlaceholderSecondary)
-            .frame(width: 220, height: 22)
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 150, height: 14)
-        }
-        Circle()
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 64, height: 64)
-        HStack(spacing: 12) {
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 48, height: 48)
-          VStack(alignment: .leading, spacing: 7) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 74, height: 10)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 180, height: 12)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 120, height: 10)
-          }
-          Spacer()
-        }
-        .padding(.horizontal, 16)
-      }
-
-      skeletonShelf(titleWidth: 132, tileSize: 200, count: 3)
-      skeletonShelf(titleWidth: 120, tileSize: 160, count: 4)
+      stationCardSkeleton
+      historySkeleton
     }
     .opacity(reduceMotion ? 1.0 : (pulse ? 0.58 : 1.0))
     .onAppear {
@@ -923,39 +877,80 @@ struct RadioSkeletonView: View {
     }
   }
 
+  private var stationCardSkeleton: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .fill(Color.appPlaceholderSecondary)
+          .frame(width: 118, height: 11)
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(Color.appPlaceholderSecondary)
+          .frame(width: 220, height: 30)
+      }
+      .padding(.horizontal, AM.Spacing.screenMargin)
+
+      ZStack(alignment: .bottomLeading) {
+        RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
+          .fill(Color.appPlaceholderPrimary)
+          .frame(maxWidth: .infinity, minHeight: 236, maxHeight: 236)
+
+        VStack(alignment: .leading, spacing: 10) {
+          RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(Color.appPlaceholderTertiary)
+            .frame(width: 58, height: 20)
+
+          HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+              .fill(Color.appPlaceholderQuaternary)
+              .frame(width: 44, height: 44)
+            RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+              .fill(Color.appPlaceholderQuaternary)
+              .frame(width: 44, height: 44)
+            Spacer()
+          }
+        }
+        .padding(16)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
+      .padding(.horizontal, AM.Spacing.screenMargin)
+    }
+  }
+
+  private var historySkeleton: some View {
+    VStack(alignment: .leading, spacing: AM.Spacing.s) {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(Color.appPlaceholderSecondary)
+        .frame(width: 138, height: 18)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+
+      VStack(spacing: 0) {
+        ForEach(0..<3, id: \.self) { _ in
+          HStack(spacing: AM.Spacing.m) {
+            RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+              .fill(Color.appPlaceholderPrimary)
+              .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 6) {
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.appPlaceholderSecondary)
+                .frame(width: 180, height: 14)
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.appPlaceholderPrimary)
+                .frame(width: 132, height: 12)
+            }
+            Spacer(minLength: 0)
+          }
+          .padding(.horizontal, AM.Spacing.screenMargin)
+          .padding(.vertical, 3)
+          Divider().padding(.leading, AM.Spacing.screenMargin + 48 + AM.Spacing.m)
+        }
+      }
+    }
+  }
+
   private var reduceMotion: Bool {
     AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )
-  }
-
-  private func skeletonShelf(titleWidth: CGFloat, tileSize: CGFloat, count: Int) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.appPlaceholderSecondary)
-        .frame(width: titleWidth, height: 16)
-        .padding(.horizontal, 16)
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 14) {
-          ForEach(0..<count, id: \.self) { _ in
-            VStack(alignment: .leading, spacing: 8) {
-              RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: tileSize, height: tileSize)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: tileSize * 0.68, height: 12)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: tileSize * 0.48, height: 10)
-            }
-            .frame(width: tileSize)
-          }
-        }
-        .padding(.horizontal, 16)
-      }
-    }
-    .redacted(reason: .placeholder)
   }
 }

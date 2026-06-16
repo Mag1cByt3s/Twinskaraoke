@@ -149,7 +149,7 @@ struct ArtistsView: View {
           systemImage: "music.mic",
           title: searchText.isEmpty ? "No Artists" : "No Results",
           message: searchText.isEmpty
-            ? "Artists you load from Twins Karaoke will appear here."
+            ? "Artists you load from Twinskaraoke will appear here."
             : "Try another artist."
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)

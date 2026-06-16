@@ -147,15 +147,11 @@ private struct PopupHostView: View {
   private func configureTabBarAppearance() {
     #if canImport(UIKit)
       let appearance = UITabBarAppearance()
-      appearance.configureWithOpaqueBackground()
+      appearance.configureWithTransparentBackground()
       appearance.backgroundEffect = nil
-      appearance.backgroundColor = UIColor { trait in
-        trait.userInterfaceStyle == .dark
-          ? UIColor.black
-          : UIColor.white
-      }
-      appearance.shadowColor = UIColor.separator.withAlphaComponent(0.18)
-      UITabBar.appearance().isTranslucent = false
+      appearance.backgroundColor = .clear
+      appearance.shadowColor = .clear
+      UITabBar.appearance().isTranslucent = true
       UITabBar.appearance().standardAppearance = appearance
       UITabBar.appearance().scrollEdgeAppearance = appearance
     #endif

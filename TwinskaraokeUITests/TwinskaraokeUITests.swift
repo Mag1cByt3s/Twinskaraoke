@@ -53,14 +53,6 @@ final class TwinskaraokeUITests: XCTestCase {
     let searchApp = launchApp(initialSection: "search")
     XCTAssertTrue(searchApp.wait(for: .runningForeground, timeout: 15))
     XCTAssertTrue(
-      searchApp.staticTexts["Dance"].waitForExistence(timeout: 8),
-      "Expected Search browse categories to be visible."
-    )
-    XCTAssertTrue(
-      searchApp.staticTexts["Browse Categories"].waitForExistence(timeout: 8),
-      "Expected Search to label the browse category grid."
-    )
-    XCTAssertTrue(
       searchApp.staticTexts["Featured"].waitForExistence(timeout: 8),
       "Expected Search to expose featured Apple Music-style shortcuts."
     )
@@ -71,7 +63,7 @@ final class TwinskaraokeUITests: XCTestCase {
           in: searchApp,
           timeout: 8
         ),
-        "Expected Search to group featured shortcuts and categories in a wide iPad layout."
+        "Expected Search to group featured shortcuts in a wide iPad layout."
       )
     }
     XCTAssertTrue(

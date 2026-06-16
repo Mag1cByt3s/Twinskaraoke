@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 #if canImport(UIKit)
@@ -107,11 +108,17 @@ extension Color {
       light: UIColor(red: 0.95, green: 0.95, blue: 0.96, alpha: 1),
       dark: UIColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1))
     static let appPlaceholderTertiary = adaptive(
-      light: UIColor(red: 0.98, green: 0.18, blue: 0.26, alpha: 1),
-      dark: UIColor(red: 0.60, green: 0.04, blue: 0.10, alpha: 1))
+      light: UIColor(red: 0.78, green: 0.78, blue: 0.82, alpha: 1),
+      dark: UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1))
     static let appPlaceholderQuaternary = adaptive(
       light: UIColor(red: 0.72, green: 0.72, blue: 0.76, alpha: 1),
       dark: UIColor(red: 0.04, green: 0.04, blue: 0.05, alpha: 1))
+    static let appToolbarPillBackground = adaptive(
+      light: UIColor.black.withAlphaComponent(0.82),
+      dark: UIColor.white.withAlphaComponent(0.12))
+    static let appToolbarAvatarBackground = adaptive(
+      light: UIColor.black.withAlphaComponent(0.72),
+      dark: UIColor.white.withAlphaComponent(0.12))
   #endif
 }
 
@@ -133,10 +140,10 @@ enum AM {
     static let xl: CGFloat = 20
     static let xxl: CGFloat = 28
     static let screenMargin: CGFloat = 16
-    static let shelfSpacing: CGFloat = 30
+    static let shelfSpacing: CGFloat = 20
     static let shelfTile: CGFloat = 162
     static let compactShelfTile: CGFloat = 132
-    static let tabBarContentInset: CGFloat = 132
+    static let tabBarContentInset: CGFloat = 80
     static let sidebarContentInset: CGFloat = 32
   }
 
@@ -158,6 +165,10 @@ enum AM {
       let minimum = compact ? 118.0 : 148.0
       let maximum = compact ? 152.0 : 190.0
       return min(max(rawWidth, minimum), maximum)
+    }
+
+    static func playlistShelfTileWidth(for availableWidth: CGFloat) -> CGFloat {
+      min(max(availableWidth * 0.42, 148), Spacing.shelfTile)
     }
 
     static func adaptiveGridColumns(
@@ -222,11 +233,60 @@ extension View {
   func musicScreenBackground() -> some View {
     self.background(Color.appBackground.ignoresSafeArea())
   }
+  func bottomChromeScrollTracking() -> some View {
+    self.modifier(BottomChromeScrollTrackingModifier())
+  }
   func tabBarScrollInset() -> some View {
     self.modifier(TabBarScrollInsetModifier())
   }
   func tabBarBottomPadding() -> some View {
     self.modifier(TabBarBottomPaddingModifier())
+  }
+}
+
+@MainActor
+final class BottomChromeState: ObservableObject {
+  static let shared = BottomChromeState()
+
+  @Published private(set) var isCollapsed = false
+
+  private let collapseThreshold: CGFloat = 36
+  private let expandThreshold: CGFloat = 4
+
+  private init() {}
+
+  func updateScrollOffset(_ offset: CGFloat) {
+    if offset > collapseThreshold {
+      setCollapsed(true)
+    } else if offset <= expandThreshold {
+      setCollapsed(false)
+    }
+  }
+
+  func expand() {
+    setCollapsed(false)
+  }
+
+  private func setCollapsed(_ collapsed: Bool) {
+    guard isCollapsed != collapsed else { return }
+    isCollapsed = collapsed
+  }
+}
+
+private struct BottomChromeScrollTrackingModifier: ViewModifier {
+  @ObservedObject private var chromeState = BottomChromeState.shared
+
+  func body(content: Content) -> some View {
+    if #available(iOS 18.0, *) {
+      content
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+          max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+        } action: { _, offset in
+          chromeState.updateScrollOffset(offset)
+        }
+    } else {
+      content
+    }
   }
 }
 
@@ -275,25 +335,28 @@ struct AccountToolbarButton: View {
     NavigationLink {
       AccountView()
     } label: {
-      avatarView
-        .frame(width: 30, height: 30)
-        .clipShape(Circle())
-        .overlay(
-          Circle()
-            .stroke(Color.appDivider.opacity(0.75), lineWidth: 0.8)
-        )
-        .shadow(color: .black.opacity(0.10), radius: 5, y: 2)
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
+      ZStack {
+        ToolbarControlBackground()
+
+        avatarContent
+          .frame(width: 30, height: 30)
+          .clipShape(Circle())
+          .overlay(
+            Circle()
+              .strokeBorder(Color.appDivider.opacity(0.70), lineWidth: 0.6)
+          )
+      }
+      .frame(width: 36, height: 36)
+      .contentShape(Circle())
     }
-    .buttonStyle(PressableButtonStyle(scale: 0.94, dim: 0.8, haptic: .selection))
+    .buttonStyle(PressableButtonStyle(scale: 0.92, dim: 0.78, haptic: .selection))
     .accessibilityIdentifier("AccountToolbarButton")
     .accessibilityLabel(accessibilityLabel)
     .accessibilityHint("Opens account and settings.")
   }
 
   @ViewBuilder
-  private var avatarView: some View {
+  private var avatarContent: some View {
     if let url = avatarURL {
       AsyncImage(url: url) { phase in
         switch phase {
@@ -311,18 +374,17 @@ struct AccountToolbarButton: View {
   private var fallbackAvatar: some View {
     ZStack {
       Circle()
-        .fill(Color.appSecondaryBackground)
-      Circle()
-        .strokeBorder(Color.appDivider.opacity(0.9), lineWidth: 0.8)
+        .fill(Color.appControlInactiveFill)
+
       if let initial = displayInitial {
         Text(initial)
           .font(.system(size: 14, weight: .semibold))
-          .foregroundColor(.primary)
+          .foregroundStyle(.primary)
       } else {
         Image(systemName: "person.crop.circle.fill")
-          .font(.system(size: 28, weight: .regular))
+          .font(.system(size: 25, weight: .regular))
           .symbolRenderingMode(.hierarchical)
-          .foregroundColor(.secondary)
+          .foregroundStyle(.secondary)
       }
     }
   }
@@ -344,6 +406,74 @@ struct AccountToolbarButton: View {
 
   private var accessibilityLabel: String {
     displayName.isEmpty ? "Account" : "Account, \(displayName)"
+  }
+}
+
+struct ToolbarIconButton: View {
+  let systemImage: String
+  let accessibilityLabel: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      ToolbarIconLabel(systemImage: systemImage)
+    }
+    .buttonStyle(PressableButtonStyle(scale: 0.92, dim: 0.78, haptic: .selection))
+    .accessibilityLabel(accessibilityLabel)
+  }
+}
+
+struct ToolbarCapsuleMenu<Content: View>: View {
+  let accessibilityLabel: String
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    Menu {
+      content()
+    } label: {
+      ToolbarIconLabel(systemImage: "ellipsis")
+    }
+    .buttonStyle(PressableButtonStyle(scale: 0.92, dim: 0.78, haptic: .selection))
+    .accessibilityLabel(accessibilityLabel)
+  }
+}
+
+private struct ToolbarIconLabel: View {
+  let systemImage: String
+  @Environment(\.isEnabled) private var isEnabled
+
+  var body: some View {
+    ZStack {
+      ToolbarControlBackground()
+      Image(systemName: systemImage)
+        .font(.system(size: 16, weight: .semibold))
+        .symbolRenderingMode(.hierarchical)
+        .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+    }
+    .frame(width: 36, height: 36)
+    .contentShape(Circle())
+  }
+}
+
+private struct ToolbarControlBackground: View {
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    Circle()
+      .fill(.regularMaterial)
+      .overlay {
+        Circle()
+          .strokeBorder(borderColor, lineWidth: 0.7)
+      }
+      .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
+  }
+
+  private var borderColor: Color {
+    colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.08)
+  }
+
+  private var shadowColor: Color {
+    colorScheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.10)
   }
 }
 

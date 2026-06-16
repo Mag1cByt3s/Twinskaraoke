@@ -132,7 +132,7 @@ struct LibraryView: View {
       .navigationBarTitleDisplayMode(.large)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          HStack(spacing: usesCompactToolbar ? 4 : 10) {
+          HStack(spacing: usesCompactToolbar ? 8 : 12) {
             LibraryToolbarActions(
               compact: usesCompactToolbar,
               onCreatePlaylist: {
@@ -183,8 +183,6 @@ struct LibraryView: View {
       if !recentlyAddedSongs.isEmpty {
         RecentlyAddedSection(songs: recentlyAddedSongs)
       }
-
-      librarySecondaryLinks
     }
   }
 
@@ -192,12 +190,7 @@ struct LibraryView: View {
     VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
       HStack(alignment: .top, spacing: AM.Spacing.xxl) {
         VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
-          LibraryOverviewGroup(title: "Collection") {
-            libraryPrimaryLinksContent
-          }
-          LibraryOverviewGroup(title: "More") {
-            librarySecondaryLinksContent
-          }
+          libraryPrimaryLinksContent
         }
         .frame(minWidth: 300, idealWidth: 360, maxWidth: 400)
 
@@ -235,27 +228,8 @@ struct LibraryView: View {
       libraryLink(
         icon: "arrow.down.circle",
         title: "Downloaded",
-        destination: DownloadedSongsView(),
-        showsDivider: false
+        destination: DownloadedSongsView()
       )
-    }
-  }
-
-  private var librarySecondaryLinks: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.s) {
-      Text("More")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundColor(.secondary)
-        .textCase(.uppercase)
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      librarySecondaryLinksContent
-        .padding(.horizontal, AM.Spacing.screenMargin)
-    }
-  }
-
-  private var librarySecondaryLinksContent: some View {
-    VStack(spacing: 0) {
       libraryLink(icon: "play.rectangle", title: "Video Gallery", destination: VideoGalleryView())
       libraryLink(icon: "paintpalette", title: "Art Gallery", destination: ArtGalleryView())
       libraryLink(
@@ -275,6 +249,14 @@ struct LibraryView: View {
         showsDivider: false
       )
     }
+  }
+
+  private var librarySecondaryLinks: some View {
+    EmptyView()
+  }
+
+  private var librarySecondaryLinksContent: some View {
+    EmptyView()
   }
 
   @ViewBuilder
@@ -300,7 +282,7 @@ struct LibraryView: View {
 
     if showsDivider {
       Divider()
-        .padding(.leading, 68)
+        .padding(.leading, 66)
     }
   }
 
@@ -319,73 +301,14 @@ private struct LibraryToolbarActions: View {
   let onRefresh: () -> Void
 
   var body: some View {
-    if compact {
-      compactMenu
-    } else {
-      expandedActions
-    }
-  }
-
-  private var compactMenu: some View {
-    Menu {
+    ToolbarCapsuleMenu(accessibilityLabel: "Library Actions") {
       Button(action: onCreatePlaylist) {
         Label("New Playlist", systemImage: "text.badge.plus")
       }
       Button(action: onRefresh) {
         Label("Refresh Library", systemImage: "arrow.clockwise")
       }
-    } label: {
-      Image(systemName: "ellipsis")
-        .font(.system(size: 20, weight: .bold))
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
     }
-    .foregroundColor(.primary)
-    .background(Color.appGlassFill, in: Circle())
-    .overlay(
-      Circle()
-        .stroke(Color.appDivider, lineWidth: 1)
-    )
-    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-    .accessibilityLabel("More Library Actions")
-  }
-
-  private var expandedActions: some View {
-    HStack(spacing: 0) {
-      Button(action: onCreatePlaylist) {
-        Image(systemName: "text.badge.plus")
-          .font(.system(size: 21, weight: .semibold))
-          .frame(width: 56, height: 44)
-          .contentShape(Rectangle())
-      }
-      .accessibilityLabel("New Playlist")
-
-      Rectangle()
-        .fill(Color.appDivider)
-        .frame(width: 1, height: 22)
-
-      Menu {
-        Button(action: onCreatePlaylist) {
-          Label("New Playlist", systemImage: "text.badge.plus")
-        }
-        Button(action: onRefresh) {
-          Label("Refresh Library", systemImage: "arrow.clockwise")
-        }
-      } label: {
-        Image(systemName: "ellipsis")
-          .font(.system(size: 20, weight: .bold))
-          .frame(width: 56, height: 44)
-          .contentShape(Rectangle())
-      }
-      .accessibilityLabel("More Library Actions")
-    }
-    .foregroundColor(.primary)
-    .background(Color.appGlassFill, in: Capsule())
-    .overlay(
-      Capsule()
-        .stroke(Color.appDivider, lineWidth: 1)
-    )
-    .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
   }
 }
 
