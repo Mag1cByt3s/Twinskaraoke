@@ -1,4 +1,49 @@
+import Combine
 import SwiftUI
+
+/// Song rows only need a tiny playback snapshot. Observing the full audio manager here
+/// would make every visible row redraw on high-frequency progress updates while scrolling.
+@MainActor
+final class PlaybackRowState: ObservableObject {
+  static let shared = PlaybackRowState()
+
+  @Published private(set) var currentSongID: String?
+  @Published private(set) var isPlaying = false
+  @Published private(set) var isRadioMode = false
+  @Published private(set) var radioArtworkURL: URL?
+
+  private var cancellables = Set<AnyCancellable>()
+
+  private init(manager: AudioPlayerManager = .shared) {
+    manager.$currentSong
+      .map(\.?.id)
+      .removeDuplicates()
+      .sink { [weak self] in self?.currentSongID = $0 }
+      .store(in: &cancellables)
+
+    manager.$isPlaying
+      .removeDuplicates()
+      .sink { [weak self] in self?.isPlaying = $0 }
+      .store(in: &cancellables)
+
+    manager.$isRadioMode
+      .removeDuplicates()
+      .sink { [weak self] in self?.isRadioMode = $0 }
+      .store(in: &cancellables)
+
+    manager.$radioArtworkURL
+      .removeDuplicates()
+      .sink { [weak self] in self?.radioArtworkURL = $0 }
+      .store(in: &cancellables)
+  }
+
+  func displayImageURL(for song: Song) -> URL? {
+    if isRadioMode, currentSongID == song.id, let radioArtworkURL {
+      return radioArtworkURL
+    }
+    return song.imageURL
+  }
+}
 
 enum SongRowSize {
   case compact, regular
@@ -32,18 +77,21 @@ enum SongRowSize {
 struct SongRow: View {
   let song: Song
   let size: SongRowSize
+  /// Large collection screens can hide thumbnails so rows stay cheap during fast flings.
   var showsArtwork: Bool = true
   var trailing: AnyView? = nil
-  @EnvironmentObject var audioManager: AudioPlayerManager
+  @ObservedObject private var playback = PlaybackRowState.shared
   @StateObject private var downloads = DownloadManager.shared
   @State private var showAddToPlaylist = false
-  private var isCurrentSong: Bool { audioManager.currentSong?.id == song.id }
+  private var isCurrentSong: Bool { playback.currentSongID == song.id }
   var body: some View {
     HStack(spacing: 12) {
       ZStack {
         if showsArtwork {
           LoadingImage(
-            url: audioManager.displayImageURL(for: song), cornerRadius: size.cornerRadius
+            url: playback.displayImageURL(for: song),
+            cornerRadius: size.cornerRadius,
+            fixedDisplaySize: CGSize(width: size.artSize, height: size.artSize)
           )
           .frame(width: size.artSize, height: size.artSize)
           .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous))
@@ -61,7 +109,7 @@ struct SongRow: View {
           RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
             .fill(Color.appArtworkOverlay)
             .frame(width: size.artSize, height: size.artSize)
-          EqualizerBars(isAnimating: audioManager.isPlaying)
+          EqualizerBars(isAnimating: playback.isPlaying)
             .frame(width: size.indicatorSize, height: size.indicatorSize)
             .foregroundColor(.primary)
         }
@@ -112,7 +160,6 @@ struct SongRow: View {
       songActions
     } preview: {
       SongContextPreview(song: song)
-        .environmentObject(audioManager)
     }
     .sheet(isPresented: $showAddToPlaylist) {
       AddToPlaylistSheet(song: song)
@@ -236,7 +283,7 @@ struct MusicGridCard: View {
   var size: MusicGridCardSize = .regular
   var width: CGFloat?
   var accessibilityIdentifier: String?
-  @EnvironmentObject private var audioManager: AudioPlayerManager
+  @ObservedObject private var playback = PlaybackRowState.shared
   @State private var showAddToPlaylist = false
 
   init(
@@ -261,7 +308,7 @@ struct MusicGridCard: View {
   var body: some View {
     Button {
       AppHaptic.selection.play()
-      audioManager.play(song: song, context: context)
+      AudioPlayerManager.shared.play(song: song, context: context)
     } label: {
       VStack(alignment: .leading, spacing: size.textSpacing) {
         artwork
@@ -284,7 +331,6 @@ struct MusicGridCard: View {
       }
     } preview: {
       SongContextPreview(song: song)
-        .environmentObject(audioManager)
     }
     .sheet(isPresented: $showAddToPlaylist) {
       AddToPlaylistSheet(song: song)
@@ -313,8 +359,14 @@ struct MusicGridCard: View {
 
   @ViewBuilder
   private var artworkContent: some View {
-    if let imageURL = audioManager.displayImageURL(for: song) {
-      LoadingImage(url: imageURL, cornerRadius: AM.Radius.card)
+    if let imageURL = playback.displayImageURL(for: song) {
+      // Fixed card dimensions let LoadingImage request a deterministic thumbnail size
+      // without measuring every card through GeometryReader.
+      LoadingImage(
+        url: imageURL,
+        cornerRadius: AM.Radius.card,
+        fixedDisplaySize: width.map { CGSize(width: $0, height: $0) }
+      )
     } else {
       RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
         .fill(Color.appPlaceholderPrimary)
@@ -345,14 +397,13 @@ private struct MusicGridCardShadow: ViewModifier {
 struct SongActionsMenuItems: View {
   let song: Song
   let onAddToPlaylist: () -> Void
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
   @ObservedObject private var favorites = FavoritesManager.shared
 
   var body: some View {
     Button {
       AppHaptic.selection.play()
-      audioManager.playNext(song: song)
+      AudioPlayerManager.shared.playNext(song: song)
     } label: {
       Label("Play Next", systemImage: "text.insert")
     }
@@ -409,11 +460,15 @@ struct SongActionsMenuItems: View {
 
 struct SongContextPreview: View {
   let song: Song
-  @EnvironmentObject private var audioManager: AudioPlayerManager
+  @ObservedObject private var playback = PlaybackRowState.shared
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      LoadingImage(url: audioManager.displayImageURL(for: song), cornerRadius: 10)
+      LoadingImage(
+        url: playback.displayImageURL(for: song),
+        cornerRadius: 10,
+        fixedDisplaySize: CGSize(width: 220, height: 220)
+      )
         .aspectRatio(1, contentMode: .fill)
         .frame(width: 220, height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -438,7 +493,7 @@ private struct SongRowAccessibilityModifier: ViewModifier {
   let song: Song
   var isPending = false
   let onPlay: () -> Void
-  @EnvironmentObject private var audioManager: AudioPlayerManager
+  @ObservedObject private var playback = PlaybackRowState.shared
   @ObservedObject private var downloads = DownloadManager.shared
   @ObservedObject private var favorites = FavoritesManager.shared
 
@@ -453,7 +508,7 @@ private struct SongRowAccessibilityModifier: ViewModifier {
       }
       .accessibilityAction(named: "Play Next") {
         AppHaptic.selection.play()
-        audioManager.playNext(song: song)
+        AudioPlayerManager.shared.playNext(song: song)
       }
       .accessibilityAction(named: favoriteActionTitle) {
         toggleFavorite()
@@ -468,8 +523,8 @@ private struct SongRowAccessibilityModifier: ViewModifier {
     if !song.durationText.isEmpty {
       values.append(song.durationText)
     }
-    if audioManager.currentSong?.id == song.id {
-      values.append(audioManager.isPlaying ? "Now playing" : "Current song")
+    if playback.currentSongID == song.id {
+      values.append(playback.isPlaying ? "Now playing" : "Current song")
     }
     if isPending {
       values.append("Loading")

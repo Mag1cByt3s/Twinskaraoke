@@ -1,21 +1,85 @@
 import LNPopupUI
+import Combine
 import SwiftUI
 
 #if canImport(UIKit)
   import UIKit
 #endif
 
-struct ContentView: View {
-  @StateObject var audioManager = AudioPlayerManager.shared
+@MainActor
+private final class PopupPlaybackState: ObservableObject {
+  static let shared = PopupPlaybackState()
 
+  @Published private(set) var hasCurrentSong = false
+  @Published private(set) var title = ""
+  @Published private(set) var subtitle = ""
+  @Published private(set) var artwork: UIImage?
+  @Published private(set) var progress: Float = 0
+  @Published private(set) var isPlaying = false
+  @Published private(set) var isRadioMode = false
+
+  private var cancellables = Set<AnyCancellable>()
+
+  private init(manager: AudioPlayerManager = .shared) {
+    manager.$currentSong
+      .map { song in
+        PopupSongSnapshot(
+          id: song?.id,
+          title: song?.title ?? "",
+          subtitle: song?.displayArtist ?? ""
+        )
+      }
+      .removeDuplicates()
+      .sink { [weak self] snapshot in
+        self?.hasCurrentSong = snapshot.id != nil
+        self?.title = snapshot.title
+        self?.subtitle = snapshot.subtitle
+      }
+      .store(in: &cancellables)
+
+    manager.$nowPlayingArtwork
+      .removeDuplicates(by: { $0 === $1 })
+      .sink { [weak self] in self?.artwork = $0 }
+      .store(in: &cancellables)
+
+    manager.$progress
+      .throttle(for: .milliseconds(350), scheduler: RunLoop.main, latest: true)
+      .map { Float(min(max($0, 0), 1)) }
+      .removeDuplicates()
+      .sink { [weak self] in self?.progress = $0 }
+      .store(in: &cancellables)
+
+    manager.$isPlaying
+      .removeDuplicates()
+      .sink { [weak self] in self?.isPlaying = $0 }
+      .store(in: &cancellables)
+
+    manager.$isRadioMode
+      .removeDuplicates()
+      .sink { [weak self] isRadioMode in
+        self?.isRadioMode = isRadioMode
+        if isRadioMode {
+          self?.progress = 0
+        }
+      }
+      .store(in: &cancellables)
+  }
+}
+
+private struct PopupSongSnapshot: Equatable {
+  let id: String?
+  let title: String
+  let subtitle: String
+}
+
+struct ContentView: View {
   var body: some View {
     PopupHostView()
-      .environmentObject(audioManager)
+      .environmentObject(AudioPlayerManager.shared)
   }
 }
 
 private struct PopupHostView: View {
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
@@ -24,7 +88,6 @@ private struct PopupHostView: View {
   var body: some View {
     rootShell
       .modifier(PopupModifier())
-      .environmentObject(audioManager)
       .onAppear {
         configureTabBarAppearance()
         applyUITestInitialSectionIfNeeded()
@@ -293,18 +356,21 @@ private extension RootSection {
 }
 
 private struct PopupModifier: ViewModifier {
-  @EnvironmentObject var audioManager: AudioPlayerManager
+  @ObservedObject private var popupState = PopupPlaybackState.shared
+
   func body(content: Content) -> some View {
     content
       .popup(
-        isBarPresented: .constant(audioManager.currentSong != nil),
-        isPopupOpen: $audioManager.showFullScreen
+        isBarPresented: .constant(popupState.hasCurrentSong),
+        isPopupOpen: Binding(
+          get: { AudioPlayerManager.shared.showFullScreen },
+          set: { AudioPlayerManager.shared.showFullScreen = $0 }
+        )
       ) {
-        PopupContent()
-          .environmentObject(audioManager)
+        PopupContent(popupState: popupState)
       }
       .popupBarStyle(.floating)
-      .popupBarProgressViewStyle(audioManager.isRadioMode ? .none : .bottom)
+      .popupBarProgressViewStyle(popupState.isRadioMode ? .none : .bottom)
       .popupCloseButtonStyle(.none)
       .popupInteractionStyle(.drag)
       .popupBarMarqueeScrollEnabled(false)
@@ -317,27 +383,32 @@ private struct PopupModifier: ViewModifier {
 }
 
 private struct PopupContent: View {
-  @EnvironmentObject var audioManager: AudioPlayerManager
+  @ObservedObject private var popupState: PopupPlaybackState
+
+  init(popupState: PopupPlaybackState) {
+    self.popupState = popupState
+  }
+
   var body: some View {
     FullScreenPlayerView()
-      .environmentObject(audioManager)
+      .environmentObject(AudioPlayerManager.shared)
       .modifier(
         PopupTitleModifier(
-          title: audioManager.currentSong?.title ?? "",
-          subtitle: audioManager.currentSong?.displayArtist ?? "")
+          title: popupState.title,
+          subtitle: popupState.subtitle)
       )
-      .modifier(PopupImageModifier(artwork: audioManager.nowPlayingArtwork))
+      .modifier(PopupImageModifier(artwork: popupState.artwork))
       .modifier(
         PopupProgressModifier(
-          progress: audioManager.isRadioMode ? 0 : Float(min(max(audioManager.progress, 0), 1))
+          progress: popupState.isRadioMode ? 0 : popupState.progress
         )
       )
       .popupBarButtons({
         PopupBarTrailingItems(
-          isPlaying: audioManager.isPlaying,
-          isRadioMode: audioManager.isRadioMode,
-          onTogglePlayPause: { [weak audioManager] in audioManager?.togglePlayPause() },
-          onNext: { [weak audioManager] in audioManager?.playNextOrRandom() })
+          isPlaying: popupState.isPlaying,
+          isRadioMode: popupState.isRadioMode,
+          onTogglePlayPause: { AudioPlayerManager.shared.togglePlayPause() },
+          onNext: { AudioPlayerManager.shared.playNextOrRandom() })
       })
   }
 }

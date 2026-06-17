@@ -2,7 +2,6 @@ import SwiftUI
 
 struct RandomSongsView: View {
   @StateObject var viewModel = RandomSongsViewModel()
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
 
@@ -151,7 +150,7 @@ struct RandomSongsView: View {
       Button {
         guard let first = viewModel.songs.first else { return }
         AppHaptic.medium.play()
-        audioManager.playInOrder(song: first, context: viewModel.songs)
+        AudioPlayerManager.shared.playInOrder(song: first, context: viewModel.songs)
       } label: {
         LibraryActionButtonLabel(
           symbol: "play.fill",
@@ -164,7 +163,7 @@ struct RandomSongsView: View {
 
       Button {
         AppHaptic.selection.play()
-        audioManager.playShuffled(from: viewModel.songs)
+        AudioPlayerManager.shared.playShuffled(from: viewModel.songs)
       } label: {
         LibraryActionButtonLabel(
           symbol: "shuffle",
@@ -196,7 +195,7 @@ struct RandomSongsView: View {
 
   private func play(_ song: Song) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: viewModel.songs)
+    AudioPlayerManager.shared.play(song: song, context: viewModel.songs)
   }
 
   private var songSkeletonList: some View {
@@ -437,7 +436,6 @@ private struct RandomSongsHintRow: View {
 private struct RandomSongsActionsMenu: View {
   let songs: [Song]
   let onRefresh: () -> Void
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
 
   private var pendingDownloads: [Song] {
@@ -473,7 +471,7 @@ private struct RandomSongsActionsMenu: View {
       Button {
         AppHaptic.selection.play()
         if let first = songs.first {
-          audioManager.playInOrder(song: first, context: songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: songs)
         }
       } label: {
         Label("Play", systemImage: "play.fill")
@@ -481,7 +479,7 @@ private struct RandomSongsActionsMenu: View {
 
       Button {
         AppHaptic.selection.play()
-        audioManager.playShuffled(from: songs)
+        AudioPlayerManager.shared.playShuffled(from: songs)
       } label: {
         Label("Shuffle", systemImage: "shuffle")
       }

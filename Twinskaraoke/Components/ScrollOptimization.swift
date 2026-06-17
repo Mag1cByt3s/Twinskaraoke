@@ -9,22 +9,22 @@ extension View {
       .scrollDismissesKeyboard(.interactively)
   }
 
-  /// Optimize LazyVStack for smooth scrolling with content buffering
-  func optimizedLazyStack() -> some View {
-    self
-  }
 }
 
-/// Optimized scroll position tracking that doesn't impact scroll performance
+/// Preference-based scroll tracking should publish coarse changes only; sub-point
+/// jitter creates unnecessary SwiftUI invalidations while the finger is moving.
 struct SmoothScrollOffsetPreferenceKey: PreferenceKey {
   static var defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = nextValue()
+    let next = nextValue()
+    if abs(next - value) >= 1 {
+      value = next
+    }
   }
 }
 
 extension ScrollView {
-  /// Track scroll offset without impacting performance
+  /// Track scroll offset for coarse UI chrome changes.
   func trackScrollOffset(_ offset: Binding<CGFloat>, coordinateSpace: String = "scroll") -> some View {
     self
       .coordinateSpace(name: coordinateSpace)

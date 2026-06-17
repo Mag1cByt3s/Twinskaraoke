@@ -4,7 +4,6 @@ import SwiftUI
 struct HomeView: View {
   @StateObject var viewModel = HomeViewModel()
   @StateObject private var recentlyPlayed = RecentlyPlayedStore.shared
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
@@ -516,12 +515,11 @@ private struct NewFeatureCard: View {
   let context: [Song]
   let width: CGFloat
   let artworkSize: CGFloat
-  @EnvironmentObject private var audioManager: AudioPlayerManager
 
   var body: some View {
     Button {
       AppHaptic.selection.play()
-      audioManager.play(song: song, context: context)
+      AudioPlayerManager.shared.play(song: song, context: context)
     } label: {
       VStack(alignment: .leading, spacing: 8) {
         VStack(alignment: .leading, spacing: 2) {
@@ -596,7 +594,6 @@ private struct NewSongListPreview: View {
   let title: String
   let songs: [Song]
   var horizontalPadding: CGFloat = AM.Spacing.screenMargin
-  @EnvironmentObject private var audioManager: AudioPlayerManager
 
   var body: some View {
     VStack(alignment: .leading, spacing: AM.Spacing.s) {
@@ -605,7 +602,7 @@ private struct NewSongListPreview: View {
         ForEach(songs) { song in
           Button {
             AppHaptic.selection.play()
-            audioManager.play(song: song, context: songs)
+            AudioPlayerManager.shared.play(song: song, context: songs)
           } label: {
             SongRow(song: song, size: .compact)
               .padding(.horizontal, horizontalPadding)
@@ -696,7 +693,6 @@ private struct LatestSingleSection: View {
   let song: Song
   let context: [Song]
   var horizontalPadding: CGFloat = AM.Spacing.screenMargin
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @State private var showAddToPlaylist = false
 
   var body: some View {
@@ -739,7 +735,6 @@ private struct LatestSingleSection: View {
         }
       } preview: {
         SongContextPreview(song: song)
-          .environmentObject(audioManager)
       }
       .sheet(isPresented: $showAddToPlaylist) {
         AddToPlaylistSheet(song: song)
@@ -750,7 +745,7 @@ private struct LatestSingleSection: View {
 
   private func play() {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: context)
+    AudioPlayerManager.shared.play(song: song, context: context)
   }
 }
 
@@ -1021,11 +1016,12 @@ struct HomeSkeletonView: View {
 struct BrowseSongCollectionView: View {
   let title: String
   let songs: [Song]
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var scrollOffset: CGFloat = 0
+  // Very large result sets skip per-row artwork to keep cell creation and image
+  // decoding from dominating a fast collection scroll.
   private var showsArtwork: Bool { songs.count <= 200 }
   private var usesWideOverview: Bool {
     horizontalSizeClass == .regular
@@ -1057,7 +1053,7 @@ struct BrowseSongCollectionView: View {
       }
       .scrollDismissesKeyboard(.interactively)
       .coordinateSpace(name: "browseScroll")
-      .onPreferenceChange(BrowseScrollOffsetKey.self) { scrollOffset = $0 }
+      .onPreferenceChange(BrowseScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }
     .navigationTitle(scrollOffset < -180 ? title : "")
     .navigationBarTitleDisplayMode(.inline)
@@ -1109,7 +1105,7 @@ struct BrowseSongCollectionView: View {
 
   private func play(_ song: Song) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: songs)
+    AudioPlayerManager.shared.play(song: song, context: songs)
   }
 
   @ViewBuilder
@@ -1192,7 +1188,7 @@ struct BrowseSongCollectionView: View {
       Button {
         if let first = songs.first {
           AppHaptic.medium.play()
-          audioManager.playInOrder(song: first, context: songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: songs)
         }
       } label: {
         Label("Play", systemImage: "play.fill")
@@ -1208,7 +1204,7 @@ struct BrowseSongCollectionView: View {
       .accessibilityValue("\(songs.count) songs")
       Button {
         AppHaptic.selection.play()
-        audioManager.playShuffled(from: songs)
+        AudioPlayerManager.shared.playShuffled(from: songs)
       } label: {
         Label("Shuffle", systemImage: "shuffle")
           .font(.system(size: 17, weight: .semibold))
@@ -1231,6 +1227,12 @@ private struct BrowseScrollOffsetKey: PreferenceKey {
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
     value = nextValue()
   }
+}
+
+private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
+  // Parallax and nav chrome do not need pixel-accurate offsets; bucketing the value
+  // cuts down SwiftUI invalidations while preserving the visible effect.
+  (offset / 8).rounded() * 8
 }
 
 final class PlaylistListLoader: ObservableObject {

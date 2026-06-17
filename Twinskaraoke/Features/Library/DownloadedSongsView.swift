@@ -3,11 +3,12 @@ import SwiftUI
 struct DownloadedSongsView: View {
   @StateObject private var downloads = DownloadManager.shared
   @StateObject private var recentlyPlayed = RecentlyPlayedStore.shared
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var localSongs: [Song] = []
-  @State private var scrollOffset: CGFloat = 0
+  // Store only the navigation-bar threshold, not the raw offset, to avoid per-frame
+  // state updates while scrolling the downloaded list.
+  @State private var showsCollapsedTitle = false
   @State private var showRemoveAllConfirmation = false
 
   private var reduceMotion: Bool {
@@ -56,7 +57,6 @@ struct DownloadedSongsView: View {
                     }
                   } preview: {
                     SongContextPreview(song: song)
-                      .environmentObject(audioManager)
                   }
                 if idx < localSongs.count - 1 {
                   Divider().padding(.leading, 76)
@@ -69,8 +69,8 @@ struct DownloadedSongsView: View {
           .background(
             GeometryReader { proxy in
               Color.clear.preference(
-                key: DownloadedScrollOffsetKey.self,
-                value: proxy.frame(in: .named("downloadedScroll")).minY
+                key: DownloadedCollapsedTitleKey.self,
+                value: proxy.frame(in: .named("downloadedScroll")).minY < -180
               )
             }
           )
@@ -80,11 +80,14 @@ struct DownloadedSongsView: View {
       .scrollDismissesKeyboard(.interactively)
       .coordinateSpace(name: "downloadedScroll")
       .bottomChromeScrollTracking()
-      .onPreferenceChange(DownloadedScrollOffsetKey.self) { scrollOffset = $0 }
+      .onPreferenceChange(DownloadedCollapsedTitleKey.self) { collapsed in
+        guard showsCollapsedTitle != collapsed else { return }
+        showsCollapsedTitle = collapsed
+      }
     }
-    .navigationTitle(scrollOffset < -180 ? "Downloaded" : "")
+    .navigationTitle(showsCollapsedTitle ? "Downloaded" : "")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(scrollOffset < -180 ? .visible : .hidden, for: .navigationBar)
+    .toolbarBackground(showsCollapsedTitle ? .visible : .hidden, for: .navigationBar)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         if !localSongs.isEmpty {
@@ -105,7 +108,7 @@ struct DownloadedSongsView: View {
       Text("All offline songs on this device will be removed. You can download them again from song menus.")
     }
     .musicScreenBackground()
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: scrollOffset < -180)
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showsCollapsedTitle)
     .animation(
       reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84),
       value: localSongs.map(\.id)
@@ -138,17 +141,12 @@ struct DownloadedSongsView: View {
 
   @ViewBuilder
   private func heroHeader(width: CGFloat) -> some View {
-    let baseSize: CGFloat = 240
-    let stretch = max(0, scrollOffset)
-    let shrink = max(0, -scrollOffset * 0.4)
-    let size = max(140, baseSize + stretch * 0.6 - shrink)
-    let blur = min(8, max(0, -scrollOffset / 30))
+    // This header intentionally stays fixed-size; animating blur/scale from raw
+    // scroll offset made the downloaded screen do extra work during every scroll tick.
     mosaicArtwork
-      .frame(width: size, height: size)
+      .frame(width: 240, height: 240)
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
       .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-      .blur(radius: blur)
-      .opacity(1 - min(0.7, max(0, -scrollOffset / 250)))
       .frame(width: width)
       .padding(.top, 12)
   }
@@ -204,16 +202,16 @@ struct DownloadedSongsView: View {
 
   private func playInOrder() {
     guard let first = localSongs.first else { return }
-    audioManager.playInOrder(song: first, context: localSongs)
+    AudioPlayerManager.shared.playInOrder(song: first, context: localSongs)
   }
 
   private func shuffle() {
-    audioManager.playShuffled(from: localSongs)
+    AudioPlayerManager.shared.playShuffled(from: localSongs)
   }
 
   private func play(_ song: Song) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: localSongs)
+    AudioPlayerManager.shared.play(song: song, context: localSongs)
   }
 
   private func removeDownload(_ song: Song) {
@@ -380,13 +378,12 @@ private struct DownloadedEmptyHintRow: View {
 private struct DownloadedSongMenuItems: View {
   let song: Song
   let onRemove: () -> Void
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @ObservedObject private var favorites = FavoritesManager.shared
 
   var body: some View {
     Button {
       AppHaptic.selection.play()
-      audioManager.playNext(song: song)
+      AudioPlayerManager.shared.playNext(song: song)
     } label: {
       Label("Play Next", systemImage: "text.insert")
     }
@@ -457,7 +454,11 @@ private struct DownloadedSongsMenu: View {
   }
 }
 
-private struct DownloadedScrollOffsetKey: PreferenceKey {
-  static var defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// Reports whether the downloaded header has crossed the title-collapse threshold.
+/// The Bool value keeps preference churn lower than sending the full scroll offset.
+private struct DownloadedCollapsedTitleKey: PreferenceKey {
+  static var defaultValue = false
+  static func reduce(value: inout Bool, nextValue: () -> Bool) {
+    value = value || nextValue()
+  }
 }

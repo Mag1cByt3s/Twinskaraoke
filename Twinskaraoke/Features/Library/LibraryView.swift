@@ -541,7 +541,6 @@ final class LibrarySongsViewModel: ObservableObject {
 
 struct LibrarySongsView: View {
   @StateObject private var viewModel = LibrarySongsViewModel()
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
 
@@ -559,6 +558,9 @@ struct LibrarySongsView: View {
   var body: some View {
     let songs = viewModel.displayedSongs
     let isSearching = !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    // Once the library list gets large, omitting thumbnails removes a major source
+    // of row work: image decode, cache lookup, and extra view composition per cell.
+    let showsRowArtwork = songs.count <= 200
     List {
       if viewModel.isLoading && songs.isEmpty {
         skeletonRows
@@ -576,7 +578,7 @@ struct LibrarySongsView: View {
         }
         Section {
           ForEach(songs) { song in
-            SongRow(song: song, size: .regular)
+            SongRow(song: song, size: .regular, showsArtwork: showsRowArtwork)
               .id(song.id)
               .padding(.vertical, 6)
               .contentShape(Rectangle())
@@ -634,7 +636,7 @@ struct LibrarySongsView: View {
 
   private func play(_ song: Song, context: [Song]) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: context)
+    AudioPlayerManager.shared.play(song: song, context: context)
   }
 
   private var sortMenu: some View {
@@ -662,14 +664,14 @@ struct LibrarySongsView: View {
     HStack(spacing: 12) {
       Button {
         if let first = songs.first {
-          audioManager.playInOrder(song: first, context: songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: songs)
         }
       } label: {
         LibraryActionButtonLabel(symbol: "play.fill", text: "Play", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
-        audioManager.playShuffled(from: songs)
+        AudioPlayerManager.shared.playShuffled(from: songs)
       } label: {
         LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle", style: .tertiary)
       }
@@ -1037,7 +1039,6 @@ struct LibraryCollectionRow: View {
 struct LibraryCollectionDetailView: View {
   let kind: LibraryCollectionKind
   let collection: LibrarySongCollection
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var scrollOffset: CGFloat = 0
@@ -1084,9 +1085,12 @@ struct LibraryCollectionDetailView: View {
           } else {
             actionButtons
               .padding(.horizontal)
+            // Collection detail screens can be arbitrarily long, so large ones use
+            // text-first rows to keep scrolling predictable on iPhone.
+            let showsRowArtwork = collection.songs.count <= 200
             LazyVStack(spacing: 0) {
               ForEach(collection.songs) { song in
-                SongRow(song: song, size: .regular)
+                SongRow(song: song, size: .regular, showsArtwork: showsRowArtwork)
                   .padding(.horizontal)
                   .padding(.vertical, 8)
                   .contentShape(Rectangle())
@@ -1113,7 +1117,7 @@ struct LibraryCollectionDetailView: View {
         )
       }
       .coordinateSpace(name: "libraryCollectionScroll")
-      .onPreferenceChange(LibraryCollectionScrollOffsetKey.self) { scrollOffset = $0 }
+      .onPreferenceChange(LibraryCollectionScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }
     .navigationTitle(scrollOffset < -180 ? collection.title : "")
     .navigationBarTitleDisplayMode(.inline)
@@ -1140,7 +1144,7 @@ struct LibraryCollectionDetailView: View {
 
   private func play(_ song: Song) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: collection.songs)
+    AudioPlayerManager.shared.play(song: song, context: collection.songs)
   }
 
   private func heroArtwork(width: CGFloat) -> some View {
@@ -1148,14 +1152,12 @@ struct LibraryCollectionDetailView: View {
     let stretch = reduceMotion ? 0 : max(0, scrollOffset)
     let shrink = reduceMotion ? 0 : max(0, -scrollOffset * 0.4)
     let size = max(140, baseSize + stretch * 0.6 - shrink)
-    let blur = reduceMotion ? 0 : min(8, max(0, -scrollOffset / 30))
     let yOffset = reduceMotion ? 0 : (scrollOffset > 0 ? -scrollOffset / 2 : 0)
     let artworkOpacity = reduceMotion ? 1 : 1 - min(0.7, max(0, -scrollOffset / 250))
     return LibraryCollectionArtwork(collection: collection, symbol: kind.symbol, cornerRadius: 14)
       .frame(width: size, height: size)
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
       .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-      .blur(radius: blur)
       .opacity(artworkOpacity)
       .frame(width: width)
       .offset(y: yOffset)
@@ -1169,14 +1171,14 @@ struct LibraryCollectionDetailView: View {
     HStack(spacing: 12) {
       Button {
         if let first = collection.songs.first {
-          audioManager.playInOrder(song: first, context: collection.songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: collection.songs)
         }
       } label: {
         LibraryActionButtonLabel(symbol: "play.fill", text: "Play", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
-        audioManager.playShuffled(from: collection.songs)
+        AudioPlayerManager.shared.playShuffled(from: collection.songs)
       } label: {
         LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle", style: .tertiary)
       }
@@ -1202,7 +1204,6 @@ private struct LibraryCollectionEmptyStateView: View {
 
 private struct LibraryCollectionActionsMenu: View {
   let collection: LibrarySongCollection
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
 
   private var pendingDownloads: [Song] {
@@ -1224,7 +1225,7 @@ private struct LibraryCollectionActionsMenu: View {
       Button {
         AppHaptic.selection.play()
         if let first = collection.songs.first {
-          audioManager.playInOrder(song: first, context: collection.songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: collection.songs)
         }
       } label: {
         Label("Play", systemImage: "play.fill")
@@ -1232,7 +1233,7 @@ private struct LibraryCollectionActionsMenu: View {
 
       Button {
         AppHaptic.selection.play()
-        audioManager.playShuffled(from: collection.songs)
+        AudioPlayerManager.shared.playShuffled(from: collection.songs)
       } label: {
         Label("Shuffle", systemImage: "shuffle")
       }
@@ -1325,6 +1326,12 @@ private struct LibraryCollectionArtwork: View {
 private struct LibraryCollectionScrollOffsetKey: PreferenceKey {
   static var defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
+  // Bucket scroll offset changes so the parallax artwork and collapsed title do not
+  // trigger a full view update for every sub-pixel movement.
+  (offset / 8).rounded() * 8
 }
 
 private extension Song {

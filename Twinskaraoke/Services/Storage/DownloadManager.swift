@@ -137,10 +137,15 @@ final class DownloadManager: ObservableObject {
   }
 
   func removeAll() {
-    for task in tasks.values { task.cancel() }
-    tasks = [:]
-    inProgress = []
-    progress = [:]
+    // Cancel in-flight tasks before deleting files; otherwise a finishing download
+    // can write metadata and reinsert its id after the user removed everything.
+    for task in tasks.values {
+      task.cancel()
+    }
+    tasks.removeAll()
+    inProgress.removeAll()
+    progress.removeAll()
+
     let fm = FileManager.default
     if let files = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
       for f in files { try? fm.removeItem(at: f) }
@@ -211,6 +216,9 @@ final class DownloadManager: ObservableObject {
     var seen = Set<String>()
 
     for song in knownSongs where downloadedIDs.contains(song.id) {
+      // Recently played playlists can contain the same downloaded song more than once.
+      // Keep the downloaded list one-row-per-id so SwiftUI row identity stays stable.
+      guard !seen.contains(song.id) else { continue }
       guard playableURL(for: song) != nil else { continue }
       songs.append(song)
       seen.insert(song.id)

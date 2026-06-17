@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AccountView: View {
   @StateObject private var auth = AuthManager()
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var showLoginSheet = false
   @State private var showQRApprove = false

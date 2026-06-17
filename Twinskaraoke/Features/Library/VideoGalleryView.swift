@@ -642,7 +642,6 @@ struct VideoPlayerScreen: View {
   @State private var player: AVPlayer?
   @State private var appeared = false
   @StateObject private var similar = SimilarVideosViewModel()
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   private let audioWillPlay = NotificationCenter.default.publisher(
@@ -777,7 +776,7 @@ struct VideoPlayerScreen: View {
 
   private func startPlaybackIfNeeded() {
     guard player == nil, let url = video.streamURL ?? video.embedURL else { return }
-    audioManager.pauseIfPlaying()
+    AudioPlayerManager.shared.pauseIfPlaying()
     let nextPlayer = AVPlayer(url: url)
     NotificationCenter.default.post(
       name: MediaPlaybackCoordinator.videoWillPlay, object: nil)
