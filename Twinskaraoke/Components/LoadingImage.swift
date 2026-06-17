@@ -32,11 +32,11 @@ enum ImageCacheConfig {
     #endif
   }
   static let thumbnailPixelSize = CGSize(width: 480, height: 480)
+  /// Keep list artwork on normal priority so image fetch/decode work does not
+  /// compete with touch tracking during scroll. Callers can opt into full size separately.
   static let defaultOptions: SDWebImageOptions = [
     .retryFailed,
-    .scaleDownLargeImages,
-    .continueInBackground,
-    .highPriority
+    .scaleDownLargeImages
   ]
 }
 
@@ -48,76 +48,91 @@ struct LoadingImage: View {
   var lowResURL: URL? = nil
   var transparentBackground: Bool = false
   var fullResolution: Bool = false
+  /// Use this for fixed-size thumbnails to avoid a GeometryReader per cell and
+  /// to downsample the source image to the actual display size.
+  var fixedDisplaySize: CGSize? = nil
   @State private var fullLoaded: Bool = false
   @State private var loadFailed: Bool = false
   @State private var renderedFullURL: URL?
   var body: some View {
-    GeometryReader { geo in
-      let pixelSize = NSValue(cgSize: thumbnailPixelSize(for: geo.size))
-      let context: [SDWebImageContextOption: Any] =
-        fullResolution
-        ? [:] : [
-          .imageThumbnailPixelSize: pixelSize,
-          .imageDecodeOptions: [SDImageCoderOption.decodeScaleFactor: 1.0]
-        ]
-      ZStack {
-        if !transparentBackground {
-          MusicArtworkPlaceholder()
-        }
-        if let lowResURL, !fullLoaded {
-          WebImage(
-            url: lowResURL,
-            options: [.retryFailed, .scaleDownLargeImages, .fromCacheOnly],
-            context: [.imageThumbnailPixelSize: NSValue(cgSize: CGSize(width: 120, height: 120))]
-          ) { image in
-            image
-              .resizable()
-              .aspectRatio(contentMode: contentMode)
-              .frame(width: geo.size.width, height: geo.size.height)
-              .clipped()
-              .blur(radius: 2)
-          } placeholder: {
-            Color.clear
-          }
-        }
-        if let url, !loadFailed {
-          WebImage(
-            url: url,
-            options: ImageCacheConfig.defaultOptions,
-            context: context
-          ) { image in
-            image
-              .resizable()
-              .aspectRatio(contentMode: contentMode)
-              .frame(width: geo.size.width, height: geo.size.height)
-              .clipped()
-              .onAppear {
-                markRendered(url)
-              }
-          } placeholder: {
-            Color.clear
-          }
-          .onFailure { _ in
-            markFinishedAfterFailure()
-          }
-          .onSuccess { _, _, _ in
-            markRendered(url)
-          }
-          .transition(.opacity.animation(.easeOut(duration: 0.15)))
-        }
-
-        if shouldShowLoading {
-          LoadingIndicator(size: min(geo.size.width, geo.size.height) * 0.5)
-            .transition(.opacity.animation(.easeOut(duration: 0.12)))
+    Group {
+      if let fixedDisplaySize {
+        imageContent(size: fixedDisplaySize)
+          .frame(width: fixedDisplaySize.width, height: fixedDisplaySize.height)
+      } else {
+        GeometryReader { geo in
+          imageContent(size: geo.size)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
       }
-      .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
     }
     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     .onChange(of: url) {
       fullLoaded = false
       loadFailed = false
       renderedFullURL = nil
+    }
+  }
+
+  @ViewBuilder
+  private func imageContent(size: CGSize) -> some View {
+    let pixelSize = NSValue(cgSize: thumbnailPixelSize(for: size))
+    let context: [SDWebImageContextOption: Any] =
+      fullResolution
+      ? [:] : [
+        .imageThumbnailPixelSize: pixelSize,
+        .imageDecodeOptions: [SDImageCoderOption.decodeScaleFactor: 1.0]
+      ]
+    ZStack {
+      if !transparentBackground {
+        MusicArtworkPlaceholder()
+      }
+      if let lowResURL, !fullLoaded {
+        WebImage(
+          url: lowResURL,
+          options: [.retryFailed, .scaleDownLargeImages, .fromCacheOnly],
+          context: [.imageThumbnailPixelSize: NSValue(cgSize: CGSize(width: 120, height: 120))]
+        ) { image in
+          image
+            .resizable()
+            .aspectRatio(contentMode: contentMode)
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .blur(radius: 2)
+        } placeholder: {
+          Color.clear
+        }
+      }
+      if let url, !loadFailed {
+        WebImage(
+          url: url,
+          options: ImageCacheConfig.defaultOptions,
+          context: context
+        ) { image in
+          image
+            .resizable()
+            .aspectRatio(contentMode: contentMode)
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .onAppear {
+              markRendered(url)
+            }
+        } placeholder: {
+          Color.clear
+        }
+        .onFailure { _ in
+          markFinishedAfterFailure()
+        }
+        .onSuccess { _, _, _ in
+          markRendered(url)
+        }
+        .transition(.opacity.animation(.easeOut(duration: 0.15)))
+      }
+
+      if shouldShowLoading {
+        LoadingIndicator(size: min(size.width, size.height) * 0.5)
+          .transition(.opacity.animation(.easeOut(duration: 0.12)))
+      }
     }
   }
 

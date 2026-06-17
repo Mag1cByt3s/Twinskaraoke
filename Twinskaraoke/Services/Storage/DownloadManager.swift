@@ -126,6 +126,15 @@ final class DownloadManager: ObservableObject {
   }
 
   func removeAll() {
+    // Cancel in-flight tasks before deleting files; otherwise a finishing download
+    // can write metadata and reinsert its id after the user removed everything.
+    for task in tasks.values {
+      task.cancel()
+    }
+    tasks.removeAll()
+    inProgress.removeAll()
+    progress.removeAll()
+
     let fm = FileManager.default
     if let files = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
       for f in files { try? fm.removeItem(at: f) }

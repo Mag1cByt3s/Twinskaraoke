@@ -2,7 +2,9 @@ import SwiftUI
 
 struct SearchView: View {
   @StateObject var viewModel = SearchViewModel()
-  @EnvironmentObject var audioManager: AudioPlayerManager
+  // Search only needs the current song id to clear pending UI. Observing the full
+  // audio manager here would also subscribe the screen to progress ticks.
+  @ObservedObject private var playback = PlaybackRowState.shared
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
@@ -95,7 +97,7 @@ struct SearchView: View {
         placement: .navigationBarDrawer(displayMode: .always),
         prompt: "Songs, Artists, Lyrics, and More"
       )
-      .onChange(of: audioManager.currentSong?.id) { _, currentSongID in
+      .onChange(of: playback.currentSongID) { _, currentSongID in
         guard currentSongID == pendingSongID else { return }
         pendingSongID = nil
       }
@@ -109,7 +111,7 @@ struct SearchView: View {
 
   private func playSelection(_ song: Song) {
     guard pendingSongID == nil else { return }
-    guard audioManager.currentSong?.id != song.id else { return }
+    guard playback.currentSongID != song.id else { return }
     AppHaptic.selection.play()
     pendingSongID = song.id
     let context = viewModel.results
@@ -117,7 +119,7 @@ struct SearchView: View {
     playbackTask = Task { @MainActor in
       await Task.yield()
       guard !Task.isCancelled else { return }
-      audioManager.play(song: song, context: context)
+      AudioPlayerManager.shared.play(song: song, context: context)
       try? await Task.sleep(nanoseconds: 400_000_000)
       guard !Task.isCancelled, pendingSongID == song.id else { return }
       pendingSongID = nil
@@ -445,7 +447,6 @@ struct GenreDetailView: View {
   let genre: GenreSummary
   @ObservedObject var viewModel: GenresViewModel
   let palette: [Color]
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @State private var isLoadingDetail = false
 
   var body: some View {
