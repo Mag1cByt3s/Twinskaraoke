@@ -144,26 +144,40 @@ struct SongRowSkeleton: View {
     }
   }
 
+  private var titleHeight: CGFloat {
+    switch size {
+    case .compact: return 15
+    case .regular: return 16
+    }
+  }
+
+  private var subtitleHeight: CGFloat {
+    switch size {
+    case .compact: return 12
+    case .regular: return 13
+    }
+  }
+
   var body: some View {
     HStack(spacing: 12) {
       RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
         .fill(Color.appPlaceholderPrimary)
         .frame(width: size.artSize, height: size.artSize)
 
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 2) {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
           .fill(Color.appPlaceholderSecondary)
-          .frame(width: titleWidth, height: size == .regular ? 12 : 11)
+          .frame(width: titleWidth, height: titleHeight)
         RoundedRectangle(cornerRadius: 3, style: .continuous)
           .fill(Color.appPlaceholderPrimary)
-          .frame(width: subtitleWidth, height: size == .regular ? 10 : 9)
+          .frame(width: subtitleWidth, height: subtitleHeight)
       }
 
       Spacer(minLength: 12)
 
       RoundedRectangle(cornerRadius: 3, style: .continuous)
         .fill(Color.appPlaceholderPrimary)
-        .frame(width: 38, height: 10)
+        .frame(width: 38, height: 13)
 
       Circle()
         .fill(Color.appPlaceholderPrimary)

@@ -152,26 +152,36 @@ final class HomeViewModel: ObservableObject {
     GuestIdentity.applyIfNeeded(to: &request)
     request.httpBody = try? JSONSerialization.data(withJSONObject: [
       "page": 1,
-      "pageSize": 24,
+      "pageSize": 48,
       "search": "",
+      "sortBy": "CreatedAt",
+      "sortDescending": true,
     ])
 
     URLSession.shared.dataTask(with: request) { data, _, _ in
       Task { @MainActor in
-        guard let data,
-          let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data)
-        else {
+        let decoded = Self.decodeSongs(from: data)
+        guard !decoded.isEmpty else {
           completion([])
           return
         }
-        let filtered = decoded.items.filter {
+        let filtered = decoded.filter {
           !$0.title.localizedCaseInsensitiveContains("Temporary Stream Audio")
         }
-        let curated = Array((filtered.isEmpty ? decoded.items : filtered).prefix(12))
+        let curated = Array((filtered.isEmpty ? decoded : filtered).prefix(24))
         completion(curated)
       }
     }.resume()
   }
+
+  private static func decodeSongs(from data: Data?) -> [Song] {
+    guard let data else { return [] }
+    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
+      return decoded.items
+    }
+    return SongPayloadDecoder.decodeSongs(from: data) ?? []
+  }
+
   private func fetchData<T: Decodable>(urlString: String, completion: @escaping (T?) -> Void) {
     guard let url = URL(string: urlString) else {
       completion(nil)

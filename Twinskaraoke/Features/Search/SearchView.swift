@@ -508,7 +508,7 @@ private struct GenreDetailLoadingView: View {
       VStack(spacing: 18) {
         RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
           .fill(Color.appPlaceholderPrimary)
-          .frame(width: 228, height: 228)
+          .frame(width: 240, height: 240)
           .overlay {
             LoadingIndicator(size: 34)
           }
@@ -526,22 +526,9 @@ private struct GenreDetailLoadingView: View {
 
         LazyVStack(spacing: 0) {
           ForEach(0..<7, id: \.self) { _ in
-            HStack(spacing: 12) {
-              RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: 48, height: 48)
-              VStack(alignment: .leading, spacing: 8) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderSecondary)
-                  .frame(width: 180, height: 11)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 124, height: 9)
-              }
-              Spacer()
-            }
-            .padding(.horizontal, AM.Spacing.screenMargin)
-            .padding(.vertical, 10)
+            SongRowSkeleton(size: .regular)
+              .padding(.horizontal, AM.Spacing.screenMargin)
+              .padding(.vertical, 6)
             Divider().padding(.leading, 76)
           }
         }
@@ -868,7 +855,7 @@ private struct SearchCategoryLoadingView: View {
       VStack(spacing: 18) {
         RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
           .fill(Color.appPlaceholderPrimary)
-          .frame(width: 228, height: 228)
+          .frame(width: 240, height: 240)
           .overlay {
             LoadingIndicator(size: 34)
           }
@@ -886,22 +873,9 @@ private struct SearchCategoryLoadingView: View {
 
         LazyVStack(spacing: 0) {
           ForEach(0..<7, id: \.self) { _ in
-            HStack(spacing: 12) {
-              RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: 48, height: 48)
-              VStack(alignment: .leading, spacing: 8) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderSecondary)
-                  .frame(width: 180, height: 11)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 124, height: 9)
-              }
-              Spacer()
-            }
-            .padding(.horizontal, AM.Spacing.screenMargin)
-            .padding(.vertical, 10)
+            SongRowSkeleton(size: .regular)
+              .padding(.horizontal, AM.Spacing.screenMargin)
+              .padding(.vertical, 6)
             Divider().padding(.leading, 76)
           }
         }
@@ -1051,21 +1025,21 @@ private extension String {
 }
 
 private struct CategoryTileSkeleton: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+  private var isCompactWidth: Bool {
+    horizontalSizeClass == .compact
+  }
+
   var body: some View {
     RoundedRectangle(cornerRadius: AM.Radius.tile, style: .continuous)
       .fill(Color.appPlaceholderPrimary)
-      .frame(height: 98)
-      .overlay(alignment: .topLeading) {
+      .frame(height: isCompactWidth ? 92 : 102)
+      .overlay(alignment: .bottomLeading) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
           .fill(Color.appPlaceholderSecondary)
-          .frame(width: 112, height: 16)
+          .frame(width: 112, height: 19)
           .padding(AM.Spacing.m)
-      }
-      .overlay(alignment: .bottomTrailing) {
-        Circle()
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 26, height: 26)
-          .padding(8)
       }
       .redacted(reason: .placeholder)
       .musicSkeletonShimmer(active: true)

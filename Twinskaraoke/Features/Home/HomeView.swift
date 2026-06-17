@@ -237,8 +237,8 @@ struct NewView: View {
         NewPlaylistRail(title: "New This Week", playlists: viewModel.recentPlaylists)
       }
 
-      if !viewModel.suggestions.isEmpty {
-        NewSongRail(title: "New Releases", songs: viewModel.suggestions)
+      if !viewModel.newReleases.isEmpty {
+        NewSongRail(title: "New Releases", songs: viewModel.newReleases)
       }
 
       if !recentlyPlayed.playlists.isEmpty {
@@ -273,8 +273,8 @@ struct NewView: View {
             NewPlaylistRail(title: "New This Week", playlists: viewModel.recentPlaylists)
           }
 
-          if !viewModel.suggestions.isEmpty {
-            NewSongRail(title: "New Releases", songs: viewModel.suggestions)
+          if !viewModel.newReleases.isEmpty {
+            NewSongRail(title: "New Releases", songs: viewModel.newReleases)
           }
 
           if !recentlyPlayed.playlists.isEmpty {
@@ -571,16 +571,15 @@ private struct NewSongRail: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width, compact: true)
+      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
       VStack(alignment: .leading, spacing: AM.Spacing.m) {
         AMSectionHeader(title, destination: BrowseSongCollectionView(title: title, songs: songs))
         ScrollView(.horizontal, showsIndicators: false) {
-          LazyHStack(alignment: .top, spacing: AM.Spacing.m) {
+          LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
             ForEach(songs) { song in
               MusicGridCard(
                 song: song,
                 context: songs,
-                size: .compact,
                 width: tileWidth
               )
             }
@@ -589,7 +588,7 @@ private struct NewSongRail: View {
         }
       }
     }
-    .frame(height: AM.Layout.compactMediaShelfHeight)
+    .frame(height: AM.Layout.mediaShelfHeight)
   }
 }
 
@@ -626,11 +625,11 @@ private struct NewPlaylistRail: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width, compact: true)
+      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
       VStack(alignment: .leading, spacing: AM.Spacing.m) {
         AMSectionHeader(title, destination: PlaylistListView(title: title, playlists: playlists))
         ScrollView(.horizontal, showsIndicators: false) {
-          LazyHStack(alignment: .top, spacing: AM.Spacing.m) {
+          LazyHStack(alignment: .top, spacing: AM.Spacing.l) {
             ForEach(playlists) { playlist in
               NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
                 PlaylistGridCell(playlist: playlist, width: tileWidth)
@@ -647,7 +646,7 @@ private struct NewPlaylistRail: View {
         }
       }
     }
-    .frame(height: AM.Layout.compactMediaShelfHeight)
+    .frame(height: AM.Layout.mediaShelfHeight)
   }
 }
 
@@ -816,7 +815,7 @@ struct NewSkeletonView: View {
 
   private func featuredCardSkeleton(width: CGFloat, index: Int) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: 2) {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
           .fill(Color.appPlaceholderSecondary)
           .frame(width: index == 0 ? 112 : 128, height: 11)
@@ -845,7 +844,7 @@ struct NewSkeletonView: View {
 
   private func shelfSkeleton(titleWidth: CGFloat, count: Int) -> some View {
     GeometryReader { proxy in
-      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width, compact: true)
+      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
       VStack(alignment: .leading, spacing: AM.Spacing.m) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
           .fill(Color.appPlaceholderTertiary)
@@ -853,7 +852,7 @@ struct NewSkeletonView: View {
           .padding(.horizontal, AM.Spacing.screenMargin)
 
         ScrollView(.horizontal, showsIndicators: false) {
-          HStack(alignment: .top, spacing: AM.Spacing.m) {
+          HStack(alignment: .top, spacing: AM.Spacing.l) {
             ForEach(0..<count, id: \.self) { index in
               VStack(alignment: .leading, spacing: AM.Spacing.s) {
                 RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
@@ -861,10 +860,10 @@ struct NewSkeletonView: View {
                   .frame(width: tileWidth, height: tileWidth)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                   .fill(Color.appPlaceholderSecondary)
-                  .frame(width: tileWidth * (index.isMultiple(of: 2) ? 0.72 : 0.58), height: 13)
+                  .frame(width: tileWidth * (index.isMultiple(of: 2) ? 0.72 : 0.58), height: 15)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                   .fill(Color.appPlaceholderPrimary)
-                  .frame(width: tileWidth * (index == 1 ? 0.48 : 0.38), height: 11)
+                  .frame(width: tileWidth * (index == 1 ? 0.48 : 0.38), height: 13)
               }
               .frame(width: tileWidth, alignment: .leading)
             }
@@ -873,7 +872,7 @@ struct NewSkeletonView: View {
         }
       }
     }
-    .frame(height: AM.Layout.compactMediaShelfHeight)
+    .frame(height: AM.Layout.mediaShelfHeight)
   }
 
   private var listPreviewSkeleton: some View {
@@ -884,25 +883,12 @@ struct NewSkeletonView: View {
         .padding(.horizontal, AM.Spacing.screenMargin)
 
       VStack(spacing: 0) {
-        ForEach(0..<4, id: \.self) { index in
-          HStack(spacing: AM.Spacing.m) {
-            RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 46, height: 46)
-            VStack(alignment: .leading, spacing: 6) {
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: index == 2 ? 178 : 136, height: 13)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: index == 1 ? 92 : 112, height: 11)
-            }
-            Spacer(minLength: 0)
-          }
-          .padding(.horizontal, AM.Spacing.screenMargin)
-          .padding(.vertical, 5)
+        ForEach(0..<5, id: \.self) { index in
+          SongRowSkeleton(size: .compact)
+            .padding(.horizontal, AM.Spacing.screenMargin)
+            .padding(.vertical, 3)
 
-          if index != 3 {
+          if index != 4 {
             Divider()
               .padding(.leading, AM.Spacing.screenMargin + 58)
           }
@@ -925,111 +911,51 @@ struct HomeSkeletonView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: AM.Spacing.shelfSpacing) {
-      featuredSkeleton
-      skeletonShelf(titleWidth: 138, tileSize: AM.Spacing.shelfTile, count: 3)
+      shelfSkeleton(titleWidth: 138, count: 3)
+      shelfSkeleton(titleWidth: 118, count: 3)
       latestSingleSkeleton
-      skeletonShelf(titleWidth: 118, tileSize: AM.Spacing.shelfTile, count: 3)
-      skeletonShelf(titleWidth: 126, tileSize: AM.Spacing.shelfTile, count: 3)
+      shelfSkeleton(titleWidth: 126, count: 3)
     }
     .musicSkeletonShimmer(active: !reduceMotion)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading Home")
   }
 
-  private var featuredSkeleton: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.appPlaceholderTertiary)
-        .frame(width: 104, height: 20)
-        .padding(.horizontal, AM.Spacing.screenMargin)
+  private func shelfSkeleton(titleWidth: CGFloat, count: Int) -> some View {
+    GeometryReader { proxy in
+      let tileSize = AM.Layout.shelfTileWidth(for: proxy.size.width)
+      VStack(alignment: .leading, spacing: AM.Spacing.m) {
+        headerPill(width: titleWidth, height: 18)
+          .padding(.horizontal, AM.Spacing.screenMargin)
 
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
-          ForEach(0..<2, id: \.self) { index in
-            VStack(alignment: .leading, spacing: AM.Spacing.s) {
-              RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
-                .fill(featuredArtworkFill(index: index))
-                .frame(width: 236, height: 148)
-                .overlay {
-                  RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
-                    .stroke(Color.primary.opacity(0.045), lineWidth: 0.7)
-                }
-                .overlay(alignment: .bottomLeading) {
-                  Circle()
-                    .fill(
-                      LinearGradient(
-                        colors: [
-                          Color.appAccent.opacity(0.20),
-                          Color.appAccent.opacity(0.08),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                      )
-                    )
-                    .frame(width: 36, height: 36)
-                    .overlay {
-                      Image(systemName: "play.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.appAccent.opacity(0.42))
-                    }
-                    .padding(12)
-                }
-                .shadow(color: .appShadow.opacity(0.12), radius: 12, y: 8)
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(alignment: .top, spacing: AM.Spacing.l) {
+            ForEach(0..<count, id: \.self) { index in
+              VStack(alignment: .leading, spacing: AM.Spacing.s) {
+                RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+                  .fill(artworkFill(index: index))
+                  .frame(width: tileSize, height: tileSize)
+                  .overlay {
+                    RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+                      .stroke(Color.primary.opacity(0.035), lineWidth: 0.6)
+                  }
 
-              RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: index == 0 ? 168 : 194, height: 14)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: index == 0 ? 104 : 132, height: 11)
+                textPill(width: tileSize * (index.isMultiple(of: 2) ? 0.72 : 0.58), height: 15)
+                textPill(width: tileSize * (index == 1 ? 0.48 : 0.38), height: 13, tone: .primary)
+              }
+              .frame(width: tileSize, alignment: .leading)
             }
-            .frame(width: 236, alignment: .leading)
           }
+          .padding(.horizontal, AM.Spacing.screenMargin)
         }
-        .padding(.horizontal, AM.Spacing.screenMargin)
       }
     }
-  }
-
-  private func skeletonShelf(titleWidth: CGFloat, tileSize: CGFloat, count: Int) -> some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.appPlaceholderTertiary)
-        .frame(width: titleWidth, height: 18)
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
-          ForEach(0..<count, id: \.self) { index in
-            VStack(alignment: .leading, spacing: AM.Spacing.s) {
-              RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-                .fill(artworkFill(index: index))
-                .frame(width: tileSize, height: tileSize)
-                .overlay {
-                  RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-                    .stroke(Color.primary.opacity(0.04), lineWidth: 0.6)
-                }
-                .shadow(color: .appShadow.opacity(0.08), radius: 8, y: 4)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: tileSize * (index == 1 ? 0.78 : 0.62), height: 13)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: tileSize * (index == 2 ? 0.52 : 0.44), height: 11)
-            }
-            .frame(width: tileSize)
-          }
-        }
-        .padding(.horizontal, AM.Spacing.screenMargin)
-      }
-    }
+    .frame(height: AM.Layout.mediaShelfHeight)
   }
 
   private var latestSingleSkeleton: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.m) {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.appPlaceholderSecondary)
-        .frame(width: 112, height: 18)
+    VStack(alignment: .leading, spacing: AM.Spacing.s) {
+      headerPill(width: 112, height: 18)
         .padding(.horizontal, AM.Spacing.screenMargin)
 
       HStack(spacing: AM.Spacing.m) {
@@ -1038,42 +964,42 @@ struct HomeSkeletonView: View {
           .frame(width: 92, height: 92)
           .overlay {
             RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-              .stroke(Color.primary.opacity(0.04), lineWidth: 0.6)
+              .stroke(Color.primary.opacity(0.035), lineWidth: 0.6)
           }
-          .shadow(color: .appShadow.opacity(0.10), radius: 10, y: 5)
 
         VStack(alignment: .leading, spacing: 8) {
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
+          headerPill(width: 190, height: 18)
+          textPill(width: 132, height: 13, tone: .primary)
+          Capsule(style: .continuous)
             .fill(Color.appPlaceholderSecondary)
-            .frame(width: 190, height: 18)
-          RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 132, height: 12)
-          RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color.appPlaceholderSecondary)
-            .frame(width: 118, height: 12)
+            .frame(width: 118, height: 18)
         }
 
-        Spacer(minLength: 0)
+        Spacer(minLength: 12)
       }
       .padding(14)
       .background(
-        LinearGradient(
-          colors: [
-            Color.appSecondaryBackground,
-            Color.appAccent.opacity(0.045),
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        ),
+        Color.appSecondaryBackground,
         in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous)
       )
-      .overlay {
-        RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous)
-          .stroke(Color.primary.opacity(0.035), lineWidth: 0.7)
-      }
       .padding(.horizontal, AM.Spacing.screenMargin)
     }
+  }
+
+  private func headerPill(width: CGFloat, height: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: 4, style: .continuous)
+      .fill(Color.appPlaceholderTertiary)
+      .frame(width: width, height: height)
+  }
+
+  private enum TextPillTone {
+    case primary, secondary
+  }
+
+  private func textPill(width: CGFloat, height: CGFloat, tone: TextPillTone = .secondary) -> some View {
+    RoundedRectangle(cornerRadius: 3, style: .continuous)
+      .fill(tone == .secondary ? Color.appPlaceholderSecondary : Color.appPlaceholderPrimary)
+      .frame(width: width, height: height)
   }
 
   private func artworkFill(index: Int) -> LinearGradient {
@@ -1081,24 +1007,15 @@ struct HomeSkeletonView: View {
       colors: [
         Color.appPlaceholderSecondary,
         Color.appPlaceholderPrimary,
-        index.isMultiple(of: 2) ? Color.appAccent.opacity(0.09) : Color.appPlaceholderTertiary.opacity(0.72),
+        index.isMultiple(of: 2)
+          ? Color.appPlaceholderSecondary.opacity(0.72)
+          : Color.appPlaceholderTertiary.opacity(0.56),
       ],
       startPoint: .topLeading,
       endPoint: .bottomTrailing
     )
   }
 
-  private func featuredArtworkFill(index: Int) -> LinearGradient {
-    LinearGradient(
-      colors: [
-        Color.appPlaceholderSecondary,
-        index.isMultiple(of: 2) ? Color.appAccent.opacity(0.12) : Color.appPlaceholderPrimary,
-        Color.appPlaceholderQuaternary.opacity(0.42),
-      ],
-      startPoint: .topLeading,
-      endPoint: .bottomTrailing
-    )
-  }
 }
 
 struct BrowseSongCollectionView: View {
@@ -1217,12 +1134,16 @@ struct BrowseSongCollectionView: View {
       Text(title)
         .font(.title2.bold())
         .multilineTextAlignment(alignment)
-      Text("\(songs.count) songs")
+      Text(songCountText)
         .font(.subheadline)
         .foregroundColor(.secondary)
     }
     .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .center)
     .padding(.horizontal, alignment == .leading ? 0 : AM.Spacing.screenMargin)
+  }
+
+  private var songCountText: String {
+    songs.count == 1 ? "1 song" : "\(songs.count) songs"
   }
 
   @ViewBuilder

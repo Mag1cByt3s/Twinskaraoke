@@ -56,7 +56,8 @@ enum BPMDetector {
 
     let totalSeconds = duration.seconds
     guard totalSeconds > 5 else {
-      return readAllSamples(reader: reader, output: output, maxFrames: nil)
+      let cap = Int(max(totalSeconds, 30) * analysisSR) + 8192
+      return readAllSamples(reader: reader, output: output, maxFrames: cap)
     }
     let analysisLen = min(analysisSeconds, totalSeconds * 0.6)
     let startTime = max(0, (totalSeconds - analysisLen) / 2)

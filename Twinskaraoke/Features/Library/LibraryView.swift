@@ -665,29 +665,18 @@ struct LibrarySongsView: View {
           audioManager.playInOrder(song: first, context: songs)
         }
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play")
+        LibraryActionButtonLabel(symbol: "play.fill", text: "Play", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
         audioManager.playShuffled(from: songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle")
+        LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
     }
   }
 
-  private func actionLabel(symbol: String, text: String) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(.appAccent)
-    .background(Color(.tertiarySystemFill))
-    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-  }
 
   private func emptyState(isSearching: Bool) -> some View {
     MusicEmptyState(
@@ -988,19 +977,23 @@ struct LibraryCollectionListView: View {
     ForEach(0..<10, id: \.self) { _ in
       HStack(spacing: 12) {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(Color(.tertiarySystemFill))
+          .fill(Color.appPlaceholderPrimary)
           .frame(width: 56, height: 56)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 3) {
           RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color(.tertiarySystemFill))
-            .frame(width: 160, height: 14)
+            .fill(Color.appPlaceholderSecondary)
+            .frame(width: 160, height: 16)
           RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color(.tertiarySystemFill))
-            .frame(width: 88, height: 11)
+            .fill(Color.appPlaceholderPrimary)
+            .frame(width: 88, height: 13)
         }
-        Spacer()
+        Spacer(minLength: 12)
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+          .fill(Color.appPlaceholderPrimary)
+          .frame(width: 7, height: 14)
       }
-      .padding(.vertical, 6)
+      .frame(height: 64)
+      .padding(.vertical, 4)
       .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
       .listRowBackground(Color.clear)
       .listRowSeparator(.hidden)
@@ -1179,29 +1172,18 @@ struct LibraryCollectionDetailView: View {
           audioManager.playInOrder(song: first, context: collection.songs)
         }
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play")
+        LibraryActionButtonLabel(symbol: "play.fill", text: "Play", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
         audioManager.playShuffled(from: collection.songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle")
+        LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle", style: .tertiary)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
     }
   }
 
-  private func actionLabel(symbol: String, text: String) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(.appAccent)
-    .background(Color(.tertiarySystemFill))
-    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-  }
 }
 
 private struct LibraryCollectionEmptyStateView: View {
@@ -1321,15 +1303,7 @@ private struct LibraryCollectionArtwork: View {
   var body: some View {
     ZStack {
       if artworkURLs.count >= 4 {
-        LazyVGrid(
-          columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-          spacing: 0
-        ) {
-          ForEach(Array(artworkURLs.enumerated()), id: \.offset) { _, url in
-            LoadingImage(url: url, cornerRadius: 0, contentMode: .fill, showsLoading: false)
-              .aspectRatio(1, contentMode: .fill)
-          }
-        }
+        PlaylistMosaicArtwork(urls: artworkURLs, cornerRadius: cornerRadius)
       } else if let url = collection.artworkURL {
         LoadingImage(url: url, cornerRadius: 0, contentMode: .fill, showsLoading: false)
       } else {
@@ -1632,17 +1606,17 @@ struct PlaylistsSkeletonView: View {
   var body: some View {
     LazyVGrid(columns: cols, spacing: 16) {
       ForEach(0..<8, id: \.self) { index in
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AM.Spacing.s) {
           RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
             .fill(Color.appPlaceholderPrimary)
             .aspectRatio(1, contentMode: .fit)
             .frame(maxWidth: .infinity)
           RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(Color.appPlaceholderSecondary)
-            .frame(width: index % 3 == 0 ? 108 : 138, height: 13)
+            .frame(width: index % 3 == 0 ? 108 : 138, height: 15)
           RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(Color.appPlaceholderPrimary)
-            .frame(width: 72, height: 11)
+            .frame(width: 72, height: 13)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }

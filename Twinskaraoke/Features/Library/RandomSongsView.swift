@@ -153,7 +153,12 @@ struct RandomSongsView: View {
         AppHaptic.medium.play()
         audioManager.playInOrder(song: first, context: viewModel.songs)
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play", isPrimary: true)
+        LibraryActionButtonLabel(
+          symbol: "play.fill",
+          text: "Play",
+          style: .primary,
+          cornerRadius: AM.Radius.card
+        )
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
 
@@ -161,7 +166,12 @@ struct RandomSongsView: View {
         AppHaptic.selection.play()
         audioManager.playShuffled(from: viewModel.songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle", isPrimary: false)
+        LibraryActionButtonLabel(
+          symbol: "shuffle",
+          text: "Shuffle",
+          style: .secondary,
+          cornerRadius: AM.Radius.card
+        )
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
     }
@@ -256,18 +266,6 @@ struct RandomSongsView: View {
     }
   }
 
-  private func actionLabel(symbol: String, text: String, isPrimary: Bool) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-        .font(.system(size: 15, weight: .semibold))
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(isPrimary ? .appControlActiveForeground : .appAccent)
-    .background(isPrimary ? Color.appControlActiveFill : Color.appControlInactiveFill)
-    .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
-  }
 }
 
 private struct RandomSongRow: View {

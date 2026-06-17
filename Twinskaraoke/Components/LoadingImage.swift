@@ -295,7 +295,7 @@ struct MusicSkeletonShimmer: ViewModifier {
       colors: [
         .clear,
         Color.white.opacity(0.22),
-        Color.appAccent.opacity(0.075),
+        Color.white.opacity(0.10),
         .clear,
       ],
       startPoint: .top,

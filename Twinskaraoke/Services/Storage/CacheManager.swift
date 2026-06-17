@@ -310,10 +310,14 @@ final class CacheManager: ObservableObject {
     }
   }
 
-  private func formatBytes(_ bytes: UInt64) -> String {
+  private static let bytesFormatter: ByteCountFormatter = {
     let formatter = ByteCountFormatter()
     formatter.allowedUnits = [.useMB, .useGB]
     formatter.countStyle = .binary
-    return formatter.string(fromByteCount: Int64(bytes))
+    return formatter
+  }()
+
+  private func formatBytes(_ bytes: UInt64) -> String {
+    Self.bytesFormatter.string(fromByteCount: Int64(bytes))
   }
 }

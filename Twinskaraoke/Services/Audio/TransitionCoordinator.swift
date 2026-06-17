@@ -354,6 +354,8 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
   private var task: URLSessionDataTask?
   private var session: URLSession?
   private var didComplete = false
+  private let stateLock = NSLock()
+  private var isCancelled = false
   var onCompletion: (() -> Void)?
 
   init(songID: String, expectedDuration: TimeInterval?) {
@@ -376,6 +378,11 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     try? FileManager.default.removeItem(at: partialURL)
     FileManager.default.createFile(atPath: partialURL.path, contents: nil)
     fileHandle = try? FileHandle(forWritingTo: partialURL)
+    guard fileHandle != nil else {
+      try? FileManager.default.removeItem(at: partialURL)
+      finish()
+      return
+    }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     configuration.urlCache = nil
@@ -389,12 +396,15 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
 
   func cancel() {
     DebugLogger.log("Predownload cancelled for \(songID)", category: .playback)
+    stateLock.lock()
+    isCancelled = true
     task?.cancel()
     session?.invalidateAndCancel()
     fileHandle?.closeFile()
     fileHandle = nil
     task = nil
     session = nil
+    stateLock.unlock()
     try? FileManager.default.removeItem(at: partialURL)
     finish()
   }
@@ -404,26 +414,46 @@ private final class PredownloadSession: NSObject, URLSessionDataDelegate {
     didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
+    guard AudioCacheStore.acceptsAudioResponse(response) else {
+      completionHandler(.cancel)
+      return
+    }
     completionHandler(.allow)
   }
 
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    fileHandle?.write(data)
+    stateLock.lock()
+    let cancelled = isCancelled
+    if !cancelled {
+      fileHandle?.write(data)
+    }
+    stateLock.unlock()
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    stateLock.lock()
+    let cancelled = isCancelled
     fileHandle?.closeFile()
     fileHandle = nil
+    stateLock.unlock()
     session.invalidateAndCancel()
     self.task = nil
     self.session = nil
-    if error == nil,
-      let http = task.response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+    guard !cancelled else { return }
+    if error == nil, AudioCacheStore.acceptsAudioResponse(task.response),
+      AudioCacheStore.isPlayableAudioFile(at: partialURL)
     {
-      DebugLogger.log("Predownload completed for \(songID) with HTTP \(http.statusCode)", category: .playback)
-      try? FileManager.default.removeItem(at: finalURL)
-      try? FileManager.default.moveItem(at: partialURL, to: finalURL)
-      AudioCacheStore.writeMainSourceURL(remoteURL, for: songID)
+      let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+      DebugLogger.log("Predownload completed for \(songID) with HTTP \(status)", category: .playback)
+      do {
+        try? FileManager.default.removeItem(at: finalURL)
+        try FileManager.default.moveItem(at: partialURL, to: finalURL)
+        AudioCacheStore.writeMainSourceURL(remoteURL, for: songID)
+      } catch {
+        DebugLogger.log("Predownload move failed for \(songID): \(error)", category: .playback)
+        try? FileManager.default.removeItem(at: partialURL)
+        AudioCacheStore.writeMainSourceURL(nil, for: songID)
+      }
     } else {
       DebugLogger.log(
         "Predownload failed for \(songID): \(error?.localizedDescription ?? "bad response")",
