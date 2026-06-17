@@ -70,21 +70,32 @@ final class DownloadManager: ObservableObject {
     let songID = song.id
     let songFiles = files(for: songID)
     ensureSongDirectory(for: songID)
-    let task = URLSession.shared.downloadTask(with: remote) { [weak self] tempURL, _, error in
+    let task = URLSession.shared.downloadTask(with: remote) { [weak self] tempURL, response, error in
       var moved = false
-      if let tempURL, error == nil {
-        try? FileManager.default.removeItem(at: songFiles.audio)
+      if let tempURL, error == nil, AudioCacheStore.acceptsAudioResponse(response),
+        AudioCacheStore.isPlayableAudioFile(at: tempURL)
+      {
         do {
           try FileManager.default.createDirectory(
             at: songFiles.directory,
             withIntermediateDirectories: true)
+          try? FileManager.default.removeItem(at: songFiles.audio)
           try FileManager.default.moveItem(at: tempURL, to: songFiles.audio)
           try? FileManager.default.removeItem(at: songFiles.source)
           FileManager.default.createFile(
             atPath: songFiles.source.path,
             contents: remote.absoluteString.data(using: .utf8))
           moved = true
-        } catch {}
+        } catch {
+          DebugLogger.log("Download move failed for \(songID): \(error)", category: .network)
+        }
+      } else {
+        if let tempURL {
+          try? FileManager.default.removeItem(at: tempURL)
+        }
+        if error == nil {
+          DebugLogger.log("Download rejected invalid audio response for \(songID)", category: .network)
+        }
       }
       Task { @MainActor [weak self, moved, song, songID] in
         self?.finishDownload(songID: songID, song: song, moved: moved)
@@ -126,6 +137,10 @@ final class DownloadManager: ObservableObject {
   }
 
   func removeAll() {
+    for task in tasks.values { task.cancel() }
+    tasks = [:]
+    inProgress = []
+    progress = [:]
     let fm = FileManager.default
     if let files = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
       for f in files { try? fm.removeItem(at: f) }
@@ -164,6 +179,11 @@ final class DownloadManager: ObservableObject {
     let songFiles = files(for: song.id)
     guard FileManager.default.fileExists(atPath: songFiles.audio.path) else {
       downloadedIDs.remove(song.id)
+      return nil
+    }
+    guard AudioCacheStore.isPlayableAudioFile(at: songFiles.audio) else {
+      DebugLogger.log("Discarding invalid downloaded audio for \(song.id)", category: .cache)
+      remove(songID: song.id)
       return nil
     }
     guard let cached = readSourceURL(for: song.id) else {
@@ -211,6 +231,7 @@ final class DownloadManager: ObservableObject {
     let songFiles = files(for: songID)
     guard FileManager.default.fileExists(atPath: songFiles.audio.path) else { return false }
     return readSourceURL(for: songID) != nil
+      && AudioCacheStore.isPlayableAudioFile(at: songFiles.audio)
   }
 
   private func readSourceURL(for songID: String) -> String? {
@@ -285,7 +306,10 @@ final class DownloadManager: ObservableObject {
       return
     }
 
-    guard let sourceValue = readLegacySourceURL(for: songID) else {
+    guard let sourceValue = readLegacySourceURL(for: songID),
+      fm.fileExists(atPath: legacyAudio.path),
+      AudioCacheStore.isPlayableAudioFile(at: legacyAudio)
+    else {
       try? fm.removeItem(at: legacyAudio)
       try? fm.removeItem(at: legacySource)
       return

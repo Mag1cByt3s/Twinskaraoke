@@ -335,17 +335,9 @@ struct AccountToolbarButton: View {
     NavigationLink {
       AccountView()
     } label: {
-      ZStack {
-        ToolbarControlBackground()
-
-        avatarContent
-          .frame(width: 30, height: 30)
-          .clipShape(Circle())
-          .overlay(
-            Circle()
-              .strokeBorder(Color.appDivider.opacity(0.70), lineWidth: 0.6)
-          )
-      }
+      avatarContent
+        .frame(width: 30, height: 30)
+        .clipShape(Circle())
       .frame(width: 36, height: 36)
       .contentShape(Circle())
     }
@@ -371,21 +363,16 @@ struct AccountToolbarButton: View {
     }
   }
 
+  @ViewBuilder
   private var fallbackAvatar: some View {
-    ZStack {
-      Circle()
-        .fill(Color.appControlInactiveFill)
-
-      if let initial = displayInitial {
-        Text(initial)
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(.primary)
-      } else {
-        Image(systemName: "person.crop.circle.fill")
-          .font(.system(size: 25, weight: .regular))
-          .symbolRenderingMode(.hierarchical)
-          .foregroundStyle(.secondary)
-      }
+    if let initial = displayInitial {
+      Text(initial)
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.primary)
+    } else {
+      Image(systemName: "person.fill")
+        .font(.system(size: 17, weight: .regular))
+        .foregroundStyle(.secondary)
     }
   }
 

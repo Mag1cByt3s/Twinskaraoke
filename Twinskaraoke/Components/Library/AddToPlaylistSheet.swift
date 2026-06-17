@@ -334,18 +334,18 @@ private struct AddToPlaylistLoadingRows: View {
           RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(Color.appPlaceholderPrimary)
             .frame(width: 50, height: 50)
-          VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading, spacing: 3) {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
               .fill(Color.appPlaceholderSecondary)
-              .frame(width: 160, height: 11)
+              .frame(width: 160, height: 16)
             RoundedRectangle(cornerRadius: 3, style: .continuous)
               .fill(Color.appPlaceholderPrimary)
-              .frame(width: 80, height: 9)
+              .frame(width: 80, height: 13)
           }
           Spacer()
           Circle()
             .fill(Color.appPlaceholderPrimary)
-            .frame(width: 24, height: 24)
+            .frame(width: 28, height: 28)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

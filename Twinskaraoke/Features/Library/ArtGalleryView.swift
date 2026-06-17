@@ -147,6 +147,20 @@ private struct ArtGallerySkeletonView: View {
         .fill(Color.appPlaceholderPrimary)
         .aspectRatio(4 / 5, contentMode: .fit)
         .frame(maxWidth: .infinity)
+        .overlay(alignment: .bottomLeading) {
+          VStack(alignment: .leading, spacing: 6) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color.appPlaceholderSecondary)
+              .frame(width: 96, height: 11)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(Color.appPlaceholderSecondary)
+              .frame(width: 168, height: 22)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color.appPlaceholderPrimary)
+              .frame(width: 62, height: 13)
+          }
+          .padding(20)
+        }
         .padding(.horizontal, 16)
 
       VStack(alignment: .leading, spacing: 12) {
@@ -160,10 +174,7 @@ private struct ArtGallerySkeletonView: View {
                   .frame(width: 96, height: 96)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                   .fill(Color.appPlaceholderSecondary)
-                  .frame(width: index == 2 ? 72 : 86, height: 12)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 54, height: 10)
+                  .frame(width: index == 2 ? 72 : 86, height: 13)
               }
               .frame(width: 100)
             }
@@ -180,18 +191,18 @@ private struct ArtGallerySkeletonView: View {
               Circle()
                 .fill(Color.appPlaceholderPrimary)
                 .frame(width: 50, height: 50)
-              VStack(alignment: .leading, spacing: 7) {
+              VStack(alignment: .leading, spacing: 2) {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                   .fill(Color.appPlaceholderSecondary)
-                  .frame(width: index == 3 ? 126 : 164, height: 13)
+                  .frame(width: index == 3 ? 126 : 164, height: 16)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                   .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 86, height: 11)
+                  .frame(width: 86, height: 13)
               }
               Spacer(minLength: 12)
-              Circle()
+              RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(Color.appPlaceholderPrimary)
-                .frame(width: 22, height: 22)
+                .frame(width: 7, height: 14)
             }
             .padding(.vertical, 10)
             if index < 6 {

@@ -8,6 +8,7 @@ final class PlaylistCoverLoader: ObservableObject {
   private var loadedID: String?
   private var fallbackSongs: [Song] = []
   private var loadedPlaylist: Playlist?
+  private var loadTask: Task<Void, Never>?
 
   func load(playlistID: String, fallback: [Song]? = nil) {
     if loadedID == playlistID {
@@ -19,6 +20,7 @@ final class PlaylistCoverLoader: ObservableObject {
     fallbackSongs = fallback ?? []
     loadedPlaylist = nil
     artworkURLs = Self.extractArtworkURLs(fromSongs: fallbackSongs)
+    loadTask?.cancel()
 
     let urlString = "\(StorageHost.api)/api/playlist/\(playlistID)"
     guard let url = URL(string: urlString) else { return }
@@ -29,15 +31,22 @@ final class PlaylistCoverLoader: ObservableObject {
     }
     GuestIdentity.applyIfNeeded(to: &request)
 
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      guard let self, let data else { return }
-      Task { @MainActor in
-        guard self.loadedID == playlistID else { return }
-        self.loadedPlaylist = try? JSONDecoder().decode(Playlist.self, from: data)
-        self.fallbackSongs = self.loadedPlaylist?.songListDTOs ?? SongPayloadDecoder.decodeSongs(from: data) ?? self.fallbackSongs
-        self.refreshFallbackArtwork()
-      }
-    }.resume()
+    loadTask = Task { [weak self, request] in
+      guard let data = try? await URLSession.shared.data(for: request).0 else { return }
+      guard !Task.isCancelled else { return }
+      self?.applyLoadedPlaylistData(data, playlistID: playlistID)
+    }
+  }
+
+  deinit {
+    loadTask?.cancel()
+  }
+
+  private func applyLoadedPlaylistData(_ data: Data, playlistID: String) {
+    guard loadedID == playlistID else { return }
+    loadedPlaylist = try? JSONDecoder().decode(Playlist.self, from: data)
+    fallbackSongs = loadedPlaylist?.songListDTOs ?? SongPayloadDecoder.decodeSongs(from: data) ?? fallbackSongs
+    refreshFallbackArtwork()
   }
 
   func refreshFallbackArtwork() {
@@ -46,33 +55,19 @@ final class PlaylistCoverLoader: ObservableObject {
       urls.append(contentsOf: Self.extractMosaicURLs(from: loadedPlaylist))
     }
     urls.append(contentsOf: Self.extractArtworkURLs(fromSongs: fallbackSongs))
-    artworkURLs = Self.uniqueURLs(urls, limit: 4)
+    artworkURLs = Playlist.uniqueURLs(urls, limit: 4)
   }
 
   private static func extractMosaicURLs(from playlist: Playlist) -> [URL] {
-    let mediaURLs = playlist.mosaicMedia?.compactMap(mediaURL) ?? []
-    if !mediaURLs.isEmpty { return uniqueURLs(mediaURLs, limit: 4) }
+    let mediaURLs = playlist.mosaicMedia?.compactMap { media -> URL? in
+      guard let path = media.absolutePath, !path.isEmpty else { return nil }
+      return Playlist.mediaURL(from: path)
+    } ?? []
+    if !mediaURLs.isEmpty { return Playlist.uniqueURLs(mediaURLs, limit: 4) }
     return extractArtworkURLs(fromSongs: playlist.songListDTOs ?? [])
   }
 
   private static func extractArtworkURLs(fromSongs songs: [Song]) -> [URL] {
-    uniqueURLs(songs.compactMap(\.imageURL), limit: 4)
-  }
-
-  private static func mediaURL(from media: Media) -> URL? {
-    guard let path = media.absolutePath, !path.isEmpty else { return nil }
-    let normalized = path.hasPrefix("/") ? path : "/\(path)"
-    return URL(string: "\(StorageHost.images)\(normalized)/width=480,quality=85,format=auto")
-  }
-
-  private static func uniqueURLs(_ urls: [URL], limit: Int) -> [URL] {
-    var seen = Set<String>()
-    var result: [URL] = []
-    for url in urls {
-      guard seen.insert(url.absoluteString).inserted else { continue }
-      result.append(url)
-      if result.count == limit { break }
-    }
-    return result
+    Playlist.uniqueURLs(songs.compactMap(\.imageURL), limit: 4)
   }
 }

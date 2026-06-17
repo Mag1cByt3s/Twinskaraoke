@@ -156,15 +156,7 @@ struct DownloadedSongsView: View {
   private var mosaicArtwork: some View {
     let arts = Array(localSongs.prefix(4).compactMap { $0.imageURL })
     if arts.count >= 4 {
-      LazyVGrid(
-        columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-        spacing: 0
-      ) {
-        ForEach(0..<4, id: \.self) { i in
-          LoadingImage(url: arts[i], cornerRadius: 0)
-            .aspectRatio(1, contentMode: .fill)
-        }
-      }
+      PlaylistMosaicArtwork(urls: arts, cornerRadius: 0, showsLoading: true)
     } else if let url = arts.first {
       LoadingImage(url: url, cornerRadius: 0)
     } else {
@@ -184,31 +176,20 @@ struct DownloadedSongsView: View {
       Button {
         playInOrder()
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play")
+        LibraryActionButtonLabel(symbol: "play.fill", text: "Play")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       .accessibilityLabel("Play downloaded songs")
       Button {
         shuffle()
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle")
+        LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       .accessibilityLabel("Shuffle downloaded songs")
     }
   }
-  private func actionLabel(symbol: String, text: String) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-        .font(.system(size: 15, weight: .semibold))
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(.appAccent)
-    .background(Color.appControlInactiveFill)
-    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-  }
+
   private func refresh() {
     let cached = recentlyPlayed.playlists.flatMap { $0.songListDTOs ?? [] }
     let songs = downloads.downloadedSongs(knownSongs: cached)

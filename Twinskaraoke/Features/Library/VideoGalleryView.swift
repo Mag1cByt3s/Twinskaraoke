@@ -310,17 +310,33 @@ private struct VideoGallerySkeleton: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 24) {
-      VStack(alignment: .leading, spacing: 10) {
-        VideoPlaceholderThumbnail(cornerRadius: 14)
-          .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 220, height: 14)
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(Color.appPlaceholderPrimary)
-          .frame(width: 128, height: 11)
-      }
-      .padding(.horizontal, 16)
+      VideoPlaceholderThumbnail(cornerRadius: 14)
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+        .overlay {
+          LinearGradient(
+            colors: [.clear, Color.appPlaceholderQuaternary.opacity(0.55)],
+            startPoint: .center,
+            endPoint: .bottom
+          )
+          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .overlay(alignment: .bottomLeading) {
+          HStack(spacing: 8) {
+            Circle()
+              .fill(Color.appPlaceholderSecondary)
+              .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 5) {
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.appPlaceholderSecondary)
+                .frame(width: 92, height: 11)
+              RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.appPlaceholderSecondary)
+                .frame(width: 186, height: 17)
+            }
+          }
+          .padding(16)
+        }
+        .padding(.horizontal, 16)
 
       VStack(alignment: .leading, spacing: 12) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -367,11 +383,6 @@ private struct VideoPlaceholderThumbnail: View {
         )
       )
       .aspectRatio(16 / 9, contentMode: .fit)
-      .overlay {
-        Image(systemName: "play.fill")
-          .font(.system(size: 18, weight: .bold))
-          .foregroundColor(.appAccent.opacity(0.82))
-      }
   }
 }
 

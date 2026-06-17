@@ -34,17 +34,40 @@ struct PlaylistArtwork: View {
   var cornerRadius: CGFloat = 10
 
   var body: some View {
+    if playlist.isFavorites || !initialCoverURLs.isEmpty {
+      PlaylistArtworkContent(
+        playlist: playlist,
+        coverURLs: initialCoverURLs,
+        cornerRadius: cornerRadius
+      )
+    } else {
+      PlaylistCoverWithLoader(playlist: playlist, cornerRadius: cornerRadius)
+    }
+  }
+
+  private var initialCoverURLs: [URL] {
+    if let url = playlist.explicitCoverURL {
+      return [url]
+    }
+    return playlist.initialMosaicArtworkURLs
+  }
+}
+
+struct PlaylistArtworkContent: View {
+  let playlist: Playlist
+  let coverURLs: [URL]
+  var cornerRadius: CGFloat = 10
+
+  var body: some View {
     Group {
       if playlist.isFavorites {
         FavoritesArtworkTile()
-      } else if let url = playlist.explicitCoverURL {
+      } else if let url = coverURLs.first, coverURLs.count == 1 {
         LoadingImage(url: url, cornerRadius: cornerRadius)
-      } else if let url = playlist.initialMosaicArtworkURLs.first, playlist.initialMosaicArtworkURLs.count == 1 {
-        LoadingImage(url: url, cornerRadius: cornerRadius)
-      } else if playlist.initialMosaicArtworkURLs.count > 1 {
-        PlaylistMosaicArtwork(urls: playlist.initialMosaicArtworkURLs, cornerRadius: cornerRadius)
+      } else if coverURLs.count > 1 {
+        PlaylistMosaicArtwork(urls: coverURLs, cornerRadius: cornerRadius)
       } else {
-        PlaylistCoverWithLoader(playlist: playlist, cornerRadius: cornerRadius)
+        PlaylistPlaceholderArtwork(seed: playlist.id)
       }
     }
   }
@@ -57,15 +80,11 @@ private struct PlaylistCoverWithLoader: View {
   @ObservedObject private var fallbackArt = FallbackArtProvider.shared
 
   var body: some View {
-    Group {
-      if let url = loader.artworkURLs.first, loader.artworkURLs.count == 1 {
-        LoadingImage(url: url, cornerRadius: cornerRadius)
-      } else if loader.artworkURLs.count > 1 {
-        PlaylistMosaicArtwork(urls: loader.artworkURLs, cornerRadius: cornerRadius)
-      } else {
-        PlaylistPlaceholderArtwork(seed: playlist.id)
-      }
-    }
+    PlaylistArtworkContent(
+      playlist: playlist,
+      coverURLs: loader.artworkURLs,
+      cornerRadius: cornerRadius
+    )
     .onAppear {
       loader.load(playlistID: playlist.id, fallback: playlist.songListDTOs)
     }
@@ -81,6 +100,7 @@ private struct PlaylistCoverWithLoader: View {
 struct PlaylistMosaicArtwork: View {
   let urls: [URL]
   var cornerRadius: CGFloat = 10
+  var showsLoading = false
 
   var body: some View {
     GeometryReader { geo in
@@ -95,7 +115,7 @@ struct PlaylistMosaicArtwork: View {
       ) {
         ForEach(0..<4, id: \.self) { index in
           if let url = artworkURL(at: index) {
-            LoadingImage(url: url, cornerRadius: 0, showsLoading: false)
+            LoadingImage(url: url, cornerRadius: 0, showsLoading: showsLoading)
               .frame(width: cell, height: cell)
           } else {
             PlaylistPlaceholderArtwork(seed: "\(index)-\(urls.count)")

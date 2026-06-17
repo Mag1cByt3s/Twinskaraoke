@@ -260,11 +260,17 @@ final class VocalSeparator: ObservableObject {
       }
     }
     activeTask = task
-    _ = try await task.value
+    do {
+      _ = try await task.value
+    } catch {
+      Self.cleanupTmpFiles([vocalsURL, instrumentsURL])
+      throw error
+    }
 
     guard FileManager.default.fileExists(atPath: vocalsURL.path),
       FileManager.default.fileExists(atPath: instrumentsURL.path)
     else {
+      Self.cleanupTmpFiles([vocalsURL, instrumentsURL])
       throw VocalSeparatorError.unavailable
     }
 

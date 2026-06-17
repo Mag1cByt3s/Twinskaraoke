@@ -159,17 +159,7 @@ struct PlaylistDetailView: View {
   }
 
   private func playlistArtwork(size: CGFloat) -> some View {
-    Group {
-      if playlist.isFavorites {
-        FavoritesArtworkTile()
-      } else if let url = playlistCoverURLs.first, playlistCoverURLs.count == 1 {
-        LoadingImage(url: url, cornerRadius: 14)
-      } else if playlistCoverURLs.count > 1 {
-        PlaylistMosaicArtwork(urls: playlistCoverURLs, cornerRadius: 14)
-      } else {
-        PlaylistPlaceholderArtwork(seed: playlist.id)
-      }
-    }
+    PlaylistArtworkContent(playlist: playlist, coverURLs: playlistCoverURLs, cornerRadius: 14)
     .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
@@ -242,7 +232,7 @@ struct PlaylistDetailView: View {
           audioManager.playInOrder(song: first, context: songs)
         }
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play")
+        LibraryActionButtonLabel(symbol: "play.fill", text: "Play")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
       .accessibilityLabel("Play playlist")
@@ -250,25 +240,14 @@ struct PlaylistDetailView: View {
         AppHaptic.selection.play()
         audioManager.playShuffled(from: songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle")
+        LibraryActionButtonLabel(symbol: "shuffle", text: "Shuffle")
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
       .accessibilityLabel("Shuffle playlist")
     }
     .padding(.horizontal, horizontalPadding)
   }
-  private func actionLabel(symbol: String, text: String) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-        .font(.system(size: 15, weight: .semibold))
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(.appAccent)
-    .background(Color.appControlInactiveFill)
-    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-  }
+
   private func play(_ song: Song, context: [Song]) {
     AppHaptic.selection.play()
     audioManager.play(song: song, context: context)
@@ -281,23 +260,9 @@ private struct PlaylistLoadingRows: View {
   var body: some View {
     LazyVStack(spacing: 0) {
       ForEach(0..<7, id: \.self) { _ in
-        HStack(spacing: 12) {
-          RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 48, height: 48)
-          VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 180, height: 11)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 126, height: 9)
-          }
-          Spacer()
-          LoadingIndicator(size: 16)
-        }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, 10)
+        SongRowSkeleton(size: .regular)
+          .padding(.horizontal, horizontalPadding)
+          .padding(.vertical, 8)
         Divider().padding(.leading, horizontalPadding + 60)
       }
     }
@@ -349,17 +314,7 @@ private struct PlaylistDetailContextPreview: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Group {
-        if playlist.isFavorites {
-          FavoritesArtworkTile()
-        } else if let url = coverURLs.first, coverURLs.count == 1 {
-          LoadingImage(url: url, cornerRadius: 10)
-        } else if coverURLs.count > 1 {
-          PlaylistMosaicArtwork(urls: coverURLs, cornerRadius: 10)
-        } else {
-          PlaylistPlaceholderArtwork(seed: playlist.id)
-        }
-      }
+      PlaylistArtworkContent(playlist: playlist, coverURLs: coverURLs, cornerRadius: 10)
       .frame(width: 220, height: 220)
       .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
@@ -493,11 +448,13 @@ struct PlaylistRow: View {
   }
 }
 
+@MainActor
 class PlaylistDetailViewModel: ObservableObject {
   @Published var songs: [Song]?
   @Published var isLoading = false
   @Published private var loadFailed = false
   private var loadedID: String?
+  private var loadTask: Task<Void, Never>?
   var emptyStateMessage: String {
     if loadFailed {
       return "The playlist couldn’t be loaded. Check your connection and try again."
@@ -513,12 +470,14 @@ class PlaylistDetailViewModel: ObservableObject {
     let alreadyLoaded = (loadedID == playlistID) && songs != nil && !isLoading
     if alreadyLoaded { return }
     loadedID = playlistID
+    loadTask?.cancel()
     if songs?.isEmpty ?? true, let fallback = fallback, !fallback.isEmpty {
       self.songs = fallback
     }
     if ProcessInfo.processInfo.arguments.contains("-UITestMode"),
       let fallback = fallback, !fallback.isEmpty
     {
+      loadTask = nil
       songs = fallback
       isLoading = false
       loadFailed = false
@@ -536,20 +495,40 @@ class PlaylistDetailViewModel: ObservableObject {
       r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
     GuestIdentity.applyIfNeeded(to: &r)
-    URLSession.shared.dataTask(with: r) { [weak self] data, response, error in
-      guard let self = self else { return }
-      let list = Self.decodeSongs(from: data)
-      let statusCode = (response as? HTTPURLResponse)?.statusCode
-      let requestFailed = error != nil || statusCode.map { !(200..<300).contains($0) } == true
-      DispatchQueue.main.async {
-        if let list = list {
-          self.songs = list
-        }
-        self.loadFailed = requestFailed && (self.songs?.isEmpty ?? true)
-        self.isLoading = false
+    loadTask = Task { [weak self, r] in
+      do {
+        let (data, response) = try await URLSession.shared.data(for: r)
+        guard !Task.isCancelled else { return }
+        self?.applyLoadedSongs(
+          Self.decodeSongs(from: data),
+          playlistID: playlistID,
+          requestFailed: !Self.isSuccess(response)
+        )
+      } catch {
+        guard !Task.isCancelled else { return }
+        self?.applyLoadedSongs(nil, playlistID: playlistID, requestFailed: true)
       }
-    }.resume()
+    }
   }
+
+  deinit {
+    loadTask?.cancel()
+  }
+
+  private func applyLoadedSongs(_ list: [Song]?, playlistID: String, requestFailed: Bool) {
+    guard loadedID == playlistID else { return }
+    if let list {
+      songs = list
+    }
+    loadFailed = requestFailed && (songs?.isEmpty ?? true)
+    isLoading = false
+  }
+
+  private static func isSuccess(_ response: URLResponse) -> Bool {
+    guard let httpResponse = response as? HTTPURLResponse else { return true }
+    return (200..<300).contains(httpResponse.statusCode)
+  }
+
   private static func decodeSongs(from data: Data?) -> [Song]? {
     SongPayloadDecoder.decodeSongs(from: data)
   }

@@ -216,20 +216,20 @@ private struct ArtistsSkeletonView: View {
               .fill(Color.appPlaceholderPrimary)
               .frame(width: 52, height: 52)
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 2) {
               RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(Color.appPlaceholderSecondary)
-                .frame(width: index == 2 || index == 8 ? 118 : 168, height: 13)
+                .frame(width: index == 2 || index == 8 ? 118 : 168, height: 16)
               RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(Color.appPlaceholderPrimary)
-                .frame(width: 74, height: 11)
+                .frame(width: 74, height: 13)
             }
 
             Spacer(minLength: 12)
 
-            Circle()
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
               .fill(Color.appPlaceholderPrimary)
-              .frame(width: 24, height: 24)
+              .frame(width: 7, height: 14)
           }
           .padding(.horizontal, 16)
           .padding(.vertical, 8)
@@ -457,13 +457,23 @@ struct ArtistDetailView: View {
           audioManager.playInOrder(song: first, context: songs)
         }
       } label: {
-        actionLabel(symbol: "play.fill", text: "Play", isPrimary: true)
+        LibraryActionButtonLabel(
+          symbol: "play.fill",
+          text: "Play",
+          style: .primary,
+          cornerRadius: AM.Radius.card
+        )
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
         audioManager.playShuffled(from: songs)
       } label: {
-        actionLabel(symbol: "shuffle", text: "Shuffle", isPrimary: false)
+        LibraryActionButtonLabel(
+          symbol: "shuffle",
+          text: "Shuffle",
+          style: .secondary,
+          cornerRadius: AM.Radius.card
+        )
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
     }
@@ -487,18 +497,6 @@ struct ArtistDetailView: View {
     }
   }
 
-  private func actionLabel(symbol: String, text: String, isPrimary: Bool) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: symbol)
-        .font(.system(size: 15, weight: .semibold))
-      Text(text).fontWeight(.semibold)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .foregroundColor(isPrimary ? .appControlActiveForeground : .appAccent)
-    .background(isPrimary ? Color.appControlActiveFill : Color.appControlInactiveFill)
-    .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
-  }
 }
 
 private struct ArtistSongRow: View {
@@ -521,23 +519,9 @@ private struct ArtistSongsSkeleton: View {
   var body: some View {
     LazyVStack(spacing: 0) {
       ForEach(0..<7, id: \.self) { _ in
-        HStack(spacing: 12) {
-          RoundedRectangle(cornerRadius: AM.Radius.thumb, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 52, height: 52)
-          VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 190, height: 12)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 116, height: 10)
-          }
-          Spacer()
-          LoadingIndicator(size: 16)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        SongRowSkeleton(size: .regular)
+          .padding(.horizontal)
+          .padding(.vertical, 8)
         Divider().padding(.leading, 76)
       }
     }

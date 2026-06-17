@@ -37,6 +37,8 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
   private var task: URLSessionDataTask?
   private var session: URLSession?
   private var hasReportedPlayableFallback = false
+  private let stateLock = NSLock()
+  private var isCancelled = false
   var onCompletion: ((URL?) -> Void)?
   var onPlayableFallbackReady: ((URL) -> Void)?
   init(songID: String) {
@@ -51,6 +53,12 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     try? FileManager.default.removeItem(at: partialURL)
     FileManager.default.createFile(atPath: partialURL.path, contents: nil)
     self.fileHandle = try? FileHandle(forWritingTo: partialURL)
+    guard fileHandle != nil else {
+      try? FileManager.default.removeItem(at: partialURL)
+      AudioCacheStore.writeMainSourceURL(nil, for: songID)
+      DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
+      return
+    }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     configuration.urlCache = nil
@@ -62,9 +70,13 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     task?.resume()
   }
   func cancel() {
+    stateLock.lock()
+    isCancelled = true
     task?.cancel()
     session?.invalidateAndCancel()
     fileHandle?.closeFile()
+    fileHandle = nil
+    stateLock.unlock()
     try? FileManager.default.removeItem(at: partialURL)
     AudioCacheStore.writeMainSourceURL(nil, for: songID)
   }
@@ -86,16 +98,30 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
+    guard AudioCacheStore.acceptsAudioResponse(response) else {
+      completionHandler(.cancel)
+      return
+    }
     completionHandler(.allow)
   }
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    fileHandle?.write(data)
+    stateLock.lock()
+    let cancelled = isCancelled
+    if !cancelled {
+      fileHandle?.write(data)
+    }
+    stateLock.unlock()
+    guard !cancelled else { return }
     reportPlayableFallbackIfPossible()
   }
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    stateLock.lock()
+    let cancelled = isCancelled
     fileHandle?.closeFile()
     fileHandle = nil
+    stateLock.unlock()
     session.invalidateAndCancel()
+    guard !cancelled else { return }
     if error != nil {
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
@@ -109,6 +135,12 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
       return
     }
     guard let validRemoteURL = remoteURL else {
+      try? FileManager.default.removeItem(at: partialURL)
+      AudioCacheStore.writeMainSourceURL(nil, for: songID)
+      DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
+      return
+    }
+    guard AudioCacheStore.isPlayableAudioFile(at: partialURL) else {
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
@@ -425,6 +457,7 @@ class AudioPlayerManager: ObservableObject {
   private var quickCutTimer: Timer?
   private var quickCutGeneration: UInt64 = 0
   private var separationGeneration: UInt64 = 0
+  private var transitionTimeoutGeneration: UInt64 = 0
   private var suppressPlaybackEndedUntil: Date = .distantPast
   private var wasPlayingBeforeInterruption = false
 
@@ -642,13 +675,19 @@ class AudioPlayerManager: ObservableObject {
     cacheCompressionTask?.cancel()
     radioPlayer?.pause()
     #if canImport(UIKit)
-      if bgTaskID != .invalid {
-        UIApplication.shared.endBackgroundTask(bgTaskID)
-        bgTaskID = .invalid
-      }
-      if trackTransitionTaskID != .invalid {
-        UIApplication.shared.endBackgroundTask(trackTransitionTaskID)
-        trackTransitionTaskID = .invalid
+      let backgroundTaskID = bgTaskID
+      let transitionTaskID = trackTransitionTaskID
+      bgTaskID = .invalid
+      trackTransitionTaskID = .invalid
+      if backgroundTaskID != .invalid || transitionTaskID != .invalid {
+        Task { @MainActor in
+          if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+          }
+          if transitionTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(transitionTaskID)
+          }
+        }
       }
     #endif
   }
@@ -923,6 +962,7 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private func cancelPendingTransitionWork(resetVolume: Bool = true) {
+    transitionTimeoutGeneration &+= 1
     cancelQuickCutTimer(resetVolume: resetVolume)
     avEngine.cancelCrossfade()
     streamFadeTimer?.invalidate()
@@ -1176,7 +1216,12 @@ class AudioPlayerManager: ObservableObject {
       applyMLSeparationIfNeeded()
       return
     }
-    guard let remoteURL = song.audioURL else { return }
+    guard let remoteURL = song.audioURL else {
+      #if canImport(UIKit)
+        endTrackTransitionBackgroundTask()
+      #endif
+      return
+    }
     startStreamPlayback(url: remoteURL, songID: song.id)
     if aiEnabled {
       if anyAIEffectActive {
@@ -1776,13 +1821,15 @@ class AudioPlayerManager: ObservableObject {
       player.pause()
       player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) {
         [weak self, weak player] _ in
-        guard let self, let player, self.streamPlayer === player else { return }
-        guard self.streamPlaybackRequested else {
+        Task { @MainActor [weak self, weak player] in
+          guard let self, let player, self.streamPlayer === player else { return }
+          guard self.streamPlaybackRequested else {
+            self.refreshManagedPlayerState(player, kind: .stream)
+            return
+          }
+          player.play()
           self.refreshManagedPlayerState(player, kind: .stream)
-          return
         }
-        player.play()
-        self.refreshManagedPlayerState(player, kind: .stream)
       }
     } else if autoplay {
       player.play()
@@ -2427,8 +2474,13 @@ class AudioPlayerManager: ObservableObject {
         ramp: plan.rampStyle
       )
       let timeout = plan.fadeDuration + 3.0
+      transitionTimeoutGeneration &+= 1
+      let timeoutGeneration = transitionTimeoutGeneration
       DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-        guard let self, self.transitionCoordinator.state.isCrossfading else { return }
+        guard let self,
+          self.transitionTimeoutGeneration == timeoutGeneration,
+          self.transitionCoordinator.state.isCrossfading
+        else { return }
         let handoffReady = self.avEngine.currentURL?.path == plan.nextFileURL.path && self.avEngine.isPlaying
         DebugLogger.log(
           "Transition timeout fallback fired for next=\(plan.nextSong.id), currentSong=\(self.currentSong?.id ?? "nil"), audioURL=\(self.avEngine.currentURL?.lastPathComponent ?? "nil"), expected=\(plan.nextFileURL.lastPathComponent), audioTime=\(self.avEngine.currentTime), isPlaying=\(self.isPlaying), handoffReady=\(handoffReady)",

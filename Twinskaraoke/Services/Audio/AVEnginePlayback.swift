@@ -214,6 +214,7 @@ final class AVEnginePlayback {
   private var crossfadeDuration: TimeInterval = 0
 
   private var crossfadeElapsed: TimeInterval = 0
+  private var crossfadeStartTime: Date?
 
   private var crossfadeRamp: RampStyle = .equalPower
 
@@ -367,6 +368,11 @@ final class AVEnginePlayback {
       return true
     }
     if header[0] == 0x66 && header[1] == 0x4C && header[2] == 0x61 && header[3] == 0x43 {
+      return true
+    }
+    if header.count >= 8,
+      header[4] == 0x66 && header[5] == 0x74 && header[6] == 0x79 && header[7] == 0x70
+    {
       return true
     }
     return false
@@ -1069,6 +1075,7 @@ final class AVEnginePlayback {
         }
         self.crossfadeDuration = max(0.5, duration)
         self.crossfadeElapsed = 0
+        self.crossfadeStartTime = Date()
         self.crossfadeRamp = ramp
         self.isCrossfading = true
         self.pendingCrossfadeURL = url
@@ -1087,8 +1094,9 @@ final class AVEnginePlayback {
           guard self != nil else { timer.invalidate(); return }
           MainActor.assumeIsolated {
             guard let self else { return }
-            self.crossfadeElapsed += interval
-            let t = Float(min(1.0, self.crossfadeElapsed / self.crossfadeDuration))
+            let elapsed = self.crossfadeStartTime.map { Date().timeIntervalSince($0) } ?? 0
+            self.crossfadeElapsed = elapsed
+            let t = Float(min(1.0, elapsed / self.crossfadeDuration))
             let outVol: Float
             let inVol: Float
             switch self.crossfadeRamp {

@@ -17,6 +17,7 @@ nonisolated enum AudioCacheStore {
   private static let compressionExtension = "nkz"
   private static let compressionAlgorithm: Algorithm = .lzfse
   private static let chunkSize = 64 * 1024
+  private static let maximumPlayableFileSize: Int64 = 256 * 1024 * 1024
   private static let cacheDirectory: URL = {
     let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
       .appendingPathComponent("AudioCache", isDirectory: true)
@@ -187,6 +188,7 @@ nonisolated enum AudioCacheStore {
 
   static func compressIdleAssets(excluding songIDs: Set<String>) {
     for directory in cachedSongDirectories() where !songIDs.contains(directory.lastPathComponent) {
+      if Task.isCancelled { break }
       let songID = directory.lastPathComponent
       compressAssets(for: songID)
     }
@@ -304,6 +306,22 @@ nonisolated enum AudioCacheStore {
       }
     }
     return 0
+  }
+
+  static func acceptsAudioResponse(_ response: URLResponse?) -> Bool {
+    guard let http = response as? HTTPURLResponse else { return true }
+    guard (200...299).contains(http.statusCode) else { return false }
+    if http.expectedContentLength > maximumPlayableFileSize {
+      return false
+    }
+    guard let mimeType = http.mimeType?.lowercased(), !mimeType.isEmpty else { return true }
+    return !mimeType.hasPrefix("text/")
+      && mimeType != "application/json"
+      && !mimeType.hasSuffix("+json")
+  }
+
+  static func isPlayableAudioFile(at url: URL) -> Bool {
+    isValidAudioFile(at: url)
   }
 
   private static func getAudioDuration(at url: URL) -> TimeInterval {
