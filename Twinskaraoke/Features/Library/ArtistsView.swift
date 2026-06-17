@@ -313,7 +313,6 @@ private struct ArtistAvatar: View {
 struct ArtistDetailView: View {
   let artist: Artist
   @StateObject private var loader = ArtistDetailViewModel()
-  @EnvironmentObject var audioManager: AudioPlayerManager
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var scrollOffset: CGFloat = 0
@@ -346,10 +345,13 @@ struct ArtistDetailView: View {
           }
           .padding(.horizontal)
           if !songs.isEmpty {
+            // Artist pages can return hundreds of tracks; skip artwork past this
+            // point so a fling does not queue hundreds of image loads.
+            let showsRowArtwork = songs.count <= 200
             actionButtons
             LazyVStack(spacing: 0) {
               ForEach(songs) { song in
-                ArtistSongRow(song: song) {
+                ArtistSongRow(song: song, showsArtwork: showsRowArtwork) {
                   play(song)
                 }
                   .padding(.horizontal)
@@ -392,7 +394,7 @@ struct ArtistDetailView: View {
       }
       .scrollIndicators(.hidden)
       .coordinateSpace(name: "artistScroll")
-      .onPreferenceChange(ArtistScrollOffsetKey.self) { scrollOffset = $0 }
+      .onPreferenceChange(ArtistScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }
     .musicScreenBackground()
     .navigationTitle(scrollOffset < -180 ? current.name : "")
@@ -423,7 +425,7 @@ struct ArtistDetailView: View {
 
   private func play(_ song: Song) {
     AppHaptic.selection.play()
-    audioManager.play(song: song, context: songs)
+    AudioPlayerManager.shared.play(song: song, context: songs)
   }
 
   @ViewBuilder
@@ -432,14 +434,12 @@ struct ArtistDetailView: View {
     let stretch = reduceMotion ? 0 : max(0, scrollOffset)
     let shrink = reduceMotion ? 0 : max(0, -scrollOffset * 0.4)
     let size = max(140, baseSize + stretch * 0.6 - shrink)
-    let blur = reduceMotion ? 0 : min(8, max(0, -scrollOffset / 30))
     let yOffset = reduceMotion ? 0 : (scrollOffset > 0 ? -scrollOffset / 2 : 0)
     let artworkOpacity = reduceMotion ? 1 : 1 - min(0.7, max(0, -scrollOffset / 250))
     ArtistAvatar(url: current.imageURL)
       .frame(width: size, height: size)
       .clipShape(Circle())
       .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-      .blur(radius: blur)
       .opacity(artworkOpacity)
       .frame(width: width)
       .offset(y: yOffset)
@@ -454,14 +454,14 @@ struct ArtistDetailView: View {
     HStack(spacing: 12) {
       Button {
         if let first = songs.first {
-          audioManager.playInOrder(song: first, context: songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: songs)
         }
       } label: {
         actionLabel(symbol: "play.fill", text: "Play", isPrimary: true)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
       Button {
-        audioManager.playShuffled(from: songs)
+        AudioPlayerManager.shared.playShuffled(from: songs)
       } label: {
         actionLabel(symbol: "shuffle", text: "Shuffle", isPrimary: false)
       }
@@ -503,10 +503,12 @@ struct ArtistDetailView: View {
 
 private struct ArtistSongRow: View {
   let song: Song
+  /// Propagated from ArtistDetailView so large artist catalogs can use cheaper rows.
+  var showsArtwork = true
   let onPlay: () -> Void
 
   var body: some View {
-    SongRow(song: song, size: .regular)
+    SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
       .contentShape(Rectangle())
       .onTapGesture {
         onPlay()
@@ -689,7 +691,6 @@ private struct ArtistDetailHintRow: View {
 
 private struct ArtistActionsMenu: View {
   let songs: [Song]
-  @EnvironmentObject private var audioManager: AudioPlayerManager
   @StateObject private var downloads = DownloadManager.shared
 
   private var pendingDownloads: [Song] {
@@ -716,7 +717,7 @@ private struct ArtistActionsMenu: View {
       Button {
         AppHaptic.selection.play()
         if let first = songs.first {
-          audioManager.playInOrder(song: first, context: songs)
+          AudioPlayerManager.shared.playInOrder(song: first, context: songs)
         }
       } label: {
         Label("Play", systemImage: "play.fill")
@@ -724,7 +725,7 @@ private struct ArtistActionsMenu: View {
 
       Button {
         AppHaptic.selection.play()
-        audioManager.playShuffled(from: songs)
+        AudioPlayerManager.shared.playShuffled(from: songs)
       } label: {
         Label("Shuffle", systemImage: "shuffle")
       }
@@ -759,4 +760,10 @@ private struct ArtistActionsMenu: View {
 private struct ArtistScrollOffsetKey: PreferenceKey {
   static var defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
+  // Keep parallax/header state coarse; tiny offset changes are visually irrelevant
+  // but still cause SwiftUI to re-evaluate the detail view.
+  (offset / 8).rounded() * 8
 }
