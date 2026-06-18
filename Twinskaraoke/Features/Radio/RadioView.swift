@@ -155,7 +155,9 @@ struct RadioView: View {
   private var compactRadioOverview: some View {
     VStack(spacing: AM.Spacing.shelfSpacing) {
       refreshBanner(horizontalPadding: AM.Spacing.screenMargin)
-      stationCard()
+      stationCard(horizontalPadding: 0)
+        .padding(.horizontal, AM.Spacing.screenMargin)
+        .frame(maxWidth: .infinity, alignment: .leading)
       if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
         historySection(history: history)
       }
@@ -236,20 +238,18 @@ struct RadioView: View {
           .lineLimit(2)
           .accessibilityIdentifier("Radio.FeaturedEpisode.Title")
       }
-      .padding(.horizontal, horizontalPadding)
+      .padding(.leading, AM.Spacing.screenMargin)
 
       radioHero(
         song: song,
         station: np?.station,
-        isLivePlaying: isLivePlaying,
-        horizontalPadding: horizontalPadding
+        isLivePlaying: isLivePlaying
       )
 
       RadioLiveStatusStrip(
         isPlaying: isLivePlaying,
         listenerCount: np?.listeners?.unique,
         lastUpdated: radio.lastUpdated)
-      .padding(.horizontal, horizontalPadding)
 
       if let next = np?.playingNext?.song {
         Button {
@@ -299,7 +299,6 @@ struct RadioView: View {
         .accessibilityLabel("Up Next")
         .accessibilityValue("\(next.displayTitle), \(next.displayArtist)")
         .accessibilityHint("Shows the live radio schedule.")
-        .padding(.horizontal, horizontalPadding)
         .contextMenu {
           radioActions
         } preview: {
@@ -307,6 +306,7 @@ struct RadioView: View {
         }
       }
     }
+    .padding(.horizontal, horizontalPadding)
     .contextMenu {
       radioActions
     } preview: {
@@ -321,8 +321,7 @@ struct RadioView: View {
   private func radioHero(
     song: RadioNowPlaying.SongInfo?,
     station: RadioNowPlaying.Station?,
-    isLivePlaying: Bool,
-    horizontalPadding: CGFloat
+    isLivePlaying: Bool
   ) -> some View {
     ZStack(alignment: .bottomLeading) {
       Group {
@@ -367,7 +366,6 @@ struct RadioView: View {
     // controls, and shadow is otherwise expensive during high-velocity scroll.
     .compositingGroup()
     .shadow(color: Color.appHeroShadowIdle, radius: 10, y: 5)
-    .padding(.horizontal, horizontalPadding)
   }
 
   private func radioPlayButton(isLivePlaying: Bool, accessibilityValue: String) -> some View {
