@@ -5,6 +5,26 @@ import SwiftUI
   import UIKit
 #endif
 
+enum DisplayRefreshRate {
+  /// Uses the active screen's advertised maximum so ProMotion devices can request
+  /// higher-frequency redraws while older devices naturally remain at 60 Hz.
+  static var maximumFramesPerSecond: Int {
+    #if canImport(UIKit)
+      max(UIScreen.main.maximumFramesPerSecond, 60)
+    #else
+      60
+    #endif
+  }
+
+  static var isHighRefreshDisplay: Bool {
+    maximumFramesPerSecond > 60
+  }
+
+  static var lightweightAnimationInterval: TimeInterval {
+    1.0 / Double(maximumFramesPerSecond)
+  }
+}
+
 enum AppearanceMode: String, CaseIterable {
   case system, light, dark
   var label: String {

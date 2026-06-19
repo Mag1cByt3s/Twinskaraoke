@@ -39,7 +39,7 @@ struct HomeView: View {
         .padding(.top, AM.Spacing.l)
         .padding(.bottom, AM.Spacing.l)
       }
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Home")
@@ -220,7 +220,7 @@ struct NewView: View {
         .padding(.top, AM.Spacing.m)
         .padding(.bottom, AM.Spacing.l)
       }
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("New")
@@ -451,7 +451,7 @@ struct PlaylistListView: View {
           .padding(.vertical, AM.Spacing.m)
       }
     }
-    .scrollDismissesKeyboard(.interactively)
+    .smoothScrolling()
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .searchable(
@@ -1384,7 +1384,7 @@ struct BrowseSongCollectionView: View {
           }
         )
       }
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .coordinateSpace(name: "browseScroll")
       .onPreferenceChange(BrowseScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }

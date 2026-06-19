@@ -46,6 +46,7 @@ struct ArtDetailView: View {
       }
       .padding(.bottom, 24)
     }
+    .smoothScrolling()
     .navigationTitle(artist.name)
     .navigationBarTitleDisplayMode(.inline)
     .background {

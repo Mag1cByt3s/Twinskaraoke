@@ -15,7 +15,9 @@ enum ImageCacheConfig {
     cfg.maxDiskAge = 30 * 24 * 60 * 60
     SDImageCache.shared.clearMemory()
     let dl = SDWebImageDownloader.shared
-    dl.config.maxConcurrentDownloads = 6
+    // Keep network/decode concurrency below the point where image work can steal
+    // main-thread time from touch tracking on ProMotion devices.
+    dl.config.maxConcurrentDownloads = 4
     dl.requestModifier = SDWebImageDownloaderRequestModifier { request in
       var r = request
       r.cachePolicy = .returnCacheDataElseLoad
@@ -126,7 +128,7 @@ struct LoadingImage: View {
         .onSuccess { _, _, _ in
           markRendered(url)
         }
-        .transition(.opacity.animation(.easeOut(duration: 0.15)))
+        .transition(.opacity.animation(AppMotion.easeOut(duration: 0.15)))
       }
 
     }
@@ -134,7 +136,7 @@ struct LoadingImage: View {
 
   private func markRendered(_ loadedURL: URL) {
     guard renderedFullURL != loadedURL || !fullLoaded || loadFailed else { return }
-    withAnimation(.easeOut(duration: 0.12)) {
+    withAnimation(AppMotion.easeOut(duration: 0.12)) {
       renderedFullURL = loadedURL
       fullLoaded = true
       loadFailed = false
@@ -142,7 +144,7 @@ struct LoadingImage: View {
   }
 
   private func markFinishedAfterFailure() {
-    withAnimation(.easeOut(duration: 0.12)) {
+    withAnimation(AppMotion.easeOut(duration: 0.12)) {
       loadFailed = true
     }
   }
@@ -213,7 +215,7 @@ struct LoadingIndicator: View {
     .frame(width: containerSize, height: containerSize)
     .contentShape(Rectangle())
     .animation(
-      reduceMotion ? nil : .linear(duration: 0.82).repeatForever(autoreverses: false),
+      reduceMotion ? nil : AppMotion.linear(duration: 0.82).repeatForever(autoreverses: false),
       value: isAnimating
     )
     .onAppear {
@@ -266,6 +268,7 @@ struct MusicSkeletonShimmer: ViewModifier {
   var isActive: Bool
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
+  @ObservedObject private var scrollState = ScrollPerformanceState.shared
   @State private var phase: CGFloat = -0.8
 
   func body(content: Content) -> some View {
@@ -281,33 +284,33 @@ struct MusicSkeletonShimmer: ViewModifier {
         .allowsHitTesting(false)
       }
       .onAppear {
-        guard effectiveActive else {
-          phase = -0.8
-          return
-        }
-        withAnimation(.linear(duration: 1.65).repeatForever(autoreverses: false)) {
-          phase = 1.8
-        }
+        restartIfNeeded(active: effectiveActive)
       }
       .onChange(of: effectiveActive) { _, effectiveActive in
-        if effectiveActive {
-          phase = -0.8
-          withAnimation(.linear(duration: 1.65).repeatForever(autoreverses: false)) {
-            phase = 1.8
-          }
-        } else {
-          withAnimation(nil) {
-            phase = -0.8
-          }
-        }
+        restartIfNeeded(active: effectiveActive)
       }
   }
 
   private var effectiveActive: Bool {
-    isActive && !AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
+    isActive
+      && !scrollState.isScrolling
+      && !AppMotion.reduceMotion(
+        systemReduceMotion: systemReduceMotion,
+        respectPreference: respectReducedMotion
+      )
+  }
+
+  private func restartIfNeeded(active: Bool) {
+    if active {
+      phase = -0.8
+      withAnimation(AppMotion.linear(duration: 1.65).repeatForever(autoreverses: false)) {
+        phase = 1.8
+      }
+    } else {
+      withAnimation(nil) {
+        phase = -0.8
+      }
+    }
   }
 
   private func shimmer(width: CGFloat) -> some View {

@@ -827,7 +827,9 @@ struct FullScreenPlayerView: View {
               .padding(3)
               .transition(.opacity)
           } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            TimelineView(
+              .animation(minimumInterval: DisplayRefreshRate.lightweightAnimationInterval)
+            ) { context in
               Circle()
                 .trim(from: 0, to: 0.82)
                 .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))

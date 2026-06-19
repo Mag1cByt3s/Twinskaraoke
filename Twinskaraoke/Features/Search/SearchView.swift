@@ -72,7 +72,7 @@ struct SearchView: View {
           }
           .listStyle(.plain)
           .scrollContentBackground(.hidden)
-          .scrollDismissesKeyboard(.interactively)
+          .smoothScrolling()
           .scrollIndicators(.hidden)
           .frame(maxWidth: resultsMaxWidth)
           .frame(maxWidth: .infinity)
@@ -269,8 +269,7 @@ private struct BrowseCategoriesView: View {
       .padding(.top, AM.Spacing.s)
       .padding(.bottom, AM.Spacing.l)
     }
-    .scrollBounceBehavior(.basedOnSize)
-    .scrollDismissesKeyboard(.interactively)
+    .smoothScrolling()
     .bottomChromeScrollTracking()
     .musicScreenBackground()
     .scrollIndicators(.hidden)
@@ -562,7 +561,7 @@ private struct GenreDetailLoadingView: View {
       }
       .padding(.bottom, AM.Spacing.l)
     }
-    .scrollBounceBehavior(.basedOnSize)
+    .smoothScrolling()
     .bottomChromeScrollTracking()
     .tabBarScrollInset()
     .accessibilityLabel("Loading \(genre.name) songs")
@@ -640,7 +639,7 @@ private struct SearchResultsLoadingView: View {
       .padding(.top, 8)
       .padding(.bottom, AM.Spacing.l)
     }
-    .scrollBounceBehavior(.basedOnSize)
+    .smoothScrolling()
     .bottomChromeScrollTracking()
     .scrollIndicators(.hidden)
     .tabBarScrollInset()
@@ -876,7 +875,7 @@ private struct SearchCategoryLoadingView: View {
       }
       .padding(.bottom, AM.Spacing.l)
     }
-    .scrollBounceBehavior(.basedOnSize)
+    .smoothScrolling()
     .bottomChromeScrollTracking()
     .tabBarScrollInset()
     .accessibilityLabel("Loading \(title) songs")

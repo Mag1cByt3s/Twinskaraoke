@@ -76,8 +76,7 @@ struct DownloadedSongsView: View {
           )
         }
       }
-      .scrollBounceBehavior(.basedOnSize)
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .coordinateSpace(name: "downloadedScroll")
       .bottomChromeScrollTracking()
       .onPreferenceChange(DownloadedCollapsedTitleKey.self) { collapsed in

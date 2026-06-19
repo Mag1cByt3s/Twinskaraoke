@@ -125,7 +125,7 @@ struct LibraryView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .scrollIndicators(.hidden)
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .tabBarScrollInset()
       .musicScreenBackground()
       .navigationTitle("Library")
@@ -711,7 +711,7 @@ struct LibrarySongsView: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .scrollDismissesKeyboard(.interactively)
+    .smoothScrolling()
     .musicScreenBackground()
     .navigationTitle("Songs")
     .navigationBarTitleDisplayMode(.large)
@@ -1050,7 +1050,7 @@ struct LibraryCollectionListView: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .scrollDismissesKeyboard(.interactively)
+    .smoothScrolling()
     .musicScreenBackground()
     .navigationTitle(kind.title)
     .navigationBarTitleDisplayMode(.large)
@@ -1209,6 +1209,7 @@ struct LibraryCollectionDetailView: View {
           }
         )
       }
+      .smoothScrolling()
       .coordinateSpace(name: "libraryCollectionScroll")
       .onPreferenceChange(LibraryCollectionScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }
@@ -1574,6 +1575,7 @@ struct PlaylistsGridScreen: View {
         }
       }
     }
+    .smoothScrolling()
     .navigationTitle("Playlists")
     .searchable(
       text: $searchText,

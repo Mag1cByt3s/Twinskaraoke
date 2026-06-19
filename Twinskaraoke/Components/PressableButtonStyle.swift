@@ -48,6 +48,29 @@ enum AppMotion {
   static func reduceMotion(systemReduceMotion: Bool, respectPreference: Bool) -> Bool {
     respectPreference && systemReduceMotion
   }
+
+  /// Keep interactive animations perceptually crisp on high-refresh displays while
+  /// preserving the same behavior on older 60 Hz devices.
+  static func duration(_ seconds: TimeInterval) -> TimeInterval {
+    guard DisplayRefreshRate.isHighRefreshDisplay else { return seconds }
+    return seconds * 0.92
+  }
+
+  static func easeInOut(duration seconds: TimeInterval) -> Animation {
+    .easeInOut(duration: duration(seconds))
+  }
+
+  static func easeOut(duration seconds: TimeInterval) -> Animation {
+    .easeOut(duration: duration(seconds))
+  }
+
+  static func linear(duration seconds: TimeInterval) -> Animation {
+    .linear(duration: duration(seconds))
+  }
+
+  static func spring(response: TimeInterval, dampingFraction: Double) -> Animation {
+    .spring(response: duration(response), dampingFraction: dampingFraction)
+  }
 }
 
 struct PressableButtonStyle: ButtonStyle {
@@ -79,7 +102,7 @@ private struct PressableButtonBody: View {
       .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? scale : 1.0))
       .opacity(configuration.isPressed ? dim : 1.0)
       .animation(
-        reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
+        reduceMotion ? nil : AppMotion.spring(response: 0.32, dampingFraction: 0.7),
         value: configuration.isPressed)
       .onChange(of: configuration.isPressed) { _, isPressed in
         if isPressed && !wasPressed {

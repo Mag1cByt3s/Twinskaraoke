@@ -81,6 +81,7 @@ struct ProfileDetailView: View {
     }
     .frame(maxWidth: .infinity)
     .scrollIndicators(.hidden)
+    .smoothScrolling()
     .musicScreenBackground()
     .navigationTitle("Profile")
     .navigationBarTitleDisplayMode(.inline)

@@ -213,6 +213,7 @@ struct VideoGalleryView: View {
       }
     }
     .scrollIndicators(.hidden)
+    .smoothScrolling()
     .musicScreenBackground()
     .navigationTitle("Video Gallery")
     .navigationBarTitleDisplayMode(.large)
@@ -670,6 +671,7 @@ struct VideoPlayerScreen: View {
         }
       }
     }
+    .smoothScrolling()
     .musicScreenBackground()
     .navigationTitle(video.songTitle ?? "Video")
     .navigationBarTitleDisplayMode(.inline)

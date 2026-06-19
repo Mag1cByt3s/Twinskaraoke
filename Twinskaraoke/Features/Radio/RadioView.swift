@@ -71,8 +71,7 @@ struct RadioView: View {
         .padding(.bottom, AM.Spacing.l)
       }
       .tabBarScrollInset()
-      .scrollBounceBehavior(.basedOnSize)
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .musicScreenBackground()
       .navigationTitle("Radio")
       .navigationBarTitleDisplayMode(.large)

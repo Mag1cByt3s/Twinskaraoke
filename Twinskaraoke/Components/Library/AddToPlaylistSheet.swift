@@ -68,6 +68,7 @@ struct AddToPlaylistSheet: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 28)
       }
+      .smoothScrolling()
       .musicScreenBackground()
       .safeAreaInset(edge: .bottom) {
         if !manager.playlists.isEmpty {

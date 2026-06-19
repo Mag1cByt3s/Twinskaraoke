@@ -10,8 +10,12 @@ struct EqualizerBars: View {
   var body: some View {
     GeometryReader { geo in
       let barWidth = geo.size.width / 5
-      TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !shouldAnimateBars)) {
-        context in
+      TimelineView(
+        .animation(
+          minimumInterval: DisplayRefreshRate.lightweightAnimationInterval,
+          paused: !shouldAnimateBars
+        )
+      ) { context in
         let elapsed = max(0, context.date.timeIntervalSince(startDate))
         HStack(alignment: .bottom, spacing: barWidth / 2) {
           ForEach(0..<3) { i in

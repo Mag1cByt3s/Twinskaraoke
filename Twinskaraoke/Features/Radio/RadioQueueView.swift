@@ -88,6 +88,7 @@ struct RadioQueueView: View {
           .animation(scheduleAnimation(duration: 0.28), value: currentSong?.displayTitle)
           .animation(scheduleAnimation(duration: 0.24), value: history.count)
         }
+        .smoothScrolling()
         .refreshable { await radio.refresh() }
       }
     }
@@ -337,7 +338,9 @@ private struct RadioQueueLivePill: View {
     HStack(spacing: 5) {
       ZStack {
         if isPlaying && !reduceMotion {
-          TimelineView(.animation(minimumInterval: 1.0 / 18.0)) { context in
+          TimelineView(
+            .animation(minimumInterval: DisplayRefreshRate.lightweightAnimationInterval)
+          ) { context in
             Circle()
               .fill(Color.white.opacity(pulseOpacity(for: context.date)))
               .scaleEffect(pulseScale(for: context.date))

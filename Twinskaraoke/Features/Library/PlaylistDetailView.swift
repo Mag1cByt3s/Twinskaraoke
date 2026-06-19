@@ -34,6 +34,7 @@ struct PlaylistDetailView: View {
           }
         )
       }
+      .smoothScrolling()
       .coordinateSpace(name: "playlistScroll")
       .bottomChromeScrollTracking()
       .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }

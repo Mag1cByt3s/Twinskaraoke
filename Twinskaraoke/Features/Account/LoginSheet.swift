@@ -38,7 +38,7 @@ struct LoginSheet: View {
         .padding(.bottom, 40)
         .frame(maxWidth: .infinity)
       }
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .background(Color(.systemGroupedBackground).ignoresSafeArea())
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

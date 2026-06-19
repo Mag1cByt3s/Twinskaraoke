@@ -70,6 +70,7 @@ struct ArtistArtsView: View {
       }
       .padding(.bottom, 16)
     }
+    .smoothScrolling()
     .navigationTitle(artist.name)
     .navigationBarTitleDisplayMode(.inline)
     .animation(

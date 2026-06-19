@@ -385,6 +385,7 @@ struct ArtistDetailView: View {
         )
       }
       .scrollIndicators(.hidden)
+      .smoothScrolling()
       .coordinateSpace(name: "artistScroll")
       .onPreferenceChange(ArtistScrollOffsetKey.self) { scrollOffset = quantizedScrollOffset($0) }
     }

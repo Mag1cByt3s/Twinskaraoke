@@ -97,6 +97,7 @@ struct ArtGalleryView: View {
         .padding(.vertical, 16)
       }
     }
+    .smoothScrolling()
     .navigationTitle("Art Gallery")
     .navigationBarTitleDisplayMode(.large)
     .refreshable {

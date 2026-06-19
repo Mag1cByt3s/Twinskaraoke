@@ -100,7 +100,7 @@ struct CreatePlaylistSheet: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 28)
       }
-      .scrollDismissesKeyboard(.interactively)
+      .smoothScrolling()
       .musicScreenBackground()
       .navigationTitle("New Playlist")
       .navigationBarTitleDisplayMode(.inline)

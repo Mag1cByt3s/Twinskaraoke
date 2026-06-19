@@ -167,7 +167,12 @@ struct LyricsBouncingDots: View {
       }
       .animation(.easeOut(duration: 0.18), value: progress)
     } else {
-      TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !isActive)) { context in
+      TimelineView(
+        .animation(
+          minimumInterval: DisplayRefreshRate.lightweightAnimationInterval,
+          paused: !isActive
+        )
+      ) { context in
         let t = context.date.timeIntervalSince(loopPhase)
           .truncatingRemainder(dividingBy: loopCycle)
         HStack(spacing: dotSize * 0.55) {
