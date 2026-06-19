@@ -19,8 +19,12 @@ struct SongModelTests {
       userUploaded: false
     )
 
-    #expect(song.imageURL?.absoluteString == "https://images.neurokaraoke.com/image-id/public")
-    #expect(song.fullHDImageURL?.absoluteString == "https://images.neurokaraoke.com/image-id/quality=95")
+    #expect(
+      song.imageURL?.absoluteString
+        == "https://images.neurokaraoke.com/image-id/width=480,quality=85,format=auto")
+    #expect(
+      song.fullHDImageURL?.absoluteString
+        == "https://images.neurokaraoke.com/image-id/width=1920,quality=90,format=auto")
   }
 
   @Test("Audio URLs trim leading slashes")
