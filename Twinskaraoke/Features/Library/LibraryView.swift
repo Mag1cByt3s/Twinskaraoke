@@ -347,7 +347,7 @@ private struct LibraryLinkSeparator: View {
       .fill(Color.appDivider.opacity(0.42))
       .frame(height: 0.5)
       .padding(.leading, 52)
-      .padding(.trailing, 12)
+      .padding(.trailing, 28)
       .mask(
         LinearGradient(
           colors: [
@@ -398,7 +398,7 @@ private struct WideLibraryHero: View {
 
       VStack(alignment: .leading, spacing: AM.Spacing.l) {
         VStack(alignment: .leading, spacing: 5) {
-          Text(playlist.isFavorites ? "Favorite Songs" : "Featured Playlist")
+          Text(playlist.isFavorites ? "Favourite Songs" : "Featured Playlist")
             .font(.system(size: 12, weight: .bold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
@@ -1623,10 +1623,12 @@ struct PlaylistGridCell: View {
         .font(AM.Font.tileTitle)
         .foregroundColor(.primary)
         .lineLimit(1)
-      PlaylistSongCountLabel(playlist: playlist, fallbackText: "Playlist")
-        .font(AM.Font.tileCaption)
-        .foregroundColor(.secondary)
-        .lineLimit(1)
+      if !playlist.isFavorites {
+        PlaylistSongCountLabel(playlist: playlist, fallbackText: "Playlist")
+          .font(AM.Font.tileCaption)
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+      }
     }
     .frame(width: width, alignment: .leading)
     .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)

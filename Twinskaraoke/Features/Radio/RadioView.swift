@@ -156,7 +156,8 @@ struct RadioView: View {
       refreshBanner(horizontalPadding: AM.Spacing.screenMargin)
       stationCard(horizontalPadding: 0)
         .padding(.horizontal, AM.Spacing.screenMargin)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 430)
+        .frame(maxWidth: .infinity, alignment: .center)
       if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
         historySection(history: history)
       }
@@ -242,7 +243,6 @@ struct RadioView: View {
           .lineLimit(2)
           .accessibilityIdentifier("Radio.FeaturedEpisode.Title")
       }
-      .padding(.leading, AM.Spacing.screenMargin)
 
       radioHero(
         song: song,
@@ -297,7 +297,6 @@ struct RadioView: View {
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
           )
         }
-        .padding(.horizontal, 16)
         .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.78))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Up Next")

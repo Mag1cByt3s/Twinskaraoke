@@ -63,7 +63,7 @@ struct HomeView: View {
   }
 
   private var compactHomeOverview: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.shelfSpacing) {
+    VStack(alignment: .leading, spacing: 18) {
       topPicksShelf()
 
       if !recentlyPlayed.playlists.isEmpty {
@@ -355,7 +355,7 @@ struct PlaylistCarousel: View {
   var body: some View {
     GeometryReader { proxy in
       let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
-      VStack(alignment: .leading, spacing: AM.Spacing.m) {
+      VStack(alignment: .leading, spacing: AM.Spacing.s) {
         AMSectionHeader(
           title, destination: PlaylistListView(title: title, playlists: playlists, apiURL: apiURL))
         ScrollView(.horizontal, showsIndicators: false) {
@@ -791,7 +791,7 @@ struct HomeSongSection: View {
   var body: some View {
     GeometryReader { proxy in
       let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
-      VStack(alignment: .leading, spacing: AM.Spacing.m) {
+      VStack(alignment: .leading, spacing: AM.Spacing.s) {
         AMSectionHeader(title, destination: BrowseSongCollectionView(title: title, songs: songs))
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(alignment: .top, spacing: AM.Spacing.l) {

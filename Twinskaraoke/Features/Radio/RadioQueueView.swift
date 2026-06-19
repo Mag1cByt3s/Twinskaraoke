@@ -266,29 +266,29 @@ private struct RadioQueueHero: View {
   let onPlayPause: () -> Void
 
   var body: some View {
-    HStack(alignment: .center, spacing: 14) {
+    HStack(alignment: .center, spacing: 11) {
       ZStack(alignment: .bottomLeading) {
-        RadioQueueArtwork(song: song, cornerRadius: 12)
-          .frame(width: 88, height: 88)
+        RadioQueueArtwork(song: song, cornerRadius: 10)
+          .frame(width: 72, height: 72)
           .amShadow(isPlaying ? AM.Shadow.heroPlaying : AM.Shadow.heroIdle)
 
         RadioQueueLivePill(isPlaying: isPlaying, reduceMotion: reduceMotion)
-          .padding(7)
+          .padding(5)
       }
 
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: 4) {
         Text(stationName)
-          .font(.system(size: 11, weight: .bold))
+          .font(.system(size: 10, weight: .bold))
           .foregroundColor(.appAccent)
           .textCase(.uppercase)
           .lineLimit(1)
         Text(song.displayTitle)
-          .font(.system(size: 20, weight: .bold))
+          .font(.system(size: 17, weight: .bold))
           .foregroundColor(.primary)
           .lineLimit(2)
           .minimumScaleFactor(0.84)
         Text(song.displayArtist)
-          .font(.system(size: 14, weight: .medium))
+          .font(.system(size: 13, weight: .medium))
           .foregroundColor(.secondary)
           .lineLimit(1)
 
@@ -306,22 +306,22 @@ private struct RadioQueueHero: View {
         onPlayPause()
       } label: {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-          .font(.system(size: 17, weight: .bold))
+          .font(.system(size: 16, weight: .bold))
           .foregroundColor(.appControlActiveForeground)
-          .frame(width: 44, height: 44)
+          .frame(width: 40, height: 40)
           .background(Color.appControlActiveFill, in: Circle())
           .offset(x: isPlaying ? 0 : 1)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.76))
       .accessibilityLabel(isPlaying ? "Pause live station" : "Play live station")
     }
-    .padding(12)
+    .padding(10)
     .background(
-      RoundedRectangle(cornerRadius: 18, style: .continuous)
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
         .fill(.regularMaterial)
     )
     .overlay(
-      RoundedRectangle(cornerRadius: 18, style: .continuous)
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
         .strokeBorder(Color.appDivider.opacity(0.8), lineWidth: 0.5)
     )
     .accessibilityElement(children: .combine)
@@ -381,14 +381,14 @@ private struct RadioQueueHeroStatusRow: View {
 
   var body: some View {
     ViewThatFits(in: .horizontal) {
-      HStack(spacing: 8) {
+      HStack(spacing: 7) {
         statusItems
       }
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: 2) {
         statusItems
       }
     }
-    .font(.system(size: 11, weight: .semibold))
+    .font(.system(size: 10, weight: .semibold))
     .foregroundColor(.secondary)
     .accessibilityElement(children: .combine)
   }

@@ -451,9 +451,14 @@ private struct ToolbarIconLabel: View {
         .font(.system(size: 16, weight: .semibold))
         .symbolRenderingMode(.hierarchical)
         .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+        .offset(x: iconHorizontalOffset)
     }
     .frame(width: 36, height: 36)
     .contentShape(Circle())
+  }
+
+  private var iconHorizontalOffset: CGFloat {
+    systemImage == "ellipsis" ? -1.5 : 0
   }
 }
 
