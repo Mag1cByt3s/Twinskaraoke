@@ -157,7 +157,6 @@ struct RadioView: View {
       stationCard(horizontalPadding: 0)
         .padding(.horizontal, AM.Spacing.screenMargin)
         .frame(maxWidth: .infinity, alignment: .leading)
-      hostedStationsSection()
       if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
         historySection(history: history)
       }
@@ -173,7 +172,6 @@ struct RadioView: View {
           .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
 
         VStack(alignment: .leading, spacing: AM.Spacing.xxl) {
-          hostedStationsSection(horizontalPadding: 0)
           if let history = radio.nowPlaying?.songHistory, !history.isEmpty {
             historySection(history: history, horizontalPadding: 0)
           }
@@ -434,35 +432,6 @@ struct RadioView: View {
     }
     .accessibilityIdentifier("Radio.HistorySection")
   }
-  private func hostedStationsSection(
-    horizontalPadding: CGFloat = AM.Spacing.screenMargin
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
-      RadioSectionHeader("Hosted Stations")
-        .padding(.horizontal, horizontalPadding)
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 14) {
-          ForEach(RadioStationTile.hosted) { tile in
-            Button {
-              AppHaptic.medium.play()
-              radio.playLiveStream()
-            } label: {
-              RadioStationTileView(tile: tile)
-            }
-            .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.82))
-            .accessibilityLabel("Play \(tile.name)")
-            .accessibilityValue(tile.tagline)
-            .accessibilityHint("Starts the live radio station.")
-            .contextMenu {
-              radioActions
-            }
-          }
-        }
-        .padding(.horizontal, horizontalPadding)
-      }
-    }
-    .accessibilityIdentifier("Radio.HostedStationsSection")
-  }
 }
 
 private struct RadioSectionHeader: View {
@@ -690,64 +659,6 @@ private extension RadioNowPlaying.SongInfo {
 
   var artworkURL: URL? {
     art.flatMap { URL(string: $0) }
-  }
-}
-
-private struct RadioStationTile: Identifiable {
-  let id = UUID()
-  let name: String
-  let tagline: String
-  let gradient: [Color]
-  static let hosted: [RadioStationTile] = [
-    .init(
-      name: "Twinskaraoke 1", tagline: "Worldwide",
-      gradient: [
-        Color(red: 0.95, green: 0.20, blue: 0.30), Color(red: 0.45, green: 0.05, blue: 0.10),
-      ]),
-    .init(
-      name: "Twinskaraoke Hits", tagline: "Decades of hits",
-      gradient: [
-        Color(red: 0.20, green: 0.45, blue: 0.95), Color(red: 0.05, green: 0.15, blue: 0.45),
-      ]),
-    .init(
-      name: "Twinskaraoke Country", tagline: "Today's country",
-      gradient: [
-        Color(red: 0.85, green: 0.55, blue: 0.20), Color(red: 0.40, green: 0.20, blue: 0.05),
-      ]),
-  ]
-}
-
-private struct RadioStationTileView: View {
-  let tile: RadioStationTile
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ZStack(alignment: .topLeading) {
-        LinearGradient(colors: tile.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-        HStack(spacing: 4) {
-          Circle().fill(.white).frame(width: 5, height: 5)
-          Text("LIVE")
-            .font(.system(size: 9, weight: .heavy))
-            .foregroundColor(.white)
-            .tracking(0.6)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(Color.appAccent))
-        .padding(8)
-      }
-      .frame(width: 200, height: 200)
-      .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
-      .amShadow(AM.Shadow.card)
-      Text(tile.name)
-        .font(.system(size: 15, weight: .semibold))
-        .lineLimit(1)
-      Text(tile.tagline)
-        .font(.system(size: 12))
-        .foregroundColor(.secondary)
-        .lineLimit(1)
-    }
-    .frame(width: 200)
-    .accessibilityElement(children: .combine)
   }
 }
 
