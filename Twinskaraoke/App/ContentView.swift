@@ -72,6 +72,48 @@ private struct PopupSongSnapshot: Equatable {
   let subtitle: String
 }
 
+#if canImport(UIKit)
+  @MainActor
+  private final class PopupOpenIntentGate: NSObject, UIGestureRecognizerDelegate {
+    static let shared = PopupOpenIntentGate()
+
+    private static let touchRecognizerName = "Twinskaraoke.IntentionalMiniPlayerOpen"
+    private var openIntentExpiresAt = Date.distantPast
+
+    func consumeIntent() -> Bool {
+      guard Date() <= openIntentExpiresAt else { return false }
+      openIntentExpiresAt = .distantPast
+      return true
+    }
+
+    func installTouchRecognizer(on popupBar: LNPopupBar) {
+      let alreadyInstalled = popupBar.gestureRecognizers?.contains {
+        $0.name == Self.touchRecognizerName
+      } ?? false
+      guard !alreadyInstalled else { return }
+
+      let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(markIntentionalMiniPlayerTouch(_:)))
+      recognizer.name = Self.touchRecognizerName
+      recognizer.minimumPressDuration = 0
+      recognizer.cancelsTouchesInView = false
+      recognizer.delegate = self
+      popupBar.addGestureRecognizer(recognizer)
+    }
+
+    @objc private func markIntentionalMiniPlayerTouch(_ recognizer: UILongPressGestureRecognizer) {
+      guard recognizer.state == .began else { return }
+      openIntentExpiresAt = Date().addingTimeInterval(0.35)
+    }
+
+    nonisolated func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      true
+    }
+  }
+#endif
+
 struct ContentView: View {
   var body: some View {
     PopupHostView()
@@ -424,7 +466,16 @@ private struct PopupModifier: ViewModifier {
         isBarPresented: .constant(popupState.hasCurrentSong),
         isPopupOpen: Binding(
           get: { AudioPlayerManager.shared.showFullScreen },
-          set: { AudioPlayerManager.shared.showFullScreen = $0 }
+          set: { isOpen in
+            if isOpen {
+              #if canImport(UIKit)
+                let isIntentionalOpen =
+                  AudioPlayerManager.shared.showFullScreen || PopupOpenIntentGate.shared.consumeIntent()
+                guard isIntentionalOpen else { return }
+              #endif
+            }
+            AudioPlayerManager.shared.showFullScreen = isOpen
+          }
         )
       ) {
         PopupContent(popupState: popupState)
@@ -438,6 +489,10 @@ private struct PopupModifier: ViewModifier {
         popupBar.accessibilityIdentifier = "MiniPlayerBar"
         popupBar.accessibilityLabel = "Now Playing"
         popupBar.accessibilityHint = "Opens the full-screen player."
+        // LNPopupUI's drag recognizer can report an open during unrelated root
+        // navigation and system gestures. This touch marker lets the binding accept
+        // deliberate mini-player opens while LNPopupUI still owns the transition.
+        PopupOpenIntentGate.shared.installTouchRecognizer(on: popupBar)
       }
   }
 }
