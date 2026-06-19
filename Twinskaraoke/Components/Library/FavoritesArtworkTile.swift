@@ -2,38 +2,22 @@ import Combine
 import SwiftUI
 
 struct FavoritesArtworkTile: View {
-  var sizeFraction: CGFloat = 0.48
+  var sizeFraction: CGFloat = 0.46
+  private let cornerRadius: CGFloat = 4
+
   var body: some View {
     GeometryReader { geo in
       let side = min(geo.size.width, geo.size.height)
       ZStack {
-        LinearGradient(
-          colors: [
-            Color.appAccent,
-            Color(red: 1.0, green: 0.36, blue: 0.44),
-            Color(red: 0.34, green: 0.09, blue: 0.14),
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
+        Color(red: 0.94, green: 0.96, blue: 0.96)
 
         Image(systemName: "star.fill")
           .font(.system(size: side * sizeFraction, weight: .semibold))
-          .foregroundStyle(.white)
-          .shadow(color: .black.opacity(0.18), radius: side * 0.045, x: 0, y: side * 0.025)
+          .foregroundStyle(Color(red: 1.0, green: 0.11, blue: 0.22))
           .accessibilityHidden(true)
-
-        LinearGradient(
-          colors: [
-            .white.opacity(0.22),
-            .white.opacity(0.02),
-            .black.opacity(0.18),
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
       }
       .frame(width: geo.size.width, height: geo.size.height)
+      .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
   }
 }

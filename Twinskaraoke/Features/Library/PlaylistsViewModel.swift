@@ -10,7 +10,7 @@ class PlaylistsViewModel: ObservableObject {
     let favoriteCount = max(favoriteSongs.count, FavoritesManager.shared.favoriteIDs.count)
     return Playlist(
       id: Playlist.favoritesID,
-      name: "Favorites",
+      name: "Favourite Songs",
       songCount: favoriteCount,
       mosaicMedia: nil,
       songListDTOs: favoriteSongs

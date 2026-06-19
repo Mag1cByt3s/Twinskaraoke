@@ -49,7 +49,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
       lock.unlock()
       return nil
     }
-    guard let item = nextUnusedItem(for: id) else {
+    guard let item = nextItem(for: id) else {
       lock.unlock()
       return nil
     }
@@ -105,7 +105,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
       cache[id] = cached
       return nil
     }
-    guard let item = nextUnusedItem(for: id, excludingID: id) else {
+    guard let item = nextItem(for: id, excludingID: id) else {
       cache.removeValue(forKey: id)
       removePersistedEntry(id: id)
       return nil
@@ -115,14 +115,14 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
     return replacement
   }
 
-  private func nextUnusedItem(for id: String, excludingID: String? = nil) -> FallbackArtItem? {
+  private func nextItem(for id: String, excludingID: String? = nil) -> FallbackArtItem? {
+    guard !items.isEmpty else { return nil }
     let availableURLs = Set(items.map { $0.url })
     let used = Set(
       cache.compactMap { entry -> URL? in
         if entry.key == excludingID { return nil }
         return availableURLs.contains(entry.value.url) ? entry.value.url : nil
       })
-    guard used.count < items.count else { return nil }
     let start = Self.stableHash(id) % items.count
     for offset in 0..<items.count {
       let item = items[(start + offset) % items.count]
@@ -130,7 +130,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
         return item
       }
     }
-    return nil
+    return items[start]
   }
 
   private func isPersistedDuplicateWithoutReplacement(for id: String, art: FallbackArt) -> Bool {
@@ -196,14 +196,15 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
     let group = DispatchGroup()
     let syncQueue = DispatchQueue(label: "com.twinskaraoke.fallbackart.sync")
 
-    for _ in 0..<fetchCount {
+    for index in 0..<fetchCount {
       group.enter()
-      let urlString = "\(StorageHost.api)/public/art/yuri/random"
+      let urlString = "\(StorageHost.api)/public/art/yuri/random?fallback=\(index)&t=\(UUID().uuidString)"
       guard let url = URL(string: urlString) else {
         group.leave()
         continue
       }
       var request = URLRequest(url: url)
+      request.cachePolicy = .reloadIgnoringLocalCacheData
       request.timeoutInterval = 10
       GuestIdentity.applyIfNeeded(to: &request)
       URLSession.shared.dataTask(with: request) { data, _, _ in
@@ -261,7 +262,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
         continue
       }
       cache.removeValue(forKey: id)
-      guard let item = nextUnusedItem(for: id) else {
+      guard let item = nextItem(for: id) else {
         removePersistedEntry(id: id)
         continue
       }
