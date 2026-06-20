@@ -182,7 +182,7 @@ struct PlaylistDetailView: View {
 
   private var songCountText: String {
     let songs = loader.songs ?? playlist.songListDTOs ?? []
-    return LibrarySongCountText.songs(songs.isEmpty ? playlist.songCount : songs.count)
+    return SongCountText.songs(songs.isEmpty ? playlist.songCount : songs.count)
   }
 
   @ViewBuilder
@@ -321,7 +321,7 @@ private struct PlaylistDetailContextPreview: View {
           .font(AM.Font.tileTitle)
           .foregroundStyle(.primary)
           .lineLimit(2)
-        Text(LibrarySongCountText.songs(songs.isEmpty ? playlist.songCount : songs.count))
+        Text(SongCountText.songs(songs.isEmpty ? playlist.songCount : songs.count))
           .font(AM.Font.tileCaption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -483,7 +483,7 @@ class PlaylistDetailViewModel: ObservableObject {
     if songs?.isEmpty ?? true, let fallback = fallback, !fallback.isEmpty {
       self.songs = fallback
     }
-    if ProcessInfo.processInfo.arguments.contains("-UITestMode"),
+    if AppRuntime.isUITestMode,
       let fallback = fallback, !fallback.isEmpty
     {
       loadTask = nil
@@ -492,26 +492,15 @@ class PlaylistDetailViewModel: ObservableObject {
       loadFailed = false
       return
     }
-    let isFavorites = playlistID == Playlist.favoritesID
-    let urlString =
-      isFavorites
-      ? "\(StorageHost.api)/api/favorites/type?type=0"
-      : "\(StorageHost.api)/api/playlist/\(playlistID)"
-    guard let url = URL(string: urlString) else { return }
     isLoading = true
-    var r = URLRequest(url: url)
-    if let token = UserDefaults.standard.string(forKey: "nk.token"), !token.isEmpty {
-      r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    }
-    GuestIdentity.applyIfNeeded(to: &r)
-    loadTask = Task { [weak self, r] in
+    loadTask = Task { [weak self] in
       do {
-        let (data, response) = try await URLSession.shared.data(for: r)
+        let loadedSongs = try await KaraokeAPIClient.playlistSongs(id: playlistID)
         guard !Task.isCancelled else { return }
         self?.applyLoadedSongs(
-          Self.decodeSongs(from: data),
+          loadedSongs,
           playlistID: playlistID,
-          requestFailed: !Self.isSuccess(response)
+          requestFailed: false
         )
       } catch {
         guard !Task.isCancelled else { return }
@@ -533,12 +522,4 @@ class PlaylistDetailViewModel: ObservableObject {
     isLoading = false
   }
 
-  private static func isSuccess(_ response: URLResponse) -> Bool {
-    guard let httpResponse = response as? HTTPURLResponse else { return true }
-    return (200..<300).contains(httpResponse.statusCode)
-  }
-
-  private static func decodeSongs(from data: Data?) -> [Song]? {
-    SongPayloadDecoder.decodeSongs(from: data)
-  }
 }

@@ -8,7 +8,7 @@ struct HomeView: View {
   @State private var navigateToPlayer = false
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

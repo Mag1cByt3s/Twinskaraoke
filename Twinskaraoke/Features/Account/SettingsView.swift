@@ -566,7 +566,7 @@ private struct SettingsOverviewCard: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 
@@ -712,7 +712,7 @@ private struct StrengthSlider: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 
@@ -880,7 +880,7 @@ private struct EqualizerBand: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 

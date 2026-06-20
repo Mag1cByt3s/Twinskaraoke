@@ -39,7 +39,7 @@ final class PublicPlaylistsViewModel: ObservableObject {
 
   func loadIfNeeded() {
     guard !hasLoaded else { return }
-    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+    if AppRuntime.isUITestMode {
       hasLoaded = true
       applyUITestFixture()
       return
@@ -60,37 +60,27 @@ final class PublicPlaylistsViewModel: ObservableObject {
   }
 
   private func fetchPage(startIndex: Int, replace: Bool) {
-    let urlString = urlForList(startIndex: startIndex, pageSize: pageSize)
-    guard let url = URL(string: urlString) else { return }
     if !replace { isLoadingMore = true }
-    var request = URLRequest(url: url)
-    GuestIdentity.applyIfNeeded(to: &request)
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        let items = Self.decode(data: data)
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let items = try await KaraokeAPIClient.publicPlaylists(
+          startIndex: startIndex,
+          pageSize: pageSize
+        )
         if replace {
-          self.playlists = items
+          playlists = items
         } else {
-          let existing = Set(self.playlists.map { $0.id })
-          self.playlists += items.filter { !existing.contains($0.id) }
+          let existing = Set(playlists.map { $0.id })
+          playlists += items.filter { !existing.contains($0.id) }
         }
-        self.canLoadMore = items.count >= self.pageSize
-        self.isLoadingMore = false
+        canLoadMore = items.count >= pageSize
+      } catch {
+        if replace { playlists = [] }
+        canLoadMore = false
       }
-    }.resume()
-  }
-
-  private static func decode(data: Data?) -> [Playlist] {
-    guard let data else { return [] }
-    let decoder = JSONDecoder()
-    if let items = (try? decoder.decode(LossyArray<PlaylistListItem>.self, from: data))?.elements {
-      return items.map { $0.asPlaylist() }
+      isLoadingMore = false
     }
-    if let items = try? decoder.decode([PlaylistListItem].self, from: data) {
-      return items.map { $0.asPlaylist() }
-    }
-    return []
   }
 
   private func applyUITestFixture() {
@@ -123,30 +113,16 @@ final class PublicPlaylistsViewModel: ObservableObject {
 
   private static var uiTestFixtureSongs: [Song] {
     [
-      fixtureSong(id: "ui-search-song-1", title: "Wake Me Up Before You Go-Go", artist: "Wham!"),
-      fixtureSong(id: "ui-search-song-2", title: "Hero", artist: "Mili"),
-      fixtureSong(id: "ui-search-song-3", title: "Cure For Me", artist: "AURORA"),
+      UITestFixtures.song(
+        id: "ui-search-song-1",
+        title: "Wake Me Up Before You Go-Go",
+        artist: "Wham!"
+      ),
+      UITestFixtures.song(id: "ui-search-song-2", title: "Hero", artist: "Mili"),
+      UITestFixtures.song(id: "ui-search-song-3", title: "Cure For Me", artist: "AURORA"),
     ]
   }
 
-  private static func fixtureSong(id: String, title: String, artist: String) -> Song {
-    Song(
-      id: id,
-      title: title,
-      duration: 210,
-      absolutePath: nil,
-      cloudflareID: nil,
-      coverArt: nil,
-      originalArtists: [artist],
-      coverArtists: ["Neuro"],
-      userUploaded: true
-    )
-  }
-}
-
-nonisolated private enum TopChartSection: Sendable {
-  case songs
-  case weeklyTrending
 }
 
 @MainActor
@@ -157,41 +133,18 @@ final class TopChartViewModel: ObservableObject {
 
   func loadIfNeeded() {
     guard !hasLoaded else { return }
-    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+    if AppRuntime.isUITestMode {
       hasLoaded = true
       applyUITestFixture()
       return
     }
     hasLoaded = true
-    fetch(
-      url: "\(StorageHost.api)/api/explore/trendings?days=all",
-      target: .songs)
-    fetch(
-      url: "\(StorageHost.api)/api/explore/trendings?days=7&take=20",
-      target: .weeklyTrending)
-  }
-
-  private func fetch(url: String, target: TopChartSection) {
-    guard let u = URL(string: url) else { return }
-    var request = URLRequest(url: u)
-    GuestIdentity.applyIfNeeded(to: &request)
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      Task { @MainActor [weak self, data, target] in
-        self?.applyTopChartResponse(data, to: target)
-      }
-    }.resume()
-  }
-
-  private func applyTopChartResponse(_ data: Data?, to target: TopChartSection) {
-    guard let data, let list = try? JSONDecoder().decode([Song].self, from: data) else {
-      return
-    }
-
-    switch target {
-    case .songs:
-      songs = list
-    case .weeklyTrending:
-      weeklyTrending = list
+    Task { [weak self] in
+      guard let self else { return }
+      async let allTime = try? KaraokeAPIClient.trendingSongs(days: "all")
+      async let weekly = try? KaraokeAPIClient.trendingSongs(take: 20)
+      songs = await allTime ?? []
+      weeklyTrending = await weekly ?? []
     }
   }
 
@@ -202,25 +155,16 @@ final class TopChartViewModel: ObservableObject {
 
   private static var uiTestFixtureSongs: [Song] {
     [
-      fixtureSong(id: "ui-top-song-1", title: "Wake Me Up Before You Go-Go", artist: "Wham!"),
-      fixtureSong(id: "ui-top-song-2", title: "Hero", artist: "Mili"),
-      fixtureSong(id: "ui-top-song-3", title: "Cure For Me", artist: "AURORA"),
+      UITestFixtures.song(
+        id: "ui-top-song-1",
+        title: "Wake Me Up Before You Go-Go",
+        artist: "Wham!"
+      ),
+      UITestFixtures.song(id: "ui-top-song-2", title: "Hero", artist: "Mili"),
+      UITestFixtures.song(id: "ui-top-song-3", title: "Cure For Me", artist: "AURORA"),
     ]
   }
 
-  private static func fixtureSong(id: String, title: String, artist: String) -> Song {
-    Song(
-      id: id,
-      title: title,
-      duration: 210,
-      absolutePath: nil,
-      cloudflareID: nil,
-      coverArt: nil,
-      originalArtists: [artist],
-      coverArtists: ["Neuro"],
-      userUploaded: true
-    )
-  }
 }
 
 @MainActor
@@ -400,54 +344,33 @@ final class SearchCategorySongsViewModel: ObservableObject {
   }
 
   private func fetch() {
-    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
-      loadFailed = songs.isEmpty
-      return
-    }
     requestToken += 1
     let token = requestToken
     isLoading = true
     loadFailed = false
 
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    GuestIdentity.applyIfNeeded(to: &request)
-    request.httpBody = try? JSONSerialization.data(withJSONObject: [
-      "page": 1,
-      "pageSize": 100,
-      "search": query,
-    ])
-
-    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-      let statusCode = (response as? HTTPURLResponse)?.statusCode
-      let requestFailed = error != nil || statusCode.map { !(200..<300).contains($0) } == true
-      Task { @MainActor [weak self, data, token, requestFailed] in
-        self?.applyResponse(data, token: token, requestFailed: requestFailed)
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let songs = try await KaraokeAPIClient.searchSongs(query: query, pageSize: 100)
+        applyResponse(songs, token: token)
+      } catch {
+        applyFailure(token: token)
       }
-    }.resume()
+    }
   }
 
-  private func applyResponse(_ data: Data?, token: Int, requestFailed: Bool) {
+  private func applyResponse(_ loadedSongs: [Song], token: Int) {
     guard token == requestToken else { return }
-    defer { isLoading = false }
-
-    guard !requestFailed else {
-      loadFailed = songs.isEmpty
-      return
-    }
-
-    guard let data else {
-      loadFailed = songs.isEmpty
-      return
-    }
-
-    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
-      songs = decoded.items
-    } else {
-      songs = SongPayloadDecoder.decodeSongs(from: data) ?? []
-    }
+    songs = loadedSongs
     loadFailed = false
+    isLoading = false
+  }
+
+  private func applyFailure(token: Int) {
+    guard token == requestToken else { return }
+    loadFailed = songs.isEmpty
+    isLoading = false
   }
 }
 
@@ -482,38 +405,25 @@ final class SearchViewModel: ObservableObject {
       clearSearch()
       return
     }
-    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
-      results = []
-      isSearching = false
-      searchErrorMessage = "Search couldn't be started. Try again."
-      return
-    }
     queryToken += 1
     let token = queryToken
     results = []
     isSearching = true
     searchErrorMessage = nil
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    GuestIdentity.applyIfNeeded(to: &request)
-    request.httpBody = try? JSONSerialization.data(withJSONObject: [
-      "page": 1, "pageSize": 30, "search": trimmedQuery,
-    ])
-    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-      let statusCode = (response as? HTTPURLResponse)?.statusCode
-      let failureMessage: String?
-      if error != nil {
-        failureMessage = "Check your connection and try again."
-      } else if let statusCode, !(200..<300).contains(statusCode) {
-        failureMessage = "Search returned an unexpected response. Try again."
-      } else {
-        failureMessage = nil
+
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let songs = try await KaraokeAPIClient.searchSongs(query: trimmedQuery, pageSize: 30)
+        applySearchResponse(songs, token: token)
+      } catch KaraokeAPIClient.APIError.httpStatus(_) {
+        applySearchFailure("Search returned an unexpected response. Try again.", token: token)
+      } catch KaraokeAPIClient.APIError.decodeFailed {
+        applySearchFailure("Search results couldn't be read. Try again.", token: token)
+      } catch {
+        applySearchFailure("Check your connection and try again.", token: token)
       }
-      Task { @MainActor [weak self, data, token, failureMessage] in
-        self?.applySearchResponse(data, token: token, failureMessage: failureMessage)
-      }
-    }.resume()
+    }
   }
 
   private func clearSearch() {
@@ -523,31 +433,17 @@ final class SearchViewModel: ObservableObject {
     searchErrorMessage = nil
   }
 
-  private func applySearchResponse(_ data: Data?, token: Int, failureMessage: String?) {
+  private func applySearchResponse(_ loadedSongs: [Song], token: Int) {
     guard queryToken == token else { return }
-    defer { isSearching = false }
+    results = loadedSongs
+    searchErrorMessage = nil
+    isSearching = false
+  }
 
-    guard failureMessage == nil else {
-      results = []
-      searchErrorMessage = failureMessage
-      return
-    }
-
-    guard let data else {
-      results = []
-      searchErrorMessage = "Search couldn't load results. Try again."
-      return
-    }
-
-    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
-      results = decoded.items
-      searchErrorMessage = nil
-    } else if let decodedSongs = SongPayloadDecoder.decodeSongs(from: data) {
-      results = decodedSongs
-      searchErrorMessage = nil
-    } else {
-      results = []
-      searchErrorMessage = "Search results couldn't be read. Try again."
-    }
+  private func applySearchFailure(_ message: String, token: Int) {
+    guard queryToken == token else { return }
+    results = []
+    searchErrorMessage = message
+    isSearching = false
   }
 }

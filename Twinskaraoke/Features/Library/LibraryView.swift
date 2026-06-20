@@ -2,11 +2,6 @@ import Combine
 import Foundation
 import SwiftUI
 
-extension Playlist: Hashable {
-  public static func == (lhs: Playlist, rhs: Playlist) -> Bool { lhs.id == rhs.id }
-  public func hash(into hasher: inout Hasher) { hasher.combine(id) }
-}
-
 @MainActor
 final class PlaylistSongCountStore: ObservableObject {
   static let shared = PlaylistSongCountStore()
@@ -30,36 +25,21 @@ final class PlaylistSongCountStore: ObservableObject {
     guard playlist.songCount == 0 else { return }
     guard resolvedCounts[playlist.id] == nil else { return }
     guard !loadingIDs.contains(playlist.id) else { return }
-    guard let url = URL(string: "\(StorageHost.api)/api/playlist/\(playlist.id)") else { return }
 
     Task {
       loadingIDs.insert(playlist.id)
-      var request = URLRequest(url: url)
-      if let token = UserDefaults.standard.string(forKey: "nk.token"), !token.isEmpty {
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      let count: Int?
+      do {
+        count = try await KaraokeAPIClient.playlistSongCount(id: playlist.id)
+      } catch {
+        count = nil
       }
-      GuestIdentity.applyIfNeeded(to: &request)
-
-      let response = try? await URLSession.shared.data(for: request)
-      let count = Self.resolveCount(from: response?.0)
 
       loadingIDs.remove(playlist.id)
       if let count, count > 0 {
         resolvedCounts[playlist.id] = count
       }
     }
-  }
-
-  nonisolated private static func resolveCount(from data: Data?) -> Int? {
-    guard let data else { return nil }
-    let decoder = JSONDecoder()
-    if let playlist = try? decoder.decode(Playlist.self, from: data) {
-      return max(playlist.songCount, playlist.songListDTOs?.count ?? 0)
-    }
-    if let songs = SongPayloadDecoder.decodeSongs(from: data) {
-      return songs.count
-    }
-    return nil
   }
 }
 
@@ -71,7 +51,7 @@ struct PlaylistSongCountLabel: View {
 
   private var labelText: String? {
     if let count = countStore.displayedCount(for: playlist) {
-      return LibrarySongCountText.songs(count)
+      return SongCountText.songs(count)
     }
     return fallbackText
   }
@@ -85,12 +65,6 @@ struct PlaylistSongCountLabel: View {
     .task(id: playlist.id) {
       countStore.loadIfNeeded(for: playlist)
     }
-  }
-}
-
-enum LibrarySongCountText {
-  static func songs(_ count: Int) -> String {
-    count == 1 ? "1 song" : "\(count) songs"
   }
 }
 
@@ -886,7 +860,7 @@ enum LibraryCollectionKind: String, CaseIterable, Identifiable {
       LibrarySongCollection(
         id: key,
         title: value.title,
-        subtitle: LibrarySongCountText.songs(value.songs.count),
+        subtitle: SongCountText.songs(value.songs.count),
         songs: value.songs.sorted {
           $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
@@ -929,7 +903,7 @@ enum LibraryCollectionKind: String, CaseIterable, Identifiable {
       return LibrarySongCollection(
         id: "\(rawValue)::\(definition.id)",
         title: definition.title,
-        subtitle: LibrarySongCountText.songs(matching.count),
+        subtitle: SongCountText.songs(matching.count),
         songs: matching.sorted {
           $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }

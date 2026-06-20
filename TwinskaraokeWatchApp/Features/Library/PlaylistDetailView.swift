@@ -9,7 +9,7 @@ struct PlaylistDetailView: View {
   let playlistName: String
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

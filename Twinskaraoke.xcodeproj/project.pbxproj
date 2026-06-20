@@ -104,9 +104,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		D0A500002FBD000100000001 /* Shared */ = {
+		D0A500002FBD000100000001 /* TwinskaraokeShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
+			path = TwinskaraokeShared;
 			sourceTree = "<group>";
 		};
 		D0F981B72F94C10900FD69AB /* Twinskaraoke */ = {
@@ -208,7 +208,7 @@
 			children = (
 				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
 				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
-				D0A500002FBD000100000001 /* Shared */,
+				D0A500002FBD000100000001 /* TwinskaraokeShared */,
 				D1A000052FAD000100000005 /* TwinskaraokeTests */,
 				D1A000062FAD000100000006 /* TwinskaraokeUITests */,
 				D1A000072FAD000100000007 /* TwinskaraokeWatchAppTests */,
@@ -250,7 +250,7 @@
 				D0F981DB2F94C10A00FD69AB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				D0A500002FBD000100000001 /* Shared */,
+				D0A500002FBD000100000001 /* TwinskaraokeShared */,
 				D0F981B72F94C10900FD69AB /* Twinskaraoke */,
 			);
 			name = Twinskaraoke;
@@ -322,7 +322,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				D0A500002FBD000100000001 /* Shared */,
+				D0A500002FBD000100000001 /* TwinskaraokeShared */,
 				D0F981DC2F94C10A00FD69AB /* TwinskaraokeWatchApp */,
 			);
 			name = "Twinskaraoke Watch App";

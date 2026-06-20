@@ -46,38 +46,6 @@ enum WatchHaptic {
   }
 }
 
-enum WatchMotion {
-  static func reduceMotion(systemReduceMotion: Bool, respectPreference: Bool) -> Bool {
-    respectPreference && systemReduceMotion
-  }
-}
-
-struct WatchPressableButtonStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var isEnabled
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-
-  private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.96 : 1))
-      .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.42)
-      .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
-  }
-}
-
-extension ButtonStyle where Self == WatchPressableButtonStyle {
-  static var watchPressable: WatchPressableButtonStyle {
-    WatchPressableButtonStyle()
-  }
-}
-
 struct WatchSongArtwork: View {
   let url: URL?
   var size: CGFloat = 38
@@ -133,7 +101,7 @@ struct WatchNowPlayingGlyph: View {
   @State private var animated = false
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

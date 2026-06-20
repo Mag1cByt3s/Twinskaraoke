@@ -258,7 +258,7 @@ private struct AddToPlaylistRow: View {
   private var subtitle: String {
     switch state {
     case .idle:
-      return LibrarySongCountText.songs(playlist.songCount)
+      return SongCountText.songs(playlist.songCount)
     case .adding:
       return "Adding..."
     case .added:
@@ -316,7 +316,7 @@ private struct AddToPlaylistRow: View {
   private var accessibilityLabel: String {
     switch state {
     case .idle:
-      return "Add to \(playlist.name), \(LibrarySongCountText.songs(playlist.songCount))"
+      return "Add to \(playlist.name), \(SongCountText.songs(playlist.songCount))"
     case .adding:
       return "Adding to \(playlist.name)"
     case .added:
@@ -351,7 +351,7 @@ private struct AddToPlaylistPreview: View {
           .font(.headline)
           .foregroundStyle(.primary)
           .lineLimit(2)
-        Text(LibrarySongCountText.songs(playlist.songCount))
+        Text(SongCountText.songs(playlist.songCount))
           .font(.subheadline)
           .foregroundStyle(.secondary)
       }

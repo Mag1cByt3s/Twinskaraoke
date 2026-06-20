@@ -117,7 +117,7 @@ struct ProfileDetailView: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 
@@ -367,7 +367,7 @@ private struct AchievementMeter: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 
@@ -501,7 +501,7 @@ private struct BadgeGridSection: View {
   }
 
   private var reduceMotion: Bool {
-    respectReducedMotion && systemReduceMotion
+    AppMotion.reduceMotion(systemReduceMotion: systemReduceMotion, respectPreference: respectReducedMotion)
   }
 }
 

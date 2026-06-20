@@ -16,7 +16,7 @@ final class RadioController: ObservableObject {
   private var lastMetadataSignature: String?
   private init() {}
   func start() {
-    if Self.isUITestMode {
+    if AppRuntime.isUITestMode {
       pollTimer?.invalidate()
       pollTimer = nil
       refreshTask?.cancel()
@@ -71,7 +71,7 @@ final class RadioController: ObservableObject {
     }
   }
   func refresh() async {
-    if Self.isUITestMode {
+    if AppRuntime.isUITestMode {
       applyUITestFixture()
       return
     }
@@ -111,10 +111,6 @@ final class RadioController: ObservableObject {
       info.artist ?? "",
       info.art ?? ""
     ].joined(separator: "|")
-  }
-
-  private static var isUITestMode: Bool {
-    ProcessInfo.processInfo.arguments.contains("-UITestMode")
   }
 
   private func applyUITestFixture() {

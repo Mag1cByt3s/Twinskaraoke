@@ -33,7 +33,7 @@ struct PlayerView: View {
   @State private var lastVolumeFeedbackStep: Int?
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )
@@ -379,7 +379,7 @@ private struct WatchVolumeControl: View {
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

@@ -10,7 +10,7 @@ struct PlaylistsGridView: View {
   ]
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )
@@ -187,11 +187,5 @@ private struct WatchPlaylistCard: View {
         .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
     )
     .contentShape(RoundedRectangle(cornerRadius: 12))
-  }
-}
-
-private extension Playlist {
-  var songCountText: String {
-    songCount == 1 ? "1 song" : "\(songCount) songs"
   }
 }

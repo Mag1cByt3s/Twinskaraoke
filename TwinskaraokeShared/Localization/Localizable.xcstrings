@@ -152,7 +152,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 解锁徽章
+            "value" : "%@ 解锁徽章"
           }
         }
       }
@@ -256,7 +256,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@, %2$@ 播放列表
+            "value" : "%1$@, %2$@ 播放列表"
           }
         }
       }
@@ -516,7 +516,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 封面
+            "value" : "%lld 封面"
           }
         }
       }

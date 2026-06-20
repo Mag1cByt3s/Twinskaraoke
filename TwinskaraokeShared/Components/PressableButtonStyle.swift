@@ -1,6 +1,6 @@
 import SwiftUI
 
-#if canImport(UIKit)
+#if os(iOS)
   import UIKit
 #endif
 
@@ -13,7 +13,7 @@ enum AppHaptic {
   case error
 
   func play() {
-    #if canImport(UIKit)
+    #if os(iOS)
       switch self {
       case .light:
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -44,46 +44,32 @@ enum AppHaptic {
   }
 }
 
-enum AppMotion {
-  static func reduceMotion(systemReduceMotion: Bool, respectPreference: Bool) -> Bool {
-    respectPreference && systemReduceMotion
-  }
-
-  /// Keep interactive animations perceptually crisp on high-refresh displays while
-  /// preserving the same behavior on older 60 Hz devices.
-  static func duration(_ seconds: TimeInterval) -> TimeInterval {
-    guard DisplayRefreshRate.isHighRefreshDisplay else { return seconds }
-    return seconds * 0.92
-  }
-
-  static func easeInOut(duration seconds: TimeInterval) -> Animation {
-    .easeInOut(duration: duration(seconds))
-  }
-
-  static func easeOut(duration seconds: TimeInterval) -> Animation {
-    .easeOut(duration: duration(seconds))
-  }
-
-  static func linear(duration seconds: TimeInterval) -> Animation {
-    .linear(duration: duration(seconds))
-  }
-
-  static func spring(response: TimeInterval, dampingFraction: Double) -> Animation {
-    .spring(response: duration(response), dampingFraction: dampingFraction)
-  }
-}
-
 struct PressableButtonStyle: ButtonStyle {
   var scale: CGFloat = 0.97
   var dim: Double = 0.7
+  var disabledOpacity: Double = 1.0
   var haptic: AppHaptic? = nil
+  var pressAnimation: Animation? = nil
 
   func makeBody(configuration: Configuration) -> some View {
     PressableButtonBody(
       configuration: configuration,
       scale: scale,
       dim: dim,
-      haptic: haptic
+      disabledOpacity: disabledOpacity,
+      haptic: haptic,
+      pressAnimation: pressAnimation
+    )
+  }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+  static var watchPressable: PressableButtonStyle {
+    PressableButtonStyle(
+      scale: 0.96,
+      dim: 0.78,
+      disabledOpacity: 0.42,
+      pressAnimation: .easeOut(duration: 0.16)
     )
   }
 }
@@ -92,7 +78,10 @@ private struct PressableButtonBody: View {
   let configuration: ButtonStyle.Configuration
   let scale: CGFloat
   let dim: Double
+  let disabledOpacity: Double
   let haptic: AppHaptic?
+  let pressAnimation: Animation?
+  @Environment(\.isEnabled) private var isEnabled
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var wasPressed = false
@@ -100,16 +89,23 @@ private struct PressableButtonBody: View {
   var body: some View {
     configuration.label
       .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? scale : 1.0))
-      .opacity(configuration.isPressed ? dim : 1.0)
-      .animation(
-        reduceMotion ? nil : AppMotion.spring(response: 0.32, dampingFraction: 0.7),
-        value: configuration.isPressed)
-      .onChange(of: configuration.isPressed) { _, isPressed in
+      .opacity(currentOpacity)
+      .animation(reduceMotion ? nil : animation, value: configuration.isPressed)
+      .onChange(of: configuration.isPressed) { isPressed in
         if isPressed && !wasPressed {
           haptic?.play()
         }
         wasPressed = isPressed
       }
+  }
+
+  private var currentOpacity: Double {
+    guard isEnabled else { return disabledOpacity }
+    return configuration.isPressed ? dim : 1.0
+  }
+
+  private var animation: Animation {
+    pressAnimation ?? AppMotion.spring(response: 0.32, dampingFraction: 0.7)
   }
 
   private var reduceMotion: Bool {

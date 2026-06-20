@@ -6,7 +6,7 @@ struct AccountView: View {
   @State private var showsFullGuestID = false
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

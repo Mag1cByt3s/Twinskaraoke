@@ -26,7 +26,7 @@ final class HomeViewModel: ObservableObject {
   }
 
   func fetchHomeData(force: Bool = false) {
-    if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+    if AppRuntime.isUITestMode {
       applyUITestFixture()
       return
     }
@@ -38,16 +38,20 @@ final class HomeViewModel: ObservableObject {
     canLoadMoreTopPicks = true
     let group = DispatchGroup()
     group.enter()
-    fetchData(urlString: "\(StorageHost.api)/api/explore/trendings?days=7&take=20") {
-      [weak self] (response: [Song]?) in
-      if let response { DispatchQueue.main.async { self?.trending = response } }
-      group.leave()
+    Task { [weak self] in
+      let response = try? await KaraokeAPIClient.trendingSongs(take: 20)
+      await MainActor.run {
+        if let response { self?.trending = response }
+        group.leave()
+      }
     }
     group.enter()
-    fetchData(urlString: "\(StorageHost.api)/api/user/suggestions?take=20") {
-      [weak self] (response: [Song]?) in
-      if let response { DispatchQueue.main.async { self?.suggestions = response } }
-      group.leave()
+    Task { [weak self] in
+      let response = try? await KaraokeAPIClient.songSuggestions(take: 20)
+      await MainActor.run {
+        if let response { self?.suggestions = response }
+        group.leave()
+      }
     }
     group.enter()
     fetchTopPicks(startIndex: 0) { [weak self] response in
@@ -61,8 +65,9 @@ final class HomeViewModel: ObservableObject {
       }
     }
     group.enter()
-    fetchLatestReleases { [weak self] songs in
-      DispatchQueue.main.async {
+    Task { [weak self] in
+      let songs = (try? await KaraokeAPIClient.latestReleases()) ?? []
+      await MainActor.run {
         guard let self else {
           group.leave()
           return
@@ -93,11 +98,28 @@ final class HomeViewModel: ObservableObject {
   private func loadMoreTopPicks() {
     isLoadingMoreTopPicks = true
     let startIndex = topPicksPage * topPicksPageSize
-    fetchData(urlString: topPicksURL(startIndex: startIndex, source: topPicksSource)) {
-      [weak self] (response: [PlaylistListItem]?) in
-      DispatchQueue.main.async {
-        guard let self = self else { return }
-        let playlists = response?.map { $0.asPlaylist() } ?? []
+    let source = topPicksSource
+    let pageSize = topPicksPageSize
+    Task { [weak self] in
+      let playlists: [Playlist]
+      switch source {
+      case .setlists:
+        playlists =
+          (try? await KaraokeAPIClient.playlists(
+            startIndex: startIndex,
+            pageSize: pageSize,
+            isSetlist: true,
+            sortDescending: true
+          )) ?? []
+      case .publicPlaylists:
+        playlists =
+          (try? await KaraokeAPIClient.publicPlaylists(
+            startIndex: startIndex,
+            pageSize: pageSize
+          )) ?? []
+      }
+      await MainActor.run {
+        guard let self else { return }
         if !playlists.isEmpty {
           let existing = Set(self.recentPlaylists.map { $0.id })
           self.recentPlaylists += playlists.filter { !existing.contains($0.id) }
@@ -110,111 +132,35 @@ final class HomeViewModel: ObservableObject {
       }
     }
   }
+
   private func fetchTopPicks(startIndex: Int, completion: @escaping ([Playlist]?) -> Void) {
-    fetchData(urlString: topPicksURL(startIndex: startIndex, source: .setlists)) {
-      [weak self] (response: LossyArray<PlaylistListItem>?) in
-      let playlists = response?.elements.map { $0.asPlaylist() } ?? []
-      if !playlists.isEmpty {
-        self?.topPicksSource = .setlists
-        completion(playlists)
-      } else {
+    let pageSize = topPicksPageSize
+    Task { [weak self] in
+      let setlists =
+        (try? await KaraokeAPIClient.playlists(
+          startIndex: startIndex,
+          pageSize: pageSize,
+          isSetlist: true,
+          sortDescending: true
+        )) ?? []
+      if !setlists.isEmpty {
+        await MainActor.run {
+          self?.topPicksSource = .setlists
+          completion(setlists)
+        }
+        return
+      }
+
+      let fallback =
+        try? await KaraokeAPIClient.publicPlaylists(
+          startIndex: startIndex,
+          pageSize: pageSize
+        )
+      await MainActor.run {
         self?.topPicksSource = .publicPlaylists
-        self?.fetchData(
-          urlString: self?.topPicksURL(startIndex: startIndex, source: .publicPlaylists) ?? ""
-        ) { (fallback: LossyArray<PlaylistListItem>?) in
-          completion(fallback?.elements.map { $0.asPlaylist() })
-        }
+        completion(fallback)
       }
     }
-  }
-
-  private func topPicksURL(startIndex: Int, source: TopPicksSource) -> String {
-    switch source {
-    case .publicPlaylists:
-      return "\(StorageHost.api)/api/playlist/public?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=UpdatedAt&sortDescending=True"
-    case .setlists:
-      return "\(StorageHost.api)/api/playlists?startIndex=\(startIndex)&pageSize=\(topPicksPageSize)&search=&sortBy=&sortDescending=True&isSetlist=True&year=0"
-    }
-  }
-
-  private func fetchLatestReleases(completion: @escaping ([Song]) -> Void) {
-    guard let url = URL(string: "\(StorageHost.api)/api/songs") else {
-      completion([])
-      return
-    }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 15
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    if let token = UserDefaults.standard.string(forKey: "nk.token") {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    }
-    GuestIdentity.applyIfNeeded(to: &request)
-    request.httpBody = try? JSONSerialization.data(withJSONObject: [
-      "page": 1,
-      "pageSize": 48,
-      "search": "",
-      "sortBy": "CreatedAt",
-      "sortDescending": true,
-    ])
-
-    URLSession.shared.dataTask(with: request) { data, _, _ in
-      Task { @MainActor in
-        let decoded = Self.decodeSongs(from: data)
-        guard !decoded.isEmpty else {
-          completion([])
-          return
-        }
-        let filtered = decoded.filter {
-          !$0.title.localizedCaseInsensitiveContains("Temporary Stream Audio")
-        }
-        let curated = Array((filtered.isEmpty ? decoded : filtered).prefix(24))
-        completion(curated)
-      }
-    }.resume()
-  }
-
-  private static func decodeSongs(from data: Data?) -> [Song] {
-    guard let data else { return [] }
-    if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
-      return decoded.items
-    }
-    return SongPayloadDecoder.decodeSongs(from: data) ?? []
-  }
-
-  private func fetchData<T: Decodable>(urlString: String, completion: @escaping (T?) -> Void) {
-    guard let url = URL(string: urlString) else {
-      completion(nil)
-      return
-    }
-    var request = URLRequest(url: url)
-    if let token = UserDefaults.standard.string(forKey: "nk.token") {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    }
-    GuestIdentity.applyIfNeeded(to: &request)
-    URLSession.shared.dataTask(with: request) { data, resp, error in
-      if let error {
-        DebugLogger.log("Home fetch failed: \(urlString) — \(error.localizedDescription)", category: .network)
-        completion(nil)
-        return
-      }
-      if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-        DebugLogger.log("Home fetch HTTP \(http.statusCode): \(urlString)", category: .network)
-        completion(nil)
-        return
-      }
-      guard let data else {
-        completion(nil)
-        return
-      }
-      do {
-        let decoded = try JSONDecoder().decode(T.self, from: data)
-        completion(decoded)
-      } catch {
-        DebugLogger.log("Home fetch decode error: \(urlString) — \(error)", category: .network)
-        completion(nil)
-      }
-    }.resume()
   }
 
   private func applyUITestFixture() {
@@ -231,17 +177,17 @@ final class HomeViewModel: ObservableObject {
     latestSingle = fixtureSongs.first
     latestSingleContext = fixtureSongs
     recentPlaylists = [
-      fixturePlaylist(
+      UITestFixtures.playlist(
         id: "ui-home-playlist-essentials",
         name: "Karaoke Essentials",
         songs: Array(fixtureSongs.prefix(4))
       ),
-      fixturePlaylist(
+      UITestFixtures.playlist(
         id: "ui-home-playlist-pop",
         name: "Pop Covers",
         songs: Array(fixtureSongs.dropFirst(2).prefix(4))
       ),
-      fixturePlaylist(
+      UITestFixtures.playlist(
         id: "ui-home-playlist-night",
         name: "Late Night Singalong",
         songs: Array(fixtureSongs.suffix(4))
@@ -251,72 +197,42 @@ final class HomeViewModel: ObservableObject {
 
   private static var fixtureSongs: [Song] {
     [
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-1",
         title: "Wake Me Up Before You Go-Go",
         originalArtists: ["Wham!"],
         coverArtists: ["Neuro"]
       ),
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-2",
         title: "Hero",
         originalArtists: ["Mili"],
         coverArtists: ["Neuro"]
       ),
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-3",
         title: "Cure For Me",
         originalArtists: ["AURORA"],
         coverArtists: ["Neuro"]
       ),
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-4",
         title: "Be My Star",
         originalArtists: ["LEVEL NINE"],
         coverArtists: ["Neuro"]
       ),
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-5",
         title: "Young and Beautiful",
         originalArtists: ["Lana Del Rey"],
         coverArtists: ["Neuro"]
       ),
-      fixtureSong(
+      UITestFixtures.song(
         id: "ui-home-song-6",
         title: "Send Me an Angel",
         originalArtists: ["Scorpions"],
         coverArtists: ["Neuro"]
       ),
     ]
-  }
-
-  private static func fixtureSong(
-    id: String,
-    title: String,
-    originalArtists: [String],
-    coverArtists: [String]
-  ) -> Song {
-    Song(
-      id: id,
-      title: title,
-      duration: 210,
-      absolutePath: nil,
-      cloudflareID: nil,
-      coverArt: nil,
-      originalArtists: originalArtists,
-      coverArtists: coverArtists,
-      userUploaded: true
-    )
-  }
-
-  private func fixturePlaylist(id: String, name: String, songs: [Song]) -> Playlist {
-    Playlist(
-      id: id,
-      name: name,
-      songCount: songs.count,
-      media: nil,
-      mosaicMedia: nil,
-      songListDTOs: songs
-    )
   }
 }

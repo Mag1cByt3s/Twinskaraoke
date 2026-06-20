@@ -8,7 +8,7 @@ struct SongsView: View {
   @State private var showPlayer = false
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

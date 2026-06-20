@@ -19,6 +19,12 @@ nonisolated struct LossyArray<Element: Decodable>: Decodable, Sendable where Ele
 
 nonisolated private struct DiscardedDecodable: Decodable, Sendable {}
 
+nonisolated enum SongCountText {
+  static func songs(_ count: Int) -> String {
+    count == 1 ? "1 song" : "\(count) songs"
+  }
+}
+
 nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
   let id: String
   let title: String
@@ -191,7 +197,7 @@ nonisolated struct Song: Codable, Identifiable, Equatable, Sendable {
   }
 }
 
-nonisolated struct Playlist: Codable, Identifiable, Sendable {
+nonisolated struct Playlist: Codable, Identifiable, Hashable, Sendable {
   static let favoritesID = "__favorites__"
   let id: String
   let name: String
@@ -270,6 +276,16 @@ nonisolated struct Playlist: Codable, Identifiable, Sendable {
   }
 
   var isFavorites: Bool { id == Self.favoritesID }
+
+  var songCountText: String {
+    SongCountText.songs(songCount)
+  }
+
+  static func == (lhs: Playlist, rhs: Playlist) -> Bool { lhs.id == rhs.id }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
+  }
 
   private func normalizedImagePath(_ rawPath: String) -> String {
     rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"

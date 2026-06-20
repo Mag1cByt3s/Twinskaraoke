@@ -6,7 +6,7 @@ struct QueueView: View {
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )
@@ -347,7 +347,7 @@ private struct WatchQueueProgressRing: View {
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
 
   private var reduceMotion: Bool {
-    WatchMotion.reduceMotion(
+    AppMotion.reduceMotion(
       systemReduceMotion: systemReduceMotion,
       respectPreference: respectReducedMotion
     )

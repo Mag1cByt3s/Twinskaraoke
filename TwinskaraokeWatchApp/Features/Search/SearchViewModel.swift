@@ -1,11 +1,14 @@
 import Combine
 import Foundation
 
-class SearchViewModel: ObservableObject {
+@MainActor
+final class SearchViewModel: ObservableObject {
   @Published var results: [SearchSongItem] = []
   @Published var isLoading = false
   @Published var searchText = ""
   private var cancellables = Set<AnyCancellable>()
+  private var queryToken = 0
+
   init() {
     $searchText
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -15,33 +18,29 @@ class SearchViewModel: ObservableObject {
         if !text.isEmpty {
           self?.performSearch(query: text)
         } else {
+          self?.queryToken += 1
           self?.results = []
+          self?.isLoading = false
         }
       }
       .store(in: &cancellables)
   }
+
   func performSearch(query: String) {
-    guard let url = URL(string: "\(StorageHost.api)/api/songs") else { return }
+    queryToken += 1
+    let token = queryToken
     isLoading = true
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue(GuestIdentity.current, forHTTPHeaderField: "x-guest-id")
-    let body: [String: Any] = [
-      "page": 1,
-      "pageSize": 20,
-      "search": query,
-    ]
-    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-      Task { @MainActor [weak self] in
-        guard let self = self else { return }
-        defer { self.isLoading = false }
-        guard let data,
-          let decoded = try? JSONDecoder().decode(SearchResponseRoot.self, from: data)
-        else { return }
-        self.results = decoded.items
+    Task { [weak self] in
+      guard let self else { return }
+      defer { isLoading = false }
+      do {
+        let items = try await KaraokeAPIClient.searchSongItems(query: query, pageSize: 20)
+        guard queryToken == token else { return }
+        results = items
+      } catch {
+        guard queryToken == token else { return }
+        results = []
       }
-    }.resume()
+    }
   }
 }
