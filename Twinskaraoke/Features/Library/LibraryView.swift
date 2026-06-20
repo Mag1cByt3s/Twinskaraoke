@@ -1300,18 +1300,20 @@ private struct LibraryCollectionEmptyStateView: View {
 
 private struct LibraryCollectionActionsMenu: View {
   let collection: LibrarySongCollection
-  @StateObject private var downloads = DownloadManager.shared
-
-  private var pendingDownloads: [Song] {
-    collection.songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
-  }
-
-  private var downloadingCount: Int {
-    collection.songs.filter { downloads.isDownloading($0.id) }.count
-  }
+  private let pendingDownloads: [Song]
+  private let downloadingCount: Int
 
   private var allDownloaded: Bool {
     !collection.songs.isEmpty && pendingDownloads.isEmpty && downloadingCount == 0
+  }
+
+  init(collection: LibrarySongCollection) {
+    self.collection = collection
+    // Snapshot download state for transparent menu stability. Download progress
+    // can publish frequently while a menu is open.
+    let downloads = DownloadManager.shared
+    self.pendingDownloads = collection.songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
+    self.downloadingCount = collection.songs.filter { downloads.isDownloading($0.id) }.count
   }
 
   var body: some View {
@@ -1342,7 +1344,7 @@ private struct LibraryCollectionActionsMenu: View {
         Button(role: .destructive) {
           AppHaptic.warning.play()
           for song in collection.songs {
-            downloads.remove(songID: song.id)
+            DownloadManager.shared.remove(songID: song.id)
           }
         } label: {
           Label("Remove Downloads", systemImage: "trash")
@@ -1351,7 +1353,7 @@ private struct LibraryCollectionActionsMenu: View {
         Button {
           AppHaptic.success.play()
           for song in pendingDownloads {
-            downloads.download(song: song)
+            DownloadManager.shared.download(song: song)
           }
         } label: {
           let label =

@@ -237,6 +237,13 @@ nonisolated enum AudioCacheStore {
     if let expectedDuration, expectedDuration > 0 {
       guard let actualURL = playableURL(for: songFiles.main) else { return false }
       let actualDuration = getAudioDuration(at: actualURL)
+      guard actualDuration.isFinite, actualDuration > 1.0 else {
+        DebugLogger.log(
+          "Discarding audio cache for \(songID) because duration could not be measured",
+          category: .cache)
+        removeSongCache(for: songID)
+        return false
+      }
       let tolerance: TimeInterval = 2.0
       if actualDuration > 0, abs(actualDuration - expectedDuration) > tolerance {
         DebugLogger.log(

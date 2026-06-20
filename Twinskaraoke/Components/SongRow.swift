@@ -103,7 +103,10 @@ struct SongRow: View {
           RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
             .fill(Color.appArtworkOverlay)
             .frame(width: size.artSize, height: size.artSize)
-          EqualizerBars(isAnimating: playback.isPlaying)
+          // Keep row indicators static. Context menus on iOS are translucent and
+          // flicker if the list behind them keeps repainting via TimelineView while
+          // playback is active.
+          EqualizerBars(isAnimating: false)
             .frame(width: size.indicatorSize, height: size.indicatorSize)
             .foregroundColor(.primary)
         }
@@ -374,8 +377,20 @@ private struct MusicGridCardShadow: ViewModifier {
 struct SongActionsMenuItems: View {
   let song: Song
   let onAddToPlaylist: () -> Void
-  @StateObject private var downloads = DownloadManager.shared
+  private let isDownloaded: Bool
+  private let isDownloading: Bool
   @ObservedObject private var favorites = FavoritesManager.shared
+
+  init(song: Song, onAddToPlaylist: @escaping () -> Void) {
+    self.song = song
+    self.onAddToPlaylist = onAddToPlaylist
+    // Snapshot download state when the menu is built. Observing live download
+    // progress from inside transparent iOS menus can cause the same preference
+    // churn/flicker as playback progress did in the popup bar.
+    let downloads = DownloadManager.shared
+    self.isDownloaded = downloads.isDownloaded(song.id)
+    self.isDownloading = downloads.isDownloading(song.id)
+  }
 
   var body: some View {
     Button {
@@ -410,24 +425,24 @@ struct SongActionsMenuItems: View {
 
     Divider()
 
-    if downloads.isDownloaded(song.id) {
+    if isDownloaded {
       Button(role: .destructive) {
         AppHaptic.warning.play()
-        downloads.remove(songID: song.id)
+        DownloadManager.shared.remove(songID: song.id)
       } label: {
         Label("Remove Download", systemImage: "trash")
       }
-    } else if downloads.isDownloading(song.id) {
+    } else if isDownloading {
       Button {
         AppHaptic.selection.play()
-        downloads.cancel(songID: song.id)
+        DownloadManager.shared.cancel(songID: song.id)
       } label: {
         Label("Cancel Download", systemImage: "xmark.circle")
       }
     } else {
       Button {
         AppHaptic.success.play()
-        downloads.download(song: song)
+        DownloadManager.shared.download(song: song)
       } label: {
         Label("Download", systemImage: "arrow.down.circle")
       }
@@ -437,12 +452,11 @@ struct SongActionsMenuItems: View {
 
 struct SongContextPreview: View {
   let song: Song
-  @ObservedObject private var playback = PlaybackRowState.shared
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       LoadingImage(
-        url: playback.displayImageURL(for: song),
+        url: song.imageURL,
         cornerRadius: 10,
         fixedDisplaySize: CGSize(width: 220, height: 220)
       )

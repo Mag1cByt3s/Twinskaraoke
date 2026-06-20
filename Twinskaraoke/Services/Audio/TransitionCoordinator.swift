@@ -175,7 +175,10 @@ final class TransitionCoordinator {
           rampStyle = .linear
         } else {
           let result = Self.computeFade(outBPM: outBPM, inBPM: inBPM)
-          fadeDuration = result.duration
+          // Beat-aware Auto Mix can naturally choose long phrase-aligned fades.
+          // Keep it bounded by the user's crossfade setting so the visible handoff
+          // does not make the next track appear to start many seconds in.
+          fadeDuration = min(result.duration, max(1.0, crossfadeSeconds))
           rampStyle = result.style
         }
       } else {

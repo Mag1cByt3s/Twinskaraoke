@@ -349,19 +349,26 @@ private struct PlaylistMoreMenu: View {
 struct PlaylistActionsMenuItems: View {
   let playlist: Playlist
   let songs: [Song]
-  @StateObject private var downloads = DownloadManager.shared
   @ObservedObject private var savedStore: SavedPlaylistsStore = .shared
-  private var pendingCount: Int {
-    songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }.count
-  }
-  private var inFlightCount: Int {
-    songs.filter { downloads.isDownloading($0.id) }.count
-  }
+  private let pendingSongs: [Song]
+  private let inFlightCount: Int
+  private var pendingCount: Int { pendingSongs.count }
   private var allDownloaded: Bool {
     !songs.isEmpty && pendingCount == 0 && inFlightCount == 0
   }
   private var canSaveToLibrary: Bool { !playlist.isFavorites && !playlist.isPersonal }
   private var isSaved: Bool { savedStore.isSaved(playlist) }
+
+  init(playlist: Playlist, songs: [Song]) {
+    self.playlist = playlist
+    self.songs = songs
+    // Keep menu content as a snapshot so active download progress does not
+    // continuously redraw transparent context/menu surfaces.
+    let downloads = DownloadManager.shared
+    self.pendingSongs = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
+    self.inFlightCount = songs.filter { downloads.isDownloading($0.id) }.count
+  }
+
   var body: some View {
     if !songs.isEmpty {
       Button {
@@ -402,15 +409,15 @@ struct PlaylistActionsMenuItems: View {
       } else if allDownloaded {
         Button(role: .destructive) {
           AppHaptic.warning.play()
-          for s in songs { downloads.remove(songID: s.id) }
+          for s in songs { DownloadManager.shared.remove(songID: s.id) }
         } label: {
           Label("Remove Downloads", systemImage: "trash")
         }
       } else {
         Button {
           AppHaptic.success.play()
-          for s in songs where !downloads.isDownloaded(s.id) && !downloads.isDownloading(s.id) {
-            downloads.download(song: s)
+          for s in pendingSongs {
+            DownloadManager.shared.download(song: s)
           }
         } label: {
           let label = pendingCount < songs.count ? "Download Remaining" : "Download"

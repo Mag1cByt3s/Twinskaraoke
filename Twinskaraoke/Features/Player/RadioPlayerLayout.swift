@@ -16,7 +16,6 @@ struct RadioPlayerLayout: View {
           radioActions
         } preview: {
           SongContextPreview(song: song)
-            .environmentObject(audioManager)
         }
       Spacer(minLength: 28)
       headerRow
@@ -25,7 +24,6 @@ struct RadioPlayerLayout: View {
           radioActions
         } preview: {
           SongContextPreview(song: song)
-            .environmentObject(audioManager)
         }
       Spacer(minLength: 24)
       playStopButton

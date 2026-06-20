@@ -282,7 +282,6 @@ struct FullScreenPlayerView: View {
                 songActions(song: song)
               } preview: {
                 SongContextPreview(song: song)
-                  .environmentObject(audioManager)
               }
             Spacer(minLength: metrics.artworkBottomSpacer)
             titleRow(song: song, metrics: metrics)
@@ -326,7 +325,6 @@ struct FullScreenPlayerView: View {
             songActions(song: song)
           } preview: {
             SongContextPreview(song: song)
-              .environmentObject(audioManager)
           }
         titleRow(song: song, metrics: metrics, horizontalPadding: 0)
       }
@@ -374,7 +372,6 @@ struct FullScreenPlayerView: View {
           songActions(song: song)
         } preview: {
           SongContextPreview(song: song)
-            .environmentObject(audioManager)
         }
         .padding(.bottom, 24)
 
@@ -660,7 +657,6 @@ struct FullScreenPlayerView: View {
       songActions(song: song)
     } preview: {
       SongContextPreview(song: song)
-        .environmentObject(audioManager)
     }
     .padding(.horizontal, horizontalPadding ?? metrics.horizontalPadding)
   }

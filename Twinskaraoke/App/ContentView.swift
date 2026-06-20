@@ -14,7 +14,6 @@ private final class PopupPlaybackState: ObservableObject {
   @Published private(set) var title = ""
   @Published private(set) var subtitle = ""
   @Published private(set) var artwork: UIImage?
-  @Published private(set) var progress: Float = 0
   @Published private(set) var isPlaying = false
   @Published private(set) var isRadioMode = false
 
@@ -42,13 +41,6 @@ private final class PopupPlaybackState: ObservableObject {
       .sink { [weak self] in self?.artwork = $0 }
       .store(in: &cancellables)
 
-    PlaybackClock.shared.$progress
-      .throttle(for: .milliseconds(350), scheduler: RunLoop.main, latest: true)
-      .map { Float(min(max($0, 0), 1)) }
-      .removeDuplicates()
-      .sink { [weak self] in self?.progress = $0 }
-      .store(in: &cancellables)
-
     manager.$isPlaying
       .removeDuplicates()
       .sink { [weak self] in self?.isPlaying = $0 }
@@ -56,12 +48,7 @@ private final class PopupPlaybackState: ObservableObject {
 
     manager.$isRadioMode
       .removeDuplicates()
-      .sink { [weak self] isRadioMode in
-        self?.isRadioMode = isRadioMode
-        if isRadioMode {
-          self?.progress = 0
-        }
-      }
+      .sink { [weak self] isRadioMode in self?.isRadioMode = isRadioMode }
       .store(in: &cancellables)
   }
 }
@@ -481,7 +468,11 @@ private struct PopupModifier: ViewModifier {
         PopupContent(popupState: popupState)
       }
       .popupBarStyle(.floating)
-      .popupBarProgressViewStyle(popupState.isRadioMode ? .none : .bottom)
+      // Do not drive LNPopupUI's bar progress while playback is active. That
+      // preference update invalidates the root popup host repeatedly and causes
+      // iOS transparent context menus to flicker. Full-screen progress still
+      // observes PlaybackClock directly.
+      .popupBarProgressViewStyle(.none)
       .popupCloseButtonStyle(.none)
       .popupInteractionStyle(.drag)
       .popupBarMarqueeScrollEnabled(false)
@@ -513,11 +504,6 @@ private struct PopupContent: View {
           subtitle: popupState.subtitle)
       )
       .modifier(PopupImageModifier(artwork: popupState.artwork))
-      .modifier(
-        PopupProgressModifier(
-          progress: popupState.isRadioMode ? 0 : popupState.progress
-        )
-      )
       .popupBarButtons({
         PopupBarTrailingItems(
           isPlaying: popupState.isPlaying,
@@ -550,18 +536,6 @@ private struct PopupImageModifier: ViewModifier, Equatable {
     } else {
       content.popupImage(Image(systemName: "music.note"))
     }
-  }
-}
-
-private struct PopupProgressModifier: ViewModifier, Equatable {
-  let progress: Float
-
-  static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.progress == rhs.progress
-  }
-
-  func body(content: Content) -> some View {
-    content.popupProgress(progress)
   }
 }
 

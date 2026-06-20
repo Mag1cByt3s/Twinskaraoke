@@ -52,6 +52,24 @@ final class DownloadManager: ObservableObject {
     files(for: songID).source
   }
 
+  nonisolated private static func isValidDownloadedAudio(
+    at url: URL,
+    expectedDuration: TimeInterval? = nil
+  ) -> Bool {
+    guard AudioCacheStore.isPlayableAudioFile(at: url) else { return false }
+    guard let expectedDuration, expectedDuration.isFinite, expectedDuration > 1.0 else {
+      return true
+    }
+    let actualDuration = AudioCacheStore.audioDuration(at: url)
+    guard actualDuration.isFinite, actualDuration > 1.0 else { return false }
+    let tolerance: TimeInterval = 2.0
+    return abs(actualDuration - expectedDuration) <= tolerance
+  }
+
+  nonisolated private static func downloadedByteCount(at url: URL) -> Int {
+    (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+  }
+
   func isDownloaded(_ songID: String) -> Bool {
     downloadedIDs.contains(songID)
   }
@@ -72,8 +90,13 @@ final class DownloadManager: ObservableObject {
     ensureSongDirectory(for: songID)
     let task = URLSession.shared.downloadTask(with: remote) { [weak self] tempURL, response, error in
       var moved = false
+      let expectedBytes = response?.expectedContentLength ?? NSURLSessionTransferSizeUnknown
+      let downloadedBytes = tempURL.map { Self.downloadedByteCount(at: $0) } ?? 0
+      let expectedDuration = song.duration > 0 ? TimeInterval(song.duration) : nil
+      let hasCompleteByteCount = expectedBytes <= 0 || Int64(downloadedBytes) >= expectedBytes
       if let tempURL, error == nil, AudioCacheStore.acceptsAudioResponse(response),
-        AudioCacheStore.isPlayableAudioFile(at: tempURL)
+        hasCompleteByteCount,
+        Self.isValidDownloadedAudio(at: tempURL, expectedDuration: expectedDuration)
       {
         do {
           try FileManager.default.createDirectory(
@@ -94,7 +117,9 @@ final class DownloadManager: ObservableObject {
           try? FileManager.default.removeItem(at: tempURL)
         }
         if error == nil {
-          DebugLogger.log("Download rejected invalid audio response for \(songID)", category: .network)
+          DebugLogger.log(
+            "Download rejected invalid audio for \(songID): bytes=\(downloadedBytes), expectedBytes=\(expectedBytes)",
+            category: .network)
         }
       }
       Task { @MainActor [weak self, moved, song, songID] in
@@ -186,7 +211,8 @@ final class DownloadManager: ObservableObject {
       downloadedIDs.remove(song.id)
       return nil
     }
-    guard AudioCacheStore.isPlayableAudioFile(at: songFiles.audio) else {
+    let expectedDuration = song.duration > 0 ? TimeInterval(song.duration) : nil
+    guard Self.isValidDownloadedAudio(at: songFiles.audio, expectedDuration: expectedDuration) else {
       DebugLogger.log("Discarding invalid downloaded audio for \(song.id)", category: .cache)
       remove(songID: song.id)
       return nil
@@ -238,8 +264,10 @@ final class DownloadManager: ObservableObject {
   private func hasValidDownload(for songID: String) -> Bool {
     let songFiles = files(for: songID)
     guard FileManager.default.fileExists(atPath: songFiles.audio.path) else { return false }
+    let metadataDuration = readMetadata(for: songID)?.duration ?? 0
+    let expectedDuration = metadataDuration > 0 ? TimeInterval(metadataDuration) : nil
     return readSourceURL(for: songID) != nil
-      && AudioCacheStore.isPlayableAudioFile(at: songFiles.audio)
+      && Self.isValidDownloadedAudio(at: songFiles.audio, expectedDuration: expectedDuration)
   }
 
   private func readSourceURL(for songID: String) -> String? {

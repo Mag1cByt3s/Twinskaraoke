@@ -37,10 +37,16 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
   private var task: URLSessionDataTask?
   private var session: URLSession?
   private var hasReportedPlayableFallback = false
+  private var expectedContentLength: Int64 = NSURLSessionTransferSizeUnknown
   private let stateLock = NSLock()
   private var isCancelled = false
   var onCompletion: ((URL?) -> Void)?
   var onPlayableFallbackReady: ((URL) -> Void)?
+
+  private var partialFileSize: Int {
+    (try? partialURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+  }
+
   init(songID: String) {
     self.songID = songID
     let songFiles = AudioCacheStore.files(for: songID)
@@ -99,8 +105,17 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
     guard AudioCacheStore.acceptsAudioResponse(response) else {
+      DebugLogger.log(
+        "Audio cache download rejected for \(songID): \(response.mimeType ?? "unknown MIME")",
+        category: .cache)
       completionHandler(.cancel)
       return
+    }
+    if let http = response as? HTTPURLResponse {
+      expectedContentLength = response.expectedContentLength
+      DebugLogger.log(
+        "Audio cache download response for \(songID): HTTP \(http.statusCode), expectedBytes=\(response.expectedContentLength)",
+        category: .cache)
     }
     completionHandler(.allow)
   }
@@ -123,36 +138,64 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     session.invalidateAndCancel()
     guard !cancelled else { return }
     if error != nil {
+      DebugLogger.log(
+        "Audio cache download failed for \(songID): bytes=\(partialFileSize), error=\(error?.localizedDescription ?? "unknown")",
+        category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
       return
     }
     if let http = task.response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+      DebugLogger.log(
+        "Audio cache download failed for \(songID): HTTP \(http.statusCode), bytes=\(partialFileSize)",
+        category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
       return
     }
     guard let validRemoteURL = remoteURL else {
+      DebugLogger.log(
+        "Audio cache download failed for \(songID): missing remote URL, bytes=\(partialFileSize)",
+        category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
       return
     }
     guard AudioCacheStore.isPlayableAudioFile(at: partialURL) else {
+      DebugLogger.log(
+        "Audio cache download produced unplayable file for \(songID): bytes=\(partialFileSize)",
+        category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
       return
     }
     try? FileManager.default.removeItem(at: finalURL)
+    let completedBytes = partialFileSize
+    if expectedContentLength > 0 && Int64(completedBytes) < expectedContentLength {
+      DebugLogger.log(
+        "Audio cache download incomplete for \(songID): bytes=\(completedBytes), expectedBytes=\(expectedContentLength)",
+        category: .cache)
+      try? FileManager.default.removeItem(at: partialURL)
+      AudioCacheStore.writeMainSourceURL(nil, for: songID)
+      DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
+      return
+    }
     do {
       try FileManager.default.moveItem(at: partialURL, to: finalURL)
       AudioCacheStore.writeMainSourceURL(validRemoteURL, for: songID)
+      DebugLogger.log(
+        "Audio cache download completed for \(songID): bytes=\(completedBytes)",
+        category: .cache)
       let final = finalURL
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(final) }
     } catch {
+      DebugLogger.log(
+        "Audio cache download move failed for \(songID): \(error.localizedDescription)",
+        category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
@@ -490,6 +533,7 @@ class AudioPlayerManager: ObservableObject {
   private var quickCutGeneration: UInt64 = 0
   private var separationGeneration: UInt64 = 0
   private var transitionTimeoutGeneration: UInt64 = 0
+  private var activeCrossfadePlan: TransitionCoordinator.TransitionPlan?
   private var suppressPlaybackEndedUntil: Date = .distantPast
   private var wasPlayingBeforeInterruption = false
 
@@ -575,6 +619,7 @@ class AudioPlayerManager: ObservableObject {
         DebugLogger.log("Ignoring suppressed playback-ended callback", category: .playback)
         return
       }
+      if self.handlePrematurePlaybackEndIfNeeded(source: "AVEngine") { return }
       self.playNextOrRandom()
     }
     avEngine.onCrossfadeCompleted = { [weak self] in
@@ -868,6 +913,93 @@ class AudioPlayerManager: ObservableObject {
     suppressPlaybackEndedUntil = Date().addingTimeInterval(seconds)
   }
 
+  private func playbackSourceDescription(_ url: URL?) -> String {
+    guard let url else { return "none" }
+    if url.isFileURL {
+      if url.path.hasPrefix(AudioPlayerManager.audioCacheDir.path) {
+        return url.pathExtension == "partial"
+          ? "audio-cache-partial/\(url.lastPathComponent)"
+          : "audio-cache/\(url.lastPathComponent)"
+      }
+      return "file/\(url.lastPathComponent)"
+    }
+    let host = url.host ?? "unknown-host"
+    let fileName = url.lastPathComponent.isEmpty ? "stream" : url.lastPathComponent
+    return "remote/\(host)/\(fileName)"
+  }
+
+  private func streamItemDiagnostics() -> String {
+    guard let player = streamPlayer, let item = player.currentItem else { return "stream=none" }
+    let duration = item.duration.seconds
+    let durationText = duration.isFinite ? String(format: "%.2f", duration) : "unknown"
+    let loadedRanges = item.loadedTimeRanges
+      .map { $0.timeRangeValue }
+      .map { range -> String in
+        let start = range.start.seconds
+        let end = CMTimeAdd(range.start, range.duration).seconds
+        guard start.isFinite, end.isFinite else { return "unknown" }
+        return String(format: "%.2f-%.2f", start, end)
+      }
+      .joined(separator: ",")
+    let status: String
+    switch item.status {
+    case .unknown: status = "unknown"
+    case .readyToPlay: status = "ready"
+    case .failed: status = "failed"
+    @unknown default: status = "unknown-default"
+    }
+    let itemError = item.error?.localizedDescription ?? "none"
+    let playerError = player.error?.localizedDescription ?? "none"
+    return "streamDuration=\(durationText), loaded=[\(loadedRanges)], itemStatus=\(status), itemError=\(itemError), playerError=\(playerError)"
+  }
+
+  private func handlePrematurePlaybackEndIfNeeded(source: String) -> Bool {
+    guard let song = currentSong, !isRadioMode else { return false }
+    let expectedDuration = TimeInterval(song.duration)
+    guard expectedDuration.isFinite, expectedDuration > 15 else { return false }
+    let elapsed = activePlaybackTime(for: song)
+    guard elapsed.isFinite else { return false }
+    let minimumExpectedElapsed = min(8.0, max(3.0, expectedDuration * 0.08))
+    guard elapsed < minimumExpectedElapsed else { return false }
+
+    DebugLogger.log(
+      "Ignoring premature playback end from \(source) for \(song.id): elapsed=\(elapsed), expected=\(expectedDuration), source=\(playbackSourceDescription(currentPlaybackURL)), \(streamItemDiagnostics())",
+      category: .playback)
+    suppressPlaybackEndedCallbacks(for: 2.0)
+
+    if let playbackURL = currentPlaybackURL,
+      playbackURL.path.hasPrefix(AudioPlayerManager.audioCacheDir.path)
+    {
+      DebugLogger.log(
+        "Removing suspect cached audio after premature end for \(song.id)",
+        category: .cache)
+      AudioCacheStore.removeSongCache(for: song.id)
+      currentPlaybackURL = nil
+    } else if let playbackURL = currentPlaybackURL,
+      playbackURL.isFileURL,
+      DownloadManager.shared.isDownloaded(song.id)
+    {
+      DebugLogger.log(
+        "Removing suspect downloaded audio after premature end for \(song.id)",
+        category: .cache)
+      DownloadManager.shared.remove(songID: song.id)
+      currentPlaybackURL = nil
+    }
+
+    if let remoteURL = song.audioURL {
+      avEngine.stop()
+      startStreamPlayback(
+        url: remoteURL,
+        songID: song.id,
+        startAt: max(0, elapsed),
+        autoplay: isPlaybackRequested
+      )
+    } else {
+      setPlaybackState(playing: false, buffering: false)
+    }
+    return true
+  }
+
   private func keepPreparedStems(for song: Song? = nil) -> Bool {
     guard aiEnabled, aiAutoAnalyze, !isRadioMode else { return false }
     let targetID = song?.id ?? currentSong?.id
@@ -995,6 +1127,7 @@ class AudioPlayerManager: ObservableObject {
 
   private func cancelPendingTransitionWork(resetVolume: Bool = true) {
     transitionTimeoutGeneration &+= 1
+    activeCrossfadePlan = nil
     cancelQuickCutTimer(resetVolume: resetVolume)
     avEngine.cancelCrossfade()
     streamFadeTimer?.invalidate()
@@ -1813,6 +1946,9 @@ class AudioPlayerManager: ObservableObject {
   ) {
     stopStreamPlayer()
     currentPlaybackURL = url
+    DebugLogger.log(
+      "Starting stream playback for \(songID): source=\(playbackSourceDescription(url)), startAt=\(startAt), autoplay=\(autoplay)",
+      category: .playback)
     configureAudioSessionCategory()
     activateAudioSession()
     let item = AVPlayerItem(url: url)
@@ -1842,6 +1978,7 @@ class AudioPlayerManager: ObservableObject {
         guard self.quickCutTimer == nil else { return }
         guard !self.suppressTransitionAfterSeek else { return }
         guard !self.isPlaybackEndedCallbackSuppressed else { return }
+        if self.handlePrematurePlaybackEndIfNeeded(source: "Stream AVPlayer") { return }
         self.playNextOrRandom()
       }
     }
@@ -2491,6 +2628,7 @@ class AudioPlayerManager: ObservableObject {
     #if canImport(UIKit)
       beginTrackTransitionBackgroundTask()
     #endif
+    activeCrossfadePlan = plan
     configureAudioSessionCategory()
     activateAudioSession()
     DebugLogger.log(
@@ -2564,6 +2702,7 @@ class AudioPlayerManager: ObservableObject {
           timer.invalidate()
           self.quickCutTimer = nil
           DebugLogger.log("Quick cut transition complete -> play(\(song.id))", category: .playback)
+          self.activeCrossfadePlan = nil
           self.transitionCoordinator.reset()
           self.avEngine.setMasterVolume(0)
           self.play(song: song, resetTransitionVolume: false)
@@ -2576,7 +2715,15 @@ class AudioPlayerManager: ObservableObject {
   }
 
   private func transitionCoordinatorDidFinish() {
-    guard case .crossfading(let plan) = transitionCoordinator.state else {
+    let plan: TransitionCoordinator.TransitionPlan
+    if case .crossfading(let currentPlan) = transitionCoordinator.state {
+      plan = currentPlan
+    } else if let retainedPlan = activeCrossfadePlan {
+      plan = retainedPlan
+      DebugLogger.log(
+        "Completing retained crossfade plan for \(retainedPlan.nextSong.id) after coordinator reset",
+        category: .playback)
+    } else {
       transitionCoordinator.reset()
       return
     }
@@ -2587,6 +2734,7 @@ class AudioPlayerManager: ObservableObject {
       DebugLogger.log(
         "Transition completion recovery next=\(plan.nextSong.id), audioURL=\(avEngine.currentURL?.lastPathComponent ?? "nil"), expected=\(plan.nextFileURL.lastPathComponent), duration=\(handoffDuration), playing=\(avEngine.isPlaying)",
         category: .playback)
+      activeCrossfadePlan = nil
       play(song: plan.nextSong, resetTransitionVolume: true)
       return
     }
@@ -2616,6 +2764,7 @@ class AudioPlayerManager: ObservableObject {
       "Transition complete next=\(song.id), audioURL=\(avEngine.currentURL?.lastPathComponent ?? "nil"), time=\(avEngine.currentTime), duration=\(avEngine.duration), playing=\(avEngine.isPlaying)",
       category: .playback)
     updateNowPlayingInfo(reloadArtwork: true)
+    activeCrossfadePlan = nil
     transitionCoordinator.reset()
     let protectedIDs = activeSongIDs()
     CacheManager.shared.enforceMusicCacheLimits(excluding: protectedIDs)

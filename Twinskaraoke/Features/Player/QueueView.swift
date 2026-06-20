@@ -241,7 +241,9 @@ struct QueueView: View {
           .lineLimit(1)
       }
       Spacer()
-      EqualizerBars(isAnimating: audioManager.isPlaying)
+      // Keep context-menu-backed rows static while playback is active; animated
+      // TimelineView content behind translucent menus can cause menu flicker.
+      EqualizerBars(isAnimating: false)
         .frame(width: 16, height: 16)
         .foregroundColor(.appAccent)
     }
@@ -257,7 +259,6 @@ struct QueueView: View {
       }
     } preview: {
       SongContextPreview(song: current)
-        .environmentObject(audioManager)
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Now Playing")
@@ -378,7 +379,6 @@ struct QueueRow: View {
       }
     } preview: {
       SongContextPreview(song: song)
-        .environmentObject(audioManager)
     }
     .sheet(isPresented: $showAddToPlaylist) {
       AddToPlaylistSheet(song: song)

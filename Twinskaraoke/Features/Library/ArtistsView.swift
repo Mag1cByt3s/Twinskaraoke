@@ -642,15 +642,8 @@ private struct ArtistDetailHintRow: View {
 
 private struct ArtistActionsMenu: View {
   let songs: [Song]
-  @StateObject private var downloads = DownloadManager.shared
-
-  private var pendingDownloads: [Song] {
-    songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
-  }
-
-  private var downloadingCount: Int {
-    songs.filter { downloads.isDownloading($0.id) }.count
-  }
+  private let pendingDownloads: [Song]
+  private let downloadingCount: Int
 
   private var allDownloaded: Bool {
     !songs.isEmpty && pendingDownloads.isEmpty && downloadingCount == 0
@@ -659,6 +652,15 @@ private struct ArtistActionsMenu: View {
   private var downloadTitle: String {
     let downloadedCount = songs.count - pendingDownloads.count - downloadingCount
     return downloadedCount > 0 ? "Download Remaining" : "Download"
+  }
+
+  init(songs: [Song]) {
+    self.songs = songs
+    // Snapshot download state for transparent menu stability. Live progress
+    // updates can otherwise invalidate an open menu repeatedly.
+    let downloads = DownloadManager.shared
+    self.pendingDownloads = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
+    self.downloadingCount = songs.filter { downloads.isDownloading($0.id) }.count
   }
 
   var body: some View {
@@ -689,7 +691,7 @@ private struct ArtistActionsMenu: View {
         Button(role: .destructive) {
           AppHaptic.warning.play()
           for song in songs {
-            downloads.remove(songID: song.id)
+            DownloadManager.shared.remove(songID: song.id)
           }
         } label: {
           Label("Remove Downloads", systemImage: "trash")
@@ -698,7 +700,7 @@ private struct ArtistActionsMenu: View {
         Button {
           AppHaptic.success.play()
           for song in pendingDownloads {
-            downloads.download(song: song)
+            DownloadManager.shared.download(song: song)
           }
         } label: {
           Label(downloadTitle, systemImage: "arrow.down.circle")

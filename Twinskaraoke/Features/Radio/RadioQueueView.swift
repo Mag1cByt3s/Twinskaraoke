@@ -338,14 +338,12 @@ private struct RadioQueueLivePill: View {
     HStack(spacing: 5) {
       ZStack {
         if isPlaying && !reduceMotion {
-          TimelineView(
-            .animation(minimumInterval: DisplayRefreshRate.lightweightAnimationInterval)
-          ) { context in
-            Circle()
-              .fill(Color.white.opacity(pulseOpacity(for: context.date)))
-              .scaleEffect(pulseScale(for: context.date))
-          }
-          .frame(width: 11, height: 11)
+          // Keep the live pill stable inside the queue sheet. It sits near
+          // translucent context menus, where frame-driven redraws can flicker
+          // while playback is active.
+          Circle()
+            .fill(Color.white.opacity(0.28))
+            .frame(width: 11, height: 11)
         }
         Circle()
           .fill(.white)
@@ -361,16 +359,6 @@ private struct RadioQueueLivePill: View {
     .padding(.vertical, 4)
     .background(Capsule().fill(Color.appAccent))
     .accessibilityHidden(true)
-  }
-
-  private func pulseScale(for date: Date) -> CGFloat {
-    let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.25) / 1.25
-    return 0.75 + CGFloat(phase) * 1.0
-  }
-
-  private func pulseOpacity(for date: Date) -> Double {
-    let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.25) / 1.25
-    return max(0, 0.32 * (1 - phase))
   }
 }
 
@@ -446,7 +434,9 @@ private struct RadioQueueTrackRow: View {
       }
       Spacer()
       if isCurrent {
-        EqualizerBars(isAnimating: isPlaying)
+        // Keep row-level menu backdrops stable. The live player screen still has
+        // motion, but context-menu rows should not repaint continuously.
+        EqualizerBars(isAnimating: false)
           .frame(width: 18, height: 18)
           .foregroundColor(.appAccent)
       }

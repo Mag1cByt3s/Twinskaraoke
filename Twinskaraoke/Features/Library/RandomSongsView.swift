@@ -387,15 +387,8 @@ private struct RandomSongsHintRow: View {
 private struct RandomSongsActionsMenu: View {
   let songs: [Song]
   let onRefresh: () -> Void
-  @StateObject private var downloads = DownloadManager.shared
-
-  private var pendingDownloads: [Song] {
-    songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
-  }
-
-  private var downloadingCount: Int {
-    songs.filter { downloads.isDownloading($0.id) }.count
-  }
+  private let pendingDownloads: [Song]
+  private let downloadingCount: Int
 
   private var allDownloaded: Bool {
     !songs.isEmpty && pendingDownloads.isEmpty && downloadingCount == 0
@@ -404,6 +397,16 @@ private struct RandomSongsActionsMenu: View {
   private var downloadTitle: String {
     let downloadedCount = songs.count - pendingDownloads.count - downloadingCount
     return downloadedCount > 0 ? "Download Remaining" : "Download"
+  }
+
+  init(songs: [Song], onRefresh: @escaping () -> Void) {
+    self.songs = songs
+    self.onRefresh = onRefresh
+    // Snapshot download state for menu stability; live progress updates belong
+    // in rows, not in transparent menu content.
+    let downloads = DownloadManager.shared
+    self.pendingDownloads = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
+    self.downloadingCount = songs.filter { downloads.isDownloading($0.id) }.count
   }
 
   var body: some View {
@@ -443,7 +446,7 @@ private struct RandomSongsActionsMenu: View {
         Button(role: .destructive) {
           AppHaptic.warning.play()
           for song in songs {
-            downloads.remove(songID: song.id)
+            DownloadManager.shared.remove(songID: song.id)
           }
         } label: {
           Label("Remove Downloads", systemImage: "trash")
@@ -452,7 +455,7 @@ private struct RandomSongsActionsMenu: View {
         Button {
           AppHaptic.success.play()
           for song in pendingDownloads {
-            downloads.download(song: song)
+            DownloadManager.shared.download(song: song)
           }
         } label: {
           Label(downloadTitle, systemImage: "arrow.down.circle")
