@@ -32,7 +32,7 @@ struct PlaylistDetailView: View {
       if viewModel.isLoading && viewModel.songs.isEmpty {
         HStack {
           Spacer()
-          WatchLoadingIndicator(size: 20)
+          ProgressView()
           Spacer()
         }
         .listRowBackground(Color.clear)
@@ -187,7 +187,8 @@ private struct WatchPlaylistDetailHeader: View {
         Spacer(minLength: 4)
 
         if isLoading {
-          WatchLoadingIndicator(size: 16)
+          ProgressView()
+            .controlSize(.small)
             .accessibilityHidden(true)
         }
       }

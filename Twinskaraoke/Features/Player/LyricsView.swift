@@ -397,31 +397,11 @@ extension LyricsView {
 }
 
 private struct LyricsLoadingSkeleton: View {
-  private let rows: [CGFloat] = [0.78, 0.58, 0.86, 0.66, 0.74, 0.52, 0.8]
-
   var body: some View {
-    GeometryReader { proxy in
-      let availableWidth = max(proxy.size.width - 56, 160)
-      VStack(alignment: .leading, spacing: 20) {
-        LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
-          .padding(.bottom, 8)
-
-        ForEach(Array(rows.enumerated()), id: \.offset) { index, width in
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(index == 0 ? Color.primary.opacity(0.24) : Color.primary.opacity(0.14))
-            .frame(width: availableWidth * width, height: index == 0 ? 28 : 22)
-            .opacity(index < 4 ? 1.0 : 0.72)
-        }
-
-        Spacer(minLength: 0)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.horizontal, 28)
-      .padding(.top, 28)
-    }
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityLabel("Loading lyrics")
+    LyricsBouncingDots(isActive: true, dotSize: 12, color: .primary.opacity(0.6))
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Loading lyrics")
   }
 }
 

@@ -404,7 +404,8 @@ private struct BrowseCategoriesView: View {
       genresGridContent
         .padding(.horizontal, sectionHorizontalPadding)
       if genresVM.isLoadingMore {
-        LoadingIndicator(size: 32)
+        ProgressView()
+          .controlSize(.regular)
           .frame(maxWidth: .infinity)
           .padding(.vertical, AM.Spacing.m)
       }
@@ -414,12 +415,8 @@ private struct BrowseCategoriesView: View {
   @ViewBuilder
   private var genresGridContent: some View {
     if genresVM.isLoading && genresVM.genres.isEmpty {
-      LazyVGrid(columns: categoryColumns, spacing: AM.Spacing.m) {
-        ForEach(0..<6, id: \.self) { _ in
-          CategoryTileSkeleton()
-        }
-      }
-      .transition(.opacity.combined(with: .move(edge: .bottom)))
+      CenteredLoadingView(label: "Loading categories")
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     } else if genresVM.genres.isEmpty {
       MusicEmptyState(
         title: "Genres Unavailable",
@@ -572,14 +569,7 @@ private struct GenreDetailLoadingView: View {
             .foregroundStyle(Color.secondary)
         }
 
-        LazyVStack(spacing: 0) {
-          ForEach(0..<7, id: \.self) { _ in
-            SongRowSkeleton(size: .regular)
-              .padding(.horizontal, AM.Spacing.screenMargin)
-              .padding(.vertical, 6)
-            Divider().padding(.leading, 76)
-          }
-        }
+        CenteredLoadingView(minHeight: 160, label: "Loading \(genre.name) songs")
       }
       .padding(.bottom, AM.Spacing.l)
     }
@@ -648,24 +638,7 @@ struct SearchCategorySongCollectionView: View {
 
 private struct SearchResultsLoadingView: View {
   var body: some View {
-    ScrollView {
-      LazyVStack(spacing: 0) {
-        ForEach(0..<9, id: \.self) { _ in
-          SearchRowSkeleton()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-          Divider()
-            .padding(.leading, 76)
-        }
-      }
-      .padding(.top, 8)
-      .padding(.bottom, AM.Spacing.l)
-    }
-    .smoothScrolling()
-    .bottomChromeScrollTracking()
-    .scrollIndicators(.hidden)
-    .tabBarScrollInset()
-    .accessibilityLabel("Searching songs")
+    CenteredLoadingView(label: "Searching songs")
   }
 }
 
@@ -891,14 +864,7 @@ private struct SearchCategoryLoadingView: View {
             .foregroundStyle(Color.secondary)
         }
 
-        LazyVStack(spacing: 0) {
-          ForEach(0..<7, id: \.self) { _ in
-            SongRowSkeleton(size: .regular)
-              .padding(.horizontal, AM.Spacing.screenMargin)
-              .padding(.vertical, 6)
-            Divider().padding(.leading, 76)
-          }
-        }
+        CenteredLoadingView(minHeight: 160, label: "Loading \(title) songs")
       }
       .padding(.bottom, AM.Spacing.l)
     }
@@ -975,7 +941,7 @@ private struct SearchFeaturedShortcutTile: View {
   @ViewBuilder
   private var background: some View {
     if let artworkURL {
-      LoadingImage(url: artworkURL, cornerRadius: 0, contentMode: .fill)
+      RemoteArtworkImage(url: artworkURL, cornerRadius: 0, contentMode: .fill)
         .allowsHitTesting(false)
       LinearGradient(
         colors: gradient.map { $0.opacity(0.76) },
@@ -1003,7 +969,7 @@ private struct CategoryTile: View {
   var body: some View {
     ZStack(alignment: .bottomLeading) {
       if let artworkURL {
-        LoadingImage(url: artworkURL, cornerRadius: 0, contentMode: .fill)
+        RemoteArtworkImage(url: artworkURL, cornerRadius: 0, contentMode: .fill)
           .allowsHitTesting(false)
         LinearGradient(
           colors: gradient.map { $0.opacity(0.70) },
@@ -1042,29 +1008,6 @@ private extension String {
   }
 }
 
-private struct CategoryTileSkeleton: View {
-  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-  private var isCompactWidth: Bool {
-    horizontalSizeClass == .compact
-  }
-
-  var body: some View {
-    RoundedRectangle(cornerRadius: AM.Radius.tile, style: .continuous)
-      .fill(Color.appPlaceholderPrimary)
-      .frame(height: isCompactWidth ? 92 : 102)
-      .overlay(alignment: .bottomLeading) {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 112, height: 19)
-          .padding(AM.Spacing.m)
-      }
-      .redacted(reason: .placeholder)
-      .musicSkeletonShimmer(active: true)
-      .accessibilityLabel("Loading category")
-  }
-}
-
 struct SearchResultRow: View {
   let song: Song
   var isPending: Bool = false
@@ -1074,14 +1017,8 @@ struct SearchResultRow: View {
     SongRow(
       song: song,
       size: .regular,
-      trailing: isPending ? AnyView(LoadingIndicator(size: 18)) : nil
+      trailing: isPending ? AnyView(ProgressView().controlSize(.small)) : nil
     )
     .songRowAccessibility(song: song, isPending: isPending, onPlay: onPlay)
-  }
-}
-
-struct SearchRowSkeleton: View {
-  var body: some View {
-    SongRowSkeleton(size: .regular)
   }
 }

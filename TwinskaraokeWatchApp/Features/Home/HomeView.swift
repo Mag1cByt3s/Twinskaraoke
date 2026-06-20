@@ -77,7 +77,7 @@ struct HomeView: View {
           Section("Trending") {
             HStack {
               Spacer()
-              WatchLoadingIndicator(size: 20)
+              ProgressView()
               Spacer()
             }
           }

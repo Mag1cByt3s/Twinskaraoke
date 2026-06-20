@@ -89,7 +89,7 @@ struct SongRow: View {
     HStack(spacing: 12) {
       ZStack {
         if showsArtwork {
-          LoadingImage(
+          RemoteArtworkImage(
             url: playback.displayImageURL(for: song),
             cornerRadius: size.cornerRadius,
             fixedDisplaySize: CGSize(width: size.artSize, height: size.artSize)
@@ -129,7 +129,8 @@ struct SongRow: View {
           .foregroundStyle(.secondary)
           .accessibilityLabel("Downloaded")
       } else if downloads.isDownloading(song.id) {
-        LoadingIndicator(size: 18)
+        ProgressView()
+          .controlSize(.small)
       }
       if !song.durationText.isEmpty {
         Text(song.durationText)
@@ -172,61 +173,6 @@ struct SongRow: View {
     SongActionsMenuItems(song: song) {
       showAddToPlaylist = true
     }
-  }
-}
-
-struct SongRowSkeleton: View {
-  let size: SongRowSize
-
-  private var titleWidth: CGFloat {
-    switch size {
-    case .compact: return 132
-    case .regular: return 172
-    }
-  }
-
-  private var subtitleWidth: CGFloat {
-    switch size {
-    case .compact: return 92
-    case .regular: return 118
-    }
-  }
-
-  private var titleHeight: CGFloat {
-    switch size {
-    case .compact: return 15
-    case .regular: return 16
-    }
-  }
-
-  private var subtitleHeight: CGFloat {
-    switch size {
-    case .compact: return 12
-    case .regular: return 13
-    }
-  }
-
-  var body: some View {
-    HStack(spacing: 12) {
-      MusicArtworkPlaceholder(cornerRadius: size.cornerRadius)
-        .frame(width: size.artSize, height: size.artSize)
-
-      VStack(alignment: .leading, spacing: 2) {
-        MusicSkeletonLine(width: titleWidth, height: titleHeight, tone: .secondary)
-        MusicSkeletonLine(width: subtitleWidth, height: subtitleHeight, tone: .primary)
-      }
-
-      Spacer(minLength: 12)
-
-      MusicSkeletonLine(width: 38, height: 13, tone: .primary)
-
-      MusicSkeletonBlock(cornerRadius: 16, tone: .primary, strokeOpacity: 0)
-        .frame(width: 32, height: 32)
-    }
-    .padding(.vertical, size == .regular ? 5 : 3)
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityLabel("Loading song")
   }
 }
 
@@ -353,9 +299,9 @@ struct MusicGridCard: View {
   @ViewBuilder
   private var artworkContent: some View {
     if let imageURL = playback.displayImageURL(for: song) {
-      // Fixed card dimensions let LoadingImage request a deterministic thumbnail size
+      // Fixed card dimensions let RemoteArtworkImage request a deterministic thumbnail size
       // without measuring every card through GeometryReader.
-      LoadingImage(
+      RemoteArtworkImage(
         url: imageURL,
         cornerRadius: AM.Radius.card,
         fixedDisplaySize: width.map { CGSize(width: $0, height: $0) }
@@ -459,7 +405,7 @@ struct SongContextPreview: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      LoadingImage(
+      RemoteArtworkImage(
         url: song.imageURL,
         cornerRadius: 10,
         fixedDisplaySize: CGSize(width: 220, height: 220)

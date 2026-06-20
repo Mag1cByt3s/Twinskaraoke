@@ -188,7 +188,7 @@ private struct AddToPlaylistSongPreview: View {
 
   var body: some View {
     HStack(spacing: 14) {
-      LoadingImage(url: song.imageURL, cornerRadius: 10)
+      RemoteArtworkImage(url: song.imageURL, cornerRadius: 10)
         .frame(width: 74, height: 74)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .shadow(color: Color.appShadow, radius: 10, y: 6)
@@ -276,7 +276,8 @@ private struct AddToPlaylistRow: View {
         .font(.title3.bold())
         .foregroundStyle(Color.appAccent)
     case .adding:
-      LoadingIndicator(size: 22)
+      ProgressView()
+        .controlSize(.regular)
     case .added:
       Image(systemName: "checkmark.circle.fill")
         .font(.title3.bold())
@@ -328,33 +329,7 @@ private struct AddToPlaylistRow: View {
 
 private struct AddToPlaylistLoadingRows: View {
   var body: some View {
-    VStack(spacing: 10) {
-      ForEach(0..<6, id: \.self) { _ in
-        HStack(spacing: 12) {
-          RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 50, height: 50)
-          VStack(alignment: .leading, spacing: 3) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 160, height: 16)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 80, height: 13)
-          }
-          Spacer()
-          Circle()
-            .fill(Color.appPlaceholderPrimary)
-            .frame(width: 28, height: 28)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-      }
-    }
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityLabel("Loading playlists")
+    CenteredLoadingView(minHeight: 200, label: "Loading playlists")
   }
 }
 

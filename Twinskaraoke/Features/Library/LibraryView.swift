@@ -694,7 +694,8 @@ struct LibrarySongsView: View {
           if viewModel.isLoadingMore {
             HStack {
               Spacer()
-              LoadingIndicator(size: 28)
+              ProgressView()
+                .controlSize(.regular)
               Spacer()
             }
             .frame(height: 44)
@@ -789,12 +790,10 @@ struct LibrarySongsView: View {
   }
 
   private var skeletonRows: some View {
-    ForEach(0..<10, id: \.self) { _ in
-      SongRowSkeleton(size: .regular)
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
+    CenteredLoadingView()
+      .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+      .listRowBackground(Color.clear)
+      .listRowSeparator(.hidden)
   }
 }
 
@@ -1031,7 +1030,8 @@ struct LibraryCollectionListView: View {
           if viewModel.isLoadingMore {
             HStack {
               Spacer()
-              LoadingIndicator(size: 28)
+              ProgressView()
+                .controlSize(.regular)
               Spacer()
             }
             .frame(height: 44)
@@ -1069,25 +1069,10 @@ struct LibraryCollectionListView: View {
   }
 
   private var collectionSkeletonRows: some View {
-    ForEach(0..<10, id: \.self) { _ in
-      HStack(spacing: 12) {
-        MusicArtworkPlaceholder(cornerRadius: 8)
-          .frame(width: 56, height: 56)
-        VStack(alignment: .leading, spacing: 3) {
-          MusicSkeletonLine(width: 160, height: 16, tone: .secondary)
-          MusicSkeletonLine(width: 88, height: 13, tone: .primary)
-        }
-        Spacer(minLength: 12)
-        MusicSkeletonLine(width: 7, height: 14, tone: .primary)
-      }
-      .frame(height: 64)
-      .padding(.vertical, 4)
+    CenteredLoadingView()
       .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
       .listRowBackground(Color.clear)
       .listRowSeparator(.hidden)
-      .redacted(reason: .placeholder)
-      .musicSkeletonShimmer(active: true)
-    }
   }
 }
 
@@ -1398,7 +1383,7 @@ private struct LibraryCollectionArtwork: View {
       if artworkURLs.count > 1 {
         PlaylistMosaicArtwork(urls: artworkURLs, cornerRadius: cornerRadius)
       } else if let url = collection.artworkURL {
-        LoadingImage(url: url, cornerRadius: 0, contentMode: .fill, showsLoading: false)
+        RemoteArtworkImage(url: url, cornerRadius: 0, contentMode: .fill, showsLoading: false)
       } else {
         LinearGradient(
           colors: [Color.appPlaceholderTertiary.opacity(0.9), Color.appPlaceholderPrimary],
@@ -1546,7 +1531,7 @@ struct PlaylistsGridScreen: View {
     ScrollView {
       Group {
         if viewModel.isLoading && userManager.isLoading && all.isEmpty {
-          PlaylistsSkeletonView(cols: cols)
+          PlaylistsSkeletonView()
         } else if displayed.isEmpty {
           MusicEmptyState(
             title: searchText.isEmpty ? "No Playlists" : "No Results",
@@ -1697,55 +1682,7 @@ struct PlaylistContextPreview: View {
 }
 
 struct PlaylistsSkeletonView: View {
-  let cols: [GridItem]
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var pulse = false
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
   var body: some View {
-    LazyVGrid(columns: cols, spacing: 16) {
-      ForEach(0..<8, id: \.self) { index in
-        VStack(alignment: .leading, spacing: AM.Spacing.s) {
-          MusicArtworkPlaceholder(cornerRadius: AM.Radius.card)
-            .aspectRatio(1, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-          MusicSkeletonLine(width: index % 3 == 0 ? 108 : 138, height: 15, tone: .secondary)
-          MusicSkeletonLine(width: 72, height: 13, tone: .primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-    }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
-    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading playlists")
-    .onAppear {
-      guard !reduceMotion else {
-        pulse = false
-        return
-      }
-      withOptionalAnimation(AppMotion.spring(response: 0.7, dampingFraction: 0.82).repeatForever(autoreverses: true)) {
-        pulse = true
-      }
-    }
-    .onChange(of: reduceMotion) { _, reduceMotion in
-      if reduceMotion {
-        pulse = false
-      } else {
-        withOptionalAnimation(AppMotion.spring(response: 0.7, dampingFraction: 0.82).repeatForever(autoreverses: true)) {
-          pulse = true
-        }
-      }
-    }
+    CenteredLoadingView(label: "Loading playlists")
   }
 }

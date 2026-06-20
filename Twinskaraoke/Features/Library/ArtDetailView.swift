@@ -68,7 +68,8 @@ struct ArtDetailView: View {
         } label: {
           switch saveStatus {
           case .saving:
-            LoadingIndicator(size: 18)
+            ProgressView()
+              .controlSize(.small)
           case .success:
             Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
           case .failed:
@@ -259,7 +260,7 @@ private struct ArtworkDetailHero: View {
   @ViewBuilder
   private var heroArtwork: some View {
     if let url = fullResURL {
-      LoadingImage(
+      RemoteArtworkImage(
         url: url,
         cornerRadius: 20,
         contentMode: .fit,
@@ -293,7 +294,7 @@ private struct ArtworkDetailAmbientBackground: View {
     ZStack {
       Color.appBackground
       if let url = art.imageURL {
-        LoadingImage(
+        RemoteArtworkImage(
           url: url,
           cornerRadius: 0,
           contentMode: .fill,
@@ -365,7 +366,8 @@ private struct ArtworkSaveActionLabel: View {
         Label {
           Text("Saving")
         } icon: {
-          LoadingIndicator(size: 16)
+          ProgressView()
+            .controlSize(.small)
         }
       case .success:
         Label("Saved", systemImage: "checkmark.circle.fill")
@@ -526,7 +528,7 @@ struct ZoomableImageViewer: View {
     ZStack {
       Color.black.ignoresSafeArea()
       if let url {
-        LoadingImage(
+        RemoteArtworkImage(
           url: url, cornerRadius: 0, contentMode: .fit, showsLoading: true,
           lowResURL: lowResURL, transparentBackground: true, fullResolution: true
         )
@@ -674,7 +676,9 @@ struct ZoomableImageViewer: View {
     Group {
       switch saveStatus {
       case .saving:
-        LoadingIndicator(size: 18, tint: .white)
+        ProgressView()
+          .controlSize(.small)
+          .tint(.white)
       case .success:
         Image(systemName: "checkmark.circle.fill")
           .foregroundColor(.green)

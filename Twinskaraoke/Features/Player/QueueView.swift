@@ -227,7 +227,7 @@ struct QueueView: View {
       dismiss()
     } label: {
       HStack(spacing: 12) {
-        LoadingImage(url: audioManager.displayImageURL(for: current), cornerRadius: 6)
+        RemoteArtworkImage(url: audioManager.displayImageURL(for: current), cornerRadius: 6)
           .frame(width: 48, height: 48)
           .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         VStack(alignment: .leading, spacing: 3) {
@@ -325,7 +325,7 @@ struct QueueRow: View {
       Button(action: onPlay) {
         HStack(spacing: 12) {
           ZStack(alignment: .topLeading) {
-            LoadingImage(url: audioManager.displayImageURL(for: song), cornerRadius: 7)
+            RemoteArtworkImage(url: audioManager.displayImageURL(for: song), cornerRadius: 7)
               .frame(width: 50, height: 50)
               .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             if isPlayingNext {

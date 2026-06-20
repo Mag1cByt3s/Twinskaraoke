@@ -196,9 +196,9 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
     let group = DispatchGroup()
     let syncQueue = DispatchQueue(label: "com.twinskaraoke.fallbackart.sync")
 
-    for index in 0..<fetchCount {
+    for _ in 0..<fetchCount {
       group.enter()
-      let urlString = "\(StorageHost.api)/public/art/yuri/random?fallback=\(index)&t=\(UUID().uuidString)"
+      let urlString = "\(StorageHost.api)/public/art/yuri/random"
       guard let url = URL(string: urlString) else {
         group.leave()
         continue

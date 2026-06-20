@@ -51,7 +51,8 @@ struct RandomSongsView: View {
           songActions
           songList
             .overlay(alignment: .top) {
-              LoadingIndicator(size: 28)
+              ProgressView()
+                .controlSize(.regular)
                 .padding(.top, 8)
                 .transition(.opacity)
             }
@@ -120,7 +121,8 @@ struct RandomSongsView: View {
         .amShadow(viewModel.songs.isEmpty ? AM.Shadow.heroIdle : AM.Shadow.heroPlaying)
         .overlay(alignment: .bottomTrailing) {
           if viewModel.isLoading {
-            LoadingIndicator(size: 26)
+            ProgressView()
+              .controlSize(.regular)
               .padding(9)
               .background(.ultraThinMaterial, in: Circle())
               .padding(10)
@@ -198,22 +200,14 @@ struct RandomSongsView: View {
   }
 
   private var songSkeletonList: some View {
-    LazyVStack(spacing: 0) {
-      ForEach(0..<7, id: \.self) { _ in
-        SongRowSkeleton(size: .regular)
-          .padding(.horizontal)
-          .padding(.vertical, 8)
-        Divider().padding(.leading, 76)
-      }
-    }
-    .accessibilityLabel("Loading random songs")
+    CenteredLoadingView(label: "Loading random songs")
   }
 
   @ViewBuilder
   private var artworkMosaic: some View {
     ZStack {
       if artworkURLs.count == 1, let url = artworkURLs.first {
-        LoadingImage(url: url, cornerRadius: 0, showsLoading: false)
+        RemoteArtworkImage(url: url, cornerRadius: 0, showsLoading: false)
       } else if artworkURLs.isEmpty {
         mosaicPlaceholder
       } else {
@@ -245,7 +239,7 @@ struct RandomSongsView: View {
   @ViewBuilder
   private func mosaicCell(url: URL?) -> some View {
     if let url {
-      LoadingImage(url: url, cornerRadius: 0, showsLoading: false)
+      RemoteArtworkImage(url: url, cornerRadius: 0, showsLoading: false)
     } else {
       mosaicPlaceholder
     }

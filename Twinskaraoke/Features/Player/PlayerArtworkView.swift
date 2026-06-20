@@ -32,13 +32,14 @@ struct PlayerArtworkView: View {
 
   private var artwork: some View {
     ZStack {
-      LoadingImage(
+      RemoteArtworkImage(
         url: audioManager.displayImageURL(for: song), cornerRadius: AM.Radius.hero,
         contentMode: .fill
       )
       .frame(width: size, height: size)
       .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
       .id(song.id)
+      .scaleEffect(audioManager.isPlaying ? 1.0 : 0.88)
       .amShadow(audioManager.isPlaying ? AM.Shadow.heroPlaying : AM.Shadow.heroIdle)
       .animation(artworkPlaybackAnimation, value: audioManager.isPlaying)
       if audioManager.isBuffering {
@@ -54,7 +55,8 @@ struct PlayerArtworkView: View {
       RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
         .fill(Color.appArtworkOverlay)
         .frame(width: size, height: size)
-      LoadingIndicator(size: min(48, max(30, size * 0.13)))
+      ProgressView()
+        .controlSize(.large)
     }
     .accessibilityHidden(true)
   }

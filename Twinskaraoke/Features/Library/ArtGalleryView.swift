@@ -131,121 +131,8 @@ struct ArtGalleryView: View {
 }
 
 private struct ArtGallerySkeletonView: View {
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var pulse = false
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
   var body: some View {
-    VStack(alignment: .leading, spacing: 28) {
-      RoundedRectangle(cornerRadius: 16, style: .continuous)
-        .fill(Color.appPlaceholderPrimary)
-        .aspectRatio(4 / 5, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .overlay(alignment: .bottomLeading) {
-          VStack(alignment: .leading, spacing: 6) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 96, height: 11)
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(Color.appPlaceholderSecondary)
-              .frame(width: 168, height: 22)
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 62, height: 13)
-          }
-          .padding(20)
-        }
-        .padding(.horizontal, 16)
-
-      VStack(alignment: .leading, spacing: 12) {
-        skeletonTitle(width: 154)
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(alignment: .top, spacing: 14) {
-            ForEach(0..<6, id: \.self) { index in
-              VStack(spacing: 8) {
-                Circle()
-                  .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 96, height: 96)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderSecondary)
-                  .frame(width: index == 2 ? 72 : 86, height: 13)
-              }
-              .frame(width: 100)
-            }
-          }
-          .padding(.horizontal, 16)
-        }
-      }
-
-      VStack(alignment: .leading, spacing: 12) {
-        skeletonTitle(width: 88)
-        LazyVStack(spacing: 0) {
-          ForEach(0..<7, id: \.self) { index in
-            HStack(spacing: 14) {
-              Circle()
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: 50, height: 50)
-              VStack(alignment: .leading, spacing: 2) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderSecondary)
-                  .frame(width: index == 3 ? 126 : 164, height: 16)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(Color.appPlaceholderPrimary)
-                  .frame(width: 86, height: 13)
-              }
-              Spacer(minLength: 12)
-              RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: 7, height: 14)
-            }
-            .padding(.vertical, 10)
-            if index < 6 {
-              Divider().padding(.leading, 78)
-            }
-          }
-        }
-        .padding(.horizontal, 16)
-      }
-    }
-    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading art gallery")
-    .onAppear {
-      guard !reduceMotion else {
-        pulse = false
-        return
-      }
-      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-        pulse = true
-      }
-    }
-    .onChange(of: reduceMotion) { _, reduceMotion in
-      if reduceMotion {
-        withAnimation(nil) {
-          pulse = false
-        }
-      } else {
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-          pulse = true
-        }
-      }
-    }
-  }
-
-  private func skeletonTitle(width: CGFloat) -> some View {
-    RoundedRectangle(cornerRadius: 4, style: .continuous)
-      .fill(Color.appPlaceholderSecondary)
-      .frame(width: width, height: 22)
-      .padding(.horizontal, 16)
+    CenteredLoadingView(label: "Loading art gallery")
   }
 }
 
@@ -318,7 +205,7 @@ private struct FeaturedArtCard: View {
     ZStack(alignment: .bottomLeading) {
       Group {
         if let url = art.imageURL {
-          LoadingImage(
+          RemoteArtworkImage(
             url: url, cornerRadius: 16, showsLoading: false, lowResURL: art.blurPreviewURL,
             transparentBackground: true)
         } else {
@@ -388,7 +275,7 @@ private struct ArtistCircleCard: View {
     VStack(spacing: 8) {
       ZStack {
         if let art = artist.arts?.first, let url = art.imageURL {
-          LoadingImage(
+          RemoteArtworkImage(
             url: url, cornerRadius: 100, showsLoading: false, lowResURL: art.blurPreviewURL,
             transparentBackground: true)
         } else {
@@ -429,7 +316,7 @@ private struct ArtistListRow: View {
     HStack(spacing: 14) {
       Group {
         if let art = artist.arts?.first, let url = art.imageURL {
-          LoadingImage(
+          RemoteArtworkImage(
             url: url, cornerRadius: 100, showsLoading: false, lowResURL: art.blurPreviewURL,
             transparentBackground: true)
         } else {

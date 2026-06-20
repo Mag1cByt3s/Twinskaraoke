@@ -202,7 +202,8 @@ struct LoginSheet: View {
     Button(action: signIn) {
       ZStack {
         if auth.isLoading {
-          LoadingIndicator(size: 22)
+          ProgressView()
+            .controlSize(.regular)
         } else {
           Text("Sign In")
             .font(.headline)

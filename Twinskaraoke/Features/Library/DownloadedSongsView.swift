@@ -155,7 +155,7 @@ struct DownloadedSongsView: View {
     if arts.count > 1 {
       PlaylistMosaicArtwork(urls: arts, cornerRadius: 0, showsLoading: true)
     } else if let url = arts.first {
-      LoadingImage(url: url, cornerRadius: 0)
+      RemoteArtworkImage(url: url, cornerRadius: 0)
     } else {
       LinearGradient(
         colors: [Color.appAccent.opacity(0.85), Color.purple.opacity(0.85)],

@@ -142,7 +142,7 @@ struct VideoGalleryView: View {
   var body: some View {
     ScrollView {
       if viewModel.videos.isEmpty && viewModel.isLoading {
-        VideoGallerySkeleton(cols: cols)
+        VideoGallerySkeleton()
           .padding(.top, 16)
       } else if let message = viewModel.errorMessage, viewModel.videos.isEmpty {
         VideoGalleryStateView(
@@ -204,7 +204,8 @@ struct VideoGalleryView: View {
             }
           }
           if viewModel.isLoading {
-            LoadingIndicator(size: 28)
+            ProgressView()
+              .controlSize(.regular)
               .frame(maxWidth: .infinity)
               .padding(.vertical, 16)
           }
@@ -234,7 +235,7 @@ private struct VideoThumbnail: View {
       .overlay(
         Group {
           if let url {
-            LoadingImage(url: url, cornerRadius: cornerRadius, showsLoading: false)
+            RemoteArtworkImage(url: url, cornerRadius: cornerRadius, showsLoading: false)
           } else {
             MusicArtworkPlaceholder(cornerRadius: cornerRadius)
           }
@@ -304,61 +305,8 @@ private struct VideoGalleryCell: View {
 }
 
 private struct VideoGallerySkeleton: View {
-  let cols: [GridItem]
-
   var body: some View {
-    VStack(alignment: .leading, spacing: 24) {
-      VideoPlaceholderThumbnail(cornerRadius: 14)
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
-        .overlay {
-          LinearGradient(
-            colors: [.clear, Color.appPlaceholderQuaternary.opacity(0.55)],
-            startPoint: .center,
-            endPoint: .bottom
-          )
-          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .overlay(alignment: .bottomLeading) {
-          HStack(spacing: 8) {
-            MusicSkeletonBlock(cornerRadius: 14, tone: .secondary, strokeOpacity: 0)
-              .frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 5) {
-              MusicSkeletonLine(width: 92, height: 11, tone: .secondary)
-              MusicSkeletonLine(width: 186, height: 17, tone: .secondary)
-            }
-          }
-          .padding(16)
-        }
-        .padding(.horizontal, 16)
-
-      VStack(alignment: .leading, spacing: 12) {
-        MusicSkeletonLine(width: 152, height: 20, tone: .secondary)
-          .padding(.horizontal, 16)
-        LazyVGrid(columns: cols, spacing: 20) {
-          ForEach(0..<6, id: \.self) { _ in
-            VStack(alignment: .leading, spacing: 8) {
-              VideoPlaceholderThumbnail(cornerRadius: 10)
-                .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
-              MusicSkeletonLine(width: nil, height: 12, tone: .secondary)
-              MusicSkeletonLine(width: 78, height: 10, tone: .primary)
-            }
-          }
-        }
-        .padding(.horizontal, 16)
-      }
-    }
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityLabel("Loading videos")
-  }
-}
-
-private struct VideoPlaceholderThumbnail: View {
-  var cornerRadius: CGFloat
-
-  var body: some View {
-    MusicArtworkPlaceholder(cornerRadius: cornerRadius)
-      .aspectRatio(16 / 9, contentMode: .fit)
+    CenteredLoadingView(label: "Loading videos")
   }
 }
 
@@ -599,7 +547,9 @@ struct VideoPlayerScreen: View {
             } else {
               ZStack {
                 Color.black
-                LoadingIndicator(size: 24, tint: .white)
+                ProgressView()
+                  .controlSize(.regular)
+                  .tint(.white)
               }
             }
           #else
@@ -608,7 +558,9 @@ struct VideoPlayerScreen: View {
             } else {
               ZStack {
                 Color.black
-                LoadingIndicator(size: 24, tint: .white)
+                ProgressView()
+                  .controlSize(.regular)
+                  .tint(.white)
               }
             }
           #endif
@@ -665,7 +617,8 @@ struct VideoPlayerScreen: View {
           .opacity(appeared ? 1 : 0)
           .offset(y: reduceMotion ? 0 : (appeared ? 0 : 10))
         } else if similar.isLoading {
-          LoadingIndicator(size: 32)
+          ProgressView()
+            .controlSize(.regular)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)
         }

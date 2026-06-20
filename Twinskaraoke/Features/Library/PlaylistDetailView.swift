@@ -271,15 +271,7 @@ private struct PlaylistLoadingRows: View {
   var horizontalPadding: CGFloat = AM.Spacing.screenMargin
 
   var body: some View {
-    LazyVStack(spacing: 0) {
-      ForEach(0..<7, id: \.self) { _ in
-        SongRowSkeleton(size: .regular)
-          .padding(.horizontal, horizontalPadding)
-          .padding(.vertical, 8)
-        Divider().padding(.leading, horizontalPadding + 60)
-      }
-    }
-    .accessibilityLabel("Loading playlist songs")
+    CenteredLoadingView(label: "Loading playlist songs")
   }
 }
 

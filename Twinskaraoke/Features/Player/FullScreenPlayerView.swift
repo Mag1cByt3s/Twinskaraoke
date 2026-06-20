@@ -69,14 +69,17 @@ private struct PlayerLayoutMetrics {
   var artworkTopSpacer: CGFloat { isCompactHeight ? 10 : 20 }
   var artworkBottomSpacer: CGFloat { isCompactHeight ? 18 : 28 }
   var progressTopPadding: CGFloat { isCompactHeight ? 10 : 16 }
-  var controlsTopPadding: CGFloat { isCompactHeight ? 28 : 40 }
-  var controlsBottomSpacer: CGFloat { isCompactHeight ? 22 : 36 }
+  var controlsTopPadding: CGFloat { isCompactHeight ? 40 : 54 }
+  var controlsBottomSpacer: CGFloat { isCompactHeight ? 30 : 46 }
+  var wideControlsTopPadding: CGFloat { isCompactHeight ? 38 : 46 }
+  var wideControlsBottomSpacer: CGFloat { isCompactHeight ? 30 : 38 }
+  var transportControlHeight: CGFloat { isCompactHeight ? 58 : 62 }
   var titleSize: CGFloat { isCompactHeight ? 20 : 22 }
   var artistSize: CGFloat { isCompactHeight ? 15 : 17 }
   var titleButtonSize: CGFloat { isCompactHeight ? 34 : 36 }
   var moreButtonIconSize: CGFloat { isCompactHeight ? 18 : 20 }
-  var sideControlSize: CGFloat { isCompactHeight ? 32 : 36 }
-  var primaryControlSize: CGFloat { isCompactHeight ? 52 : 58 }
+  var sideControlSize: CGFloat { isCompactHeight ? 40 : 42 }
+  var primaryControlSize: CGFloat { isCompactHeight ? 52 : 56 }
   var lyricsArtworkSize: CGFloat { isCompactHeight ? 48 : 52 }
   var lyricsTitleSize: CGFloat { isCompactHeight ? 15 : 16 }
   var lyricsSubtitleSize: CGFloat { isCompactHeight ? 12 : 13 }
@@ -294,7 +297,7 @@ struct FullScreenPlayerView: View {
       .animation(playerSurfaceAnimation, value: showLyrics)
       progressSection(song: song, metrics: metrics)
       controlsRow(metrics: metrics)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, metrics.horizontalPadding)
         .padding(.top, metrics.controlsTopPadding)
       Spacer(minLength: metrics.controlsBottomSpacer)
       PlayerVolumeRow(horizontalPadding: metrics.horizontalPadding)
@@ -333,9 +336,9 @@ struct FullScreenPlayerView: View {
       VStack(spacing: 0) {
         progressSection(song: song, metrics: metrics)
         controlsRow(metrics: metrics)
-          .padding(.horizontal, 8)
-          .padding(.top, 34)
-        Spacer(minLength: 28)
+          .padding(.horizontal, metrics.horizontalPadding)
+          .padding(.top, metrics.wideControlsTopPadding)
+        Spacer(minLength: metrics.wideControlsBottomSpacer)
         PlayerVolumeRow(horizontalPadding: 0)
         PlayerBottomToolbar(
           showingQueue: $showingQueue,
@@ -379,9 +382,9 @@ struct FullScreenPlayerView: View {
           .padding(.bottom, 18)
         progressSection(song: song, metrics: metrics)
         controlsRow(metrics: metrics)
-          .padding(.horizontal, 8)
-          .padding(.top, 32)
-        Spacer(minLength: 24)
+          .padding(.horizontal, metrics.horizontalPadding)
+          .padding(.top, metrics.wideControlsTopPadding)
+        Spacer(minLength: metrics.wideControlsBottomSpacer)
         PlayerVolumeRow(horizontalPadding: 0)
         PlayerBottomToolbar(
           showingQueue: $showingQueue,
@@ -465,7 +468,7 @@ struct FullScreenPlayerView: View {
         }
       } label: {
         HStack(spacing: 12) {
-          LoadingImage(
+          RemoteArtworkImage(
             url: audioManager.displayImageURL(for: song), cornerRadius: 8, contentMode: .fill
           )
           .frame(width: metrics.lyricsArtworkSize, height: metrics.lyricsArtworkSize)
@@ -772,10 +775,10 @@ struct FullScreenPlayerView: View {
         audioManager.playPrevious()
       } label: {
         Image(systemName: "backward.fill")
-          .font(.title.bold())
+          .font(.system(size: metrics.sideControlSize, weight: .bold))
           .foregroundStyle(.primary)
           .frame(maxWidth: .infinity)
-          .frame(minHeight: 44)
+          .frame(height: metrics.transportControlHeight)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .light))
       .accessibilityLabel("Previous track")
@@ -791,10 +794,10 @@ struct FullScreenPlayerView: View {
             Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
           }
         }
-        .font(.largeTitle.bold())
+        .font(.system(size: metrics.primaryControlSize, weight: .bold))
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 44)
+        .frame(height: metrics.transportControlHeight)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .medium))
       .accessibilityLabel(audioManager.isPlaying ? "Pause" : "Play")
@@ -803,10 +806,10 @@ struct FullScreenPlayerView: View {
         audioManager.playNextOrRandom()
       } label: {
         Image(systemName: "forward.fill")
-          .font(.title.bold())
+          .font(.system(size: metrics.sideControlSize, weight: .bold))
           .foregroundStyle(.primary)
           .frame(maxWidth: .infinity)
-          .frame(minHeight: 44)
+          .frame(height: metrics.transportControlHeight)
       }
       .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6, haptic: .light))
       .accessibilityLabel("Next track")
@@ -985,9 +988,7 @@ struct FullScreenPlayerView: View {
       showCoverArt = true
       return
     }
-    let pageSize = 48
-    let urlString =
-      "\(StorageHost.api)/api/media/gallery?page=1&pageSize=\(pageSize)&search=&tag=Twins&sort=newest&hideWebM=false"
+    let urlString = "\(StorageHost.api)/public/art/yuri/random"
     guard let apiURL = URL(string: urlString) else {
       showCoverArt = true
       return
@@ -997,23 +998,15 @@ struct FullScreenPlayerView: View {
     URLSession.shared.dataTask(with: request) { data, _, _ in
       DispatchQueue.main.async {
         guard let data,
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let items = json["items"] as? [[String: Any]],
-          !items.isEmpty
+          let item = try? JSONDecoder().decode(RandomYuriArtItem.self, from: data),
+          let imageURL = URL(string: "\(item.url)/quality=95")
         else {
           showCoverArt = true
           return
         }
-        let item = items.randomElement()!
-        if let path = item["absolutePath"] as? String {
-          easterEggImageURL = URL(string: StorageHost.images + path + "/quality=95")
-        } else if let urlStr = item["url"] as? String {
-          easterEggImageURL = URL(string: urlStr)
-        }
-        if let artist = item["artist"] as? [String: Any] {
-          easterEggArtistName = artist["name"] as? String
-          easterEggArtistLink = artist["socialLink"] as? String
-        }
+        easterEggImageURL = imageURL
+        easterEggArtistName = item.artistCredit
+        easterEggArtistLink = nil
         showCoverArt = true
       }
     }.resume()
@@ -1041,4 +1034,9 @@ struct FullScreenPlayerView: View {
       }
     }.resume()
   }
+}
+
+private struct RandomYuriArtItem: Decodable {
+  let url: String
+  let artistCredit: String?
 }

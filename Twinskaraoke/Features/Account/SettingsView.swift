@@ -10,6 +10,7 @@ struct SettingsView: View {
   @AppStorage("nk.streamingQuality") private var streamingQuality: String = "high"
   @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
   @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
+  @AppStorage(AppLanguage.storageKey) private var languageMode: String = AppLanguage.system.rawValue
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var pendingAction: SettingsDestructiveAction?
   @State private var showAutoAnalyzeAlert = false
@@ -189,6 +190,11 @@ struct SettingsView: View {
       Picker("Theme", selection: $appearanceMode) {
         ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
           Text(mode.label).tag(mode.rawValue)
+        }
+      }
+      Picker("Language", selection: $languageMode) {
+        ForEach(AppLanguage.allCases) { language in
+          Text(language.displayName).tag(language.rawValue)
         }
       }
     }

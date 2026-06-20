@@ -242,7 +242,9 @@ private struct WatchQueueSummaryCard: View {
             RoundedRectangle(cornerRadius: 10)
               .fill(Color.black.opacity(0.34))
               .frame(width: 48, height: 48)
-            WatchLoadingIndicator(size: 18, tint: .white)
+            ProgressView()
+              .controlSize(.small)
+              .tint(.white)
           }
         }
 

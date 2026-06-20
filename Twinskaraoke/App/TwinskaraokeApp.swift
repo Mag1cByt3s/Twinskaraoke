@@ -7,6 +7,7 @@ import SwiftUI
 @main
 struct TwinskaraokeApp: App {
   @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.system.rawValue
+  @AppStorage(AppLanguage.storageKey) private var languageMode: String = AppLanguage.system.rawValue
 
   init() {
     ImageCacheConfig.applyLimits()
@@ -23,11 +24,16 @@ struct TwinskaraokeApp: App {
     WindowGroup {
       ContentView()
         .preferredColorScheme(resolvedColorScheme)
+        .environment(\.locale, Locale(identifier: resolvedLanguage.localeIdentifier))
         .tint(.appAccent)
     }
   }
 
   private var resolvedColorScheme: ColorScheme? {
     (AppearanceMode(rawValue: appearanceMode) ?? .system).colorScheme
+  }
+
+  private var resolvedLanguage: AppLanguage {
+    AppLanguage(rawValue: languageMode) ?? .system
   }
 }

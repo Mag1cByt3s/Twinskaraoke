@@ -354,6 +354,8 @@ struct PlaylistCarousel: View {
   var onAppearItem: ((Playlist) -> Void)? = nil
   var apiURL: ((Int, Int) -> String)? = nil
   var horizontalPadding: CGFloat = AM.Spacing.screenMargin
+  @State private var availableWidth: CGFloat = 390
+
   var body: some View {
     GeometryReader { proxy in
       let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
@@ -375,15 +377,27 @@ struct PlaylistCarousel: View {
               .onAppear { onAppearItem?(playlist) }
             }
             if isLoadingMore {
-              LoadingIndicator(size: 32)
+              ProgressView()
+                .controlSize(.regular)
                 .frame(width: 60, height: tileWidth)
             }
           }
           .padding(.horizontal, horizontalPadding)
         }
       }
+      .onAppear {
+        updateAvailableWidth(proxy.size.width)
+      }
+      .onChange(of: proxy.size.width) { _, width in
+        updateAvailableWidth(width)
+      }
     }
-    .frame(height: AM.Layout.mediaShelfHeight)
+    .frame(height: AM.Layout.mediaShelfHeight(tileWidth: AM.Layout.shelfTileWidth(for: availableWidth)))
+  }
+
+  private func updateAvailableWidth(_ width: CGFloat) {
+    guard width > 0, abs(width - availableWidth) > 0.5 else { return }
+    availableWidth = width
   }
 }
 
@@ -447,7 +461,8 @@ struct PlaylistListView: View {
         .padding(.vertical, AM.Spacing.m)
       }
       if loader.isLoadingMore {
-        LoadingIndicator(size: 32)
+        ProgressView()
+          .controlSize(.regular)
           .frame(maxWidth: .infinity, alignment: .center)
           .frame(height: 44)
           .padding(.vertical, AM.Spacing.m)
@@ -648,7 +663,7 @@ private struct WideSongHeroCard: View {
   @ViewBuilder
   private var heroArtwork: some View {
     if let song {
-      LoadingImage(url: song.fullHDImageURL ?? song.imageURL, cornerRadius: 0, contentMode: .fill)
+      RemoteArtworkImage(url: song.fullHDImageURL ?? song.imageURL, cornerRadius: 0, contentMode: .fill)
         .allowsHitTesting(false)
     } else if let playlist {
       PlaylistArtwork(playlist: playlist, cornerRadius: 0)
@@ -903,7 +918,7 @@ private struct NewFeatureCard: View {
             .lineLimit(1)
         }
         ZStack(alignment: .bottomLeading) {
-          LoadingImage(url: song.imageURL, cornerRadius: AM.Radius.card, contentMode: .fill)
+          RemoteArtworkImage(url: song.imageURL, cornerRadius: AM.Radius.card, contentMode: .fill)
           LinearGradient(
             colors: [.clear, .black.opacity(0.38)],
             startPoint: .center,
@@ -1070,7 +1085,7 @@ private struct LatestSingleSection: View {
         play()
       } label: {
         HStack(spacing: AM.Spacing.m) {
-          LoadingImage(url: song.imageURL, cornerRadius: AM.Radius.card)
+          RemoteArtworkImage(url: song.imageURL, cornerRadius: AM.Radius.card)
             .frame(width: 92, height: 92)
             .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
             .amShadow(AM.Shadow.card)
@@ -1118,240 +1133,15 @@ private struct LatestSingleSection: View {
 }
 
 struct NewSkeletonView: View {
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var pulse = false
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      featuredRailSkeleton
-      shelfSkeleton(titleWidth: 78, count: 4)
-      listPreviewSkeleton
-      shelfSkeleton(titleWidth: 122, count: 4)
-    }
-    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading New")
-    .onAppear {
-      guard !reduceMotion else {
-        pulse = false
-        return
-      }
-      withOptionalAnimation(AppMotion.spring(response: 0.7, dampingFraction: 0.82).repeatForever(autoreverses: true)) {
-        pulse = true
-      }
-    }
-    .onChange(of: reduceMotion) { _, reduceMotion in
-      if reduceMotion {
-        withOptionalAnimation(nil) {
-          pulse = false
-        }
-      } else {
-        withOptionalAnimation(AppMotion.spring(response: 0.7, dampingFraction: 0.82).repeatForever(autoreverses: true)) {
-          pulse = true
-        }
-      }
-    }
-  }
-
-  private var featuredRailSkeleton: some View {
-    GeometryReader { geo in
-      let cardWidth = min(max(geo.size.width - AM.Spacing.screenMargin * 2, 300), 420)
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(alignment: .top, spacing: AM.Spacing.l) {
-          ForEach(0..<2, id: \.self) { index in
-            featuredCardSkeleton(width: cardWidth, index: index)
-          }
-        }
-        .padding(.horizontal, AM.Spacing.screenMargin)
-      }
-    }
-    .frame(height: 316)
-  }
-
-  private func featuredCardSkeleton(width: CGFloat, index: Int) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      VStack(alignment: .leading, spacing: 2) {
-        MusicSkeletonLine(width: index == 0 ? 112 : 128, height: 11, tone: .secondary)
-
-        MusicSkeletonLine(width: width * (index == 0 ? 0.48 : 0.72), height: 22, tone: .tertiary)
-
-        MusicSkeletonLine(width: width * (index == 0 ? 0.34 : 0.46), height: 14, tone: .secondary)
-      }
-
-        MusicArtworkPlaceholder(cornerRadius: AM.Radius.card)
-          .frame(width: width, height: width * 0.56)
-          .overlay(alignment: .bottomLeading) {
-            MusicSkeletonBlock(cornerRadius: 17, tone: .secondary, strokeOpacity: 0)
-            .frame(width: 44, height: 44)
-            .padding(10)
-        }
-    }
-    .frame(width: width, alignment: .leading)
-  }
-
-  private func shelfSkeleton(titleWidth: CGFloat, count: Int) -> some View {
-    GeometryReader { proxy in
-      let tileWidth = AM.Layout.shelfTileWidth(for: proxy.size.width)
-      VStack(alignment: .leading, spacing: AM.Spacing.m) {
-        MusicSkeletonLine(width: titleWidth, height: 18, tone: .tertiary)
-          .padding(.horizontal, AM.Spacing.screenMargin)
-
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(alignment: .top, spacing: AM.Spacing.l) {
-            ForEach(0..<count, id: \.self) { index in
-              VStack(alignment: .leading, spacing: AM.Spacing.s) {
-                MusicArtworkPlaceholder(cornerRadius: AM.Radius.card)
-                  .frame(width: tileWidth, height: tileWidth)
-                MusicSkeletonLine(
-                  width: tileWidth * (index.isMultiple(of: 2) ? 0.72 : 0.58),
-                  height: 15,
-                  tone: .secondary
-                )
-                MusicSkeletonLine(
-                  width: tileWidth * (index == 1 ? 0.48 : 0.38),
-                  height: 13,
-                  tone: .primary
-                )
-              }
-              .frame(width: tileWidth, alignment: .leading)
-            }
-          }
-          .padding(.horizontal, AM.Spacing.screenMargin)
-        }
-      }
-    }
-    .frame(height: AM.Layout.mediaShelfHeight)
-  }
-
-  private var listPreviewSkeleton: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.s) {
-      MusicSkeletonLine(width: 132, height: 18, tone: .tertiary)
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      VStack(spacing: 0) {
-        ForEach(0..<5, id: \.self) { index in
-          SongRowSkeleton(size: .compact)
-            .padding(.horizontal, AM.Spacing.screenMargin)
-            .padding(.vertical, 3)
-
-          if index != 4 {
-            Divider()
-              .padding(.leading, AM.Spacing.screenMargin + 58)
-          }
-        }
-      }
-    }
+    CenteredLoadingView(label: "Loading New")
   }
 }
 
 struct HomeSkeletonView: View {
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
   var body: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.shelfSpacing) {
-      shelfSkeleton(titleWidth: 138, count: 3)
-      shelfSkeleton(titleWidth: 118, count: 3)
-      latestSingleSkeleton
-      shelfSkeleton(titleWidth: 126, count: 3)
-    }
-    .musicSkeletonShimmer(active: !reduceMotion)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading Home")
+    CenteredLoadingView(label: "Loading Home")
   }
-
-  private func shelfSkeleton(titleWidth: CGFloat, count: Int) -> some View {
-    GeometryReader { proxy in
-      let tileSize = AM.Layout.shelfTileWidth(for: proxy.size.width)
-      VStack(alignment: .leading, spacing: AM.Spacing.m) {
-        headerPill(width: titleWidth, height: 18)
-          .padding(.horizontal, AM.Spacing.screenMargin)
-
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(alignment: .top, spacing: AM.Spacing.l) {
-            ForEach(0..<count, id: \.self) { index in
-              VStack(alignment: .leading, spacing: AM.Spacing.s) {
-                MusicArtworkPlaceholder(cornerRadius: AM.Radius.card)
-                  .frame(width: tileSize, height: tileSize)
-                  .overlay {
-                    RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-                      .stroke(Color.primary.opacity(0.035), lineWidth: 0.6)
-                  }
-
-                textPill(width: tileSize * (index.isMultiple(of: 2) ? 0.72 : 0.58), height: 15)
-                textPill(width: tileSize * (index == 1 ? 0.48 : 0.38), height: 13, tone: .primary)
-              }
-              .frame(width: tileSize, alignment: .leading)
-            }
-          }
-          .padding(.horizontal, AM.Spacing.screenMargin)
-        }
-      }
-    }
-    .frame(height: AM.Layout.mediaShelfHeight)
-  }
-
-  private var latestSingleSkeleton: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.s) {
-      headerPill(width: 112, height: 18)
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      HStack(spacing: AM.Spacing.m) {
-        MusicArtworkPlaceholder(cornerRadius: AM.Radius.card)
-          .frame(width: 92, height: 92)
-          .overlay {
-            RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-              .stroke(Color.primary.opacity(0.035), lineWidth: 0.6)
-          }
-
-        VStack(alignment: .leading, spacing: 8) {
-          headerPill(width: 190, height: 18)
-          textPill(width: 132, height: 13, tone: .primary)
-          MusicSkeletonLine(width: 118, height: 18, tone: .secondary)
-        }
-
-        Spacer(minLength: 12)
-      }
-      .padding(14)
-      .background(
-        Color.appSecondaryBackground,
-        in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous)
-      )
-      .padding(.horizontal, AM.Spacing.screenMargin)
-    }
-  }
-
-  private func headerPill(width: CGFloat, height: CGFloat) -> some View {
-    MusicSkeletonLine(width: width, height: height, tone: .tertiary)
-  }
-
-  private enum TextPillTone {
-    case primary, secondary
-  }
-
-  private func textPill(width: CGFloat, height: CGFloat, tone: TextPillTone = .secondary) -> some View {
-    MusicSkeletonLine(
-      width: width,
-      height: height,
-      tone: tone == .secondary ? .secondary : .primary
-    )
-  }
-
 }
 
 struct BrowseSongCollectionView: View {
@@ -1493,7 +1283,7 @@ struct BrowseSongCollectionView: View {
   @ViewBuilder
   private var heroArtwork: some View {
     let artURL = songs.first(where: { $0.hasOwnArtwork })?.imageURL ?? FallbackArtProvider.shared.randomURL
-    LoadingImage(url: artURL, cornerRadius: 0, contentMode: .fill)
+    RemoteArtworkImage(url: artURL, cornerRadius: 0, contentMode: .fill)
   }
 
   @ViewBuilder

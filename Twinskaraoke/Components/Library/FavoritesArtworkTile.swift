@@ -63,7 +63,7 @@ struct PlaylistArtworkContent: View {
       if playlist.isFavorites {
         FavoritesArtworkTile()
       } else if let url = coverURLs.first, coverURLs.count == 1 {
-        LoadingImage(url: url, cornerRadius: cornerRadius)
+        RemoteArtworkImage(url: url, cornerRadius: cornerRadius)
       } else if coverURLs.count > 1 {
         PlaylistMosaicArtwork(urls: coverURLs, cornerRadius: cornerRadius)
       } else {
@@ -115,7 +115,7 @@ struct PlaylistMosaicArtwork: View {
       ) {
         ForEach(0..<4, id: \.self) { index in
           if let url = artworkURL(at: index) {
-            LoadingImage(url: url, cornerRadius: 0, showsLoading: showsLoading)
+            RemoteArtworkImage(url: url, cornerRadius: 0, showsLoading: showsLoading)
               .frame(width: cell, height: cell)
           } else {
             PlaylistPlaceholderArtwork(seed: "\(index)-\(urls.count)")

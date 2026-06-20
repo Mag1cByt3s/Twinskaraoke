@@ -42,7 +42,7 @@ enum ImageCacheConfig {
   ]
 }
 
-struct LoadingImage: View {
+struct RemoteArtworkImage: View {
   let url: URL?
   var cornerRadius: CGFloat = 8
   var contentMode: ContentMode = .fill
@@ -123,7 +123,7 @@ struct LoadingImage: View {
           Color.clear
         }
         .onFailure { _ in
-          markFinishedAfterFailure()
+          markFinishedAfterFailure(for: url)
         }
         .onSuccess { _, _, _ in
           markRendered(url)
@@ -135,17 +135,24 @@ struct LoadingImage: View {
   }
 
   private func markRendered(_ loadedURL: URL) {
-    guard renderedFullURL != loadedURL || !fullLoaded || loadFailed else { return }
-    withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
-      renderedFullURL = loadedURL
-      fullLoaded = true
-      loadFailed = false
+    guard url == loadedURL, renderedFullURL != loadedURL || !fullLoaded || loadFailed else { return }
+    Task { @MainActor in
+      guard url == loadedURL, renderedFullURL != loadedURL || !fullLoaded || loadFailed else { return }
+      withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
+        renderedFullURL = loadedURL
+        fullLoaded = true
+        loadFailed = false
+      }
     }
   }
 
-  private func markFinishedAfterFailure() {
-    withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
-      loadFailed = true
+  private func markFinishedAfterFailure(for failedURL: URL) {
+    guard url == failedURL, !loadFailed else { return }
+    Task { @MainActor in
+      guard url == failedURL, !loadFailed else { return }
+      withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
+        loadFailed = true
+      }
     }
   }
 
@@ -194,73 +201,19 @@ struct MusicArtworkPlaceholder: View {
   }
 }
 
-struct LoadingIndicator: View {
-  var size: CGFloat = 20
-  var tint: Color = .secondary
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var isAnimating = false
+/// Centered loading indicator shown while content loads, replacing grey skeleton
+/// element placeholders. Matches Apple Music's simple spinner loading style.
+struct CenteredLoadingView: View {
+  var minHeight: CGFloat = 280
+  var label: String = "Loading"
 
   var body: some View {
-    ZStack {
-      ForEach(0..<tickCount, id: \.self) { index in
-        Capsule(style: .continuous)
-          .fill(tint.opacity(opacity(for: index)))
-          .frame(width: tickWidth, height: tickLength)
-          .offset(y: -tickRadius)
-          .rotationEffect(.degrees(Double(index) * tickAngle))
-      }
-    }
-    .rotationEffect(.degrees(isAnimating ? 360 : 0))
-    .frame(width: containerSize, height: containerSize)
-    .contentShape(Rectangle())
-    .animation(
-      reduceMotion ? nil : AppMotion.spring(response: 0.82, dampingFraction: 0.86).repeatForever(autoreverses: false),
-      value: isAnimating
-    )
-    .onAppear {
-      isAnimating = !reduceMotion
-    }
-    .onChange(of: reduceMotion) { _, reduceMotion in
-      isAnimating = !reduceMotion
-    }
-    .accessibilityLabel("Loading")
-  }
-
-  private var containerSize: CGFloat {
-    min(max(size, 16), 34)
-  }
-
-  private var tickCount: Int {
-    12
-  }
-
-  private var tickAngle: Double {
-    360 / Double(tickCount)
-  }
-
-  private var tickWidth: CGFloat {
-    max(containerSize * 0.07, 1.5)
-  }
-
-  private var tickLength: CGFloat {
-    max(containerSize * 0.23, 4)
-  }
-
-  private var tickRadius: CGFloat {
-    containerSize * 0.31
-  }
-
-  private func opacity(for index: Int) -> Double {
-    let progress = Double(index) / Double(max(tickCount - 1, 1))
-    return reduceMotion ? 0.58 : 0.16 + progress * 0.62
-  }
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
+    ProgressView()
+      .controlSize(.large)
+      .frame(maxWidth: .infinity)
+      .frame(minHeight: minHeight)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(label)
   }
 }
 

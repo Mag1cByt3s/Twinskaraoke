@@ -91,7 +91,7 @@ private struct ArtistArtsHero: View {
     ZStack {
       Group {
         if let imageURL {
-          LoadingImage(
+          RemoteArtworkImage(
             url: imageURL,
             cornerRadius: 0,
             contentMode: .fill,
@@ -151,7 +151,7 @@ private struct HeroArtwork: View {
   var body: some View {
     Group {
       if let art, let url = art.imageURL {
-        LoadingImage(
+        RemoteArtworkImage(
           url: url,
           cornerRadius: 18,
           showsLoading: false,
@@ -248,7 +248,7 @@ struct ArtThumbnail: View {
   var body: some View {
     Group {
       if let url = art.imageURL {
-        LoadingImage(
+        RemoteArtworkImage(
           url: url, cornerRadius: 8, showsLoading: false, lowResURL: art.blurPreviewURL,
           transparentBackground: true)
       } else {

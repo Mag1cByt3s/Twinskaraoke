@@ -128,6 +128,9 @@ struct RadioView: View {
 
   private func showLiveSchedule() {
     AppHaptic.selection.play()
+    #if canImport(UIKit)
+      PopupOpenIntentGate.shared.suppressNextOpen()
+    #endif
     showingRadioSchedule = true
   }
 
@@ -272,7 +275,7 @@ struct RadioView: View {
         } label: {
           HStack(spacing: 12) {
             if let art = next.art, let url = URL(string: art) {
-              LoadingImage(
+              RemoteArtworkImage(
                 url: url,
                 cornerRadius: 6,
                 fixedDisplaySize: CGSize(width: 48, height: 48)
@@ -340,7 +343,7 @@ struct RadioView: View {
     ZStack(alignment: .bottomLeading) {
       Group {
         if let art = song?.art, let url = URL(string: art) {
-          LoadingImage(
+          RemoteArtworkImage(
             url: url,
             cornerRadius: AM.Radius.hero,
             contentMode: .fill,
@@ -392,7 +395,8 @@ struct RadioView: View {
           .fill(.white)
           .frame(width: 48, height: 48)
         if playback.isBuffering && playback.isRadioMode && !playback.isPlaying {
-          LoadingIndicator(size: 28)
+          ProgressView()
+            .controlSize(.regular)
         } else {
           Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
             .font(.title3.bold())
@@ -619,7 +623,7 @@ private struct RadioStationContextPreview: View {
     VStack(alignment: .leading, spacing: 12) {
       Group {
         if let artworkURL {
-          LoadingImage(url: artworkURL, cornerRadius: 10)
+          RemoteArtworkImage(url: artworkURL, cornerRadius: 10)
         } else {
           MusicArtworkPlaceholder(cornerRadius: 10)
         }
@@ -678,7 +682,7 @@ private struct RadioHistoryRow: View {
   var body: some View {
     HStack(spacing: 12) {
       if let art = song.art, let url = URL(string: art) {
-        LoadingImage(
+        RemoteArtworkImage(
           url: url,
           cornerRadius: 6,
           fixedDisplaySize: CGSize(width: 48, height: 48)
@@ -708,194 +712,7 @@ private struct RadioHistoryRow: View {
 }
 
 struct RadioSkeletonView: View {
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var pulse = false
-
   var body: some View {
-    VStack(spacing: AM.Spacing.shelfSpacing) {
-      stationCardSkeleton
-      historySkeleton
-    }
-    .opacity(reduceMotion ? 1.0 : (pulse ? 0.58 : 1.0))
-    .onAppear {
-      guard !reduceMotion else {
-        pulse = false
-        return
-      }
-      withAnimation(pulseAnimation) {
-        pulse = true
-      }
-    }
-    .onChange(of: reduceMotion) { _, newValue in
-      if newValue {
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-          pulse = false
-        }
-      } else {
-        withAnimation(pulseAnimation) {
-          pulse = true
-        }
-      }
-    }
-  }
-
-  private var stationCardSkeleton: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      VStack(alignment: .leading, spacing: 4) {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 118, height: 11)
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 220, height: 30)
-      }
-      .padding(.horizontal, AM.Spacing.screenMargin)
-
-      ZStack(alignment: .bottomLeading) {
-        RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous)
-          .fill(Color.appPlaceholderPrimary)
-          .frame(maxWidth: .infinity, minHeight: 236, maxHeight: 236)
-
-        LinearGradient(
-          colors: [.clear, Color.appPlaceholderQuaternary.opacity(0.55)],
-          startPoint: .center,
-          endPoint: .bottom
-        )
-        .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
-
-        VStack(alignment: .leading, spacing: 10) {
-          RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(Color.appPlaceholderTertiary)
-            .frame(width: 54, height: 20)
-
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(Color.appPlaceholderSecondary)
-            .frame(width: 132, height: 17)
-        }
-        .padding(16)
-
-        Circle()
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 48, height: 48)
-          .padding(14)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-      }
-      .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
-      .padding(.horizontal, AM.Spacing.screenMargin)
-
-      statusStripSkeleton
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      upNextSkeleton
-        .padding(.horizontal, AM.Spacing.screenMargin)
-    }
-  }
-
-  private var statusStripSkeleton: some View {
-    HStack(spacing: 8) {
-      statusPillSkeleton(width: 92)
-      statusPillSkeleton(width: 88)
-      statusPillSkeleton(width: 104)
-    }
-    .frame(maxWidth: .infinity)
-  }
-
-  private func statusPillSkeleton(width: CGFloat) -> some View {
-    Capsule(style: .continuous)
-      .fill(Color.appControlInactiveFill)
-      .frame(width: width, height: 26)
-      .overlay(alignment: .leading) {
-        HStack(spacing: 6) {
-          Circle()
-            .fill(Color.appPlaceholderTertiary)
-            .frame(width: 10, height: 10)
-          RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color.appPlaceholderSecondary)
-            .frame(width: max(width - 40, 32), height: 8)
-        }
-        .padding(.leading, 9)
-      }
-  }
-
-  private var upNextSkeleton: some View {
-    HStack(spacing: 12) {
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .fill(Color.appPlaceholderPrimary)
-        .frame(width: 48, height: 48)
-
-      VStack(alignment: .leading, spacing: 6) {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 58, height: 10)
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(Color.appPlaceholderSecondary)
-          .frame(width: 162, height: 14)
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(Color.appPlaceholderPrimary)
-          .frame(width: 108, height: 11)
-      }
-
-      Spacer(minLength: 0)
-
-      RoundedRectangle(cornerRadius: 3, style: .continuous)
-        .fill(Color.appPlaceholderSecondary)
-        .frame(width: 8, height: 16)
-    }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
-    .background(
-      Color.appControlInactiveFill,
-      in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-    )
-  }
-
-  private var historySkeleton: some View {
-    VStack(alignment: .leading, spacing: AM.Spacing.s) {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.appPlaceholderSecondary)
-        .frame(width: 138, height: 18)
-        .padding(.horizontal, AM.Spacing.screenMargin)
-
-      VStack(spacing: 0) {
-        ForEach(0..<4, id: \.self) { index in
-          HStack(spacing: AM.Spacing.m) {
-            RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 6) {
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: index == 1 ? 206 : 180, height: 14)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: index == 2 ? 108 : 132, height: 12)
-            }
-            Spacer(minLength: 0)
-          }
-          .padding(.horizontal, AM.Spacing.screenMargin)
-          .padding(.vertical, 8)
-
-          if index != 3 {
-            Divider()
-              .padding(.leading, AM.Spacing.screenMargin + 48 + AM.Spacing.m)
-          }
-        }
-      }
-    }
-  }
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
-  private var pulseAnimation: Animation {
-    .spring(response: 0.9, dampingFraction: 0.78)
-      .repeatForever(autoreverses: true)
+    CenteredLoadingView(label: "Loading Radio")
   }
 }

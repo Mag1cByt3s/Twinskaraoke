@@ -165,7 +165,8 @@ struct ArtistsView: View {
           if viewModel.isLoading {
             HStack {
               Spacer()
-              LoadingIndicator(size: 28)
+              ProgressView()
+                .controlSize(.regular)
                 .padding(.vertical, 8)
               Spacer()
             }
@@ -195,76 +196,8 @@ struct ArtistsView: View {
 }
 
 private struct ArtistsSkeletonView: View {
-  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-  @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
-  @State private var pulse = false
-
-  private var reduceMotion: Bool {
-    AppMotion.reduceMotion(
-      systemReduceMotion: systemReduceMotion,
-      respectPreference: respectReducedMotion
-    )
-  }
-
   var body: some View {
-    ScrollView {
-      LazyVStack(spacing: 0) {
-        ForEach(0..<12, id: \.self) { index in
-          HStack(spacing: 12) {
-            Circle()
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 52, height: 52)
-
-            VStack(alignment: .leading, spacing: 2) {
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderSecondary)
-                .frame(width: index == 2 || index == 8 ? 118 : 168, height: 16)
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.appPlaceholderPrimary)
-                .frame(width: 74, height: 13)
-            }
-
-            Spacer(minLength: 12)
-
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-              .fill(Color.appPlaceholderPrimary)
-              .frame(width: 7, height: 14)
-          }
-          .padding(.horizontal, 16)
-          .padding(.vertical, 8)
-
-          if index < 11 {
-            Divider().padding(.leading, 80)
-          }
-        }
-      }
-      .padding(.top, 8)
-    }
-    .opacity(!reduceMotion && pulse ? 0.58 : 1.0)
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading artists")
-    .onAppear {
-      guard !reduceMotion else {
-        pulse = false
-        return
-      }
-      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-        pulse = true
-      }
-    }
-    .onChange(of: reduceMotion) { _, reduceMotion in
-      if reduceMotion {
-        withAnimation(nil) {
-          pulse = false
-        }
-      } else {
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-          pulse = true
-        }
-      }
-    }
+    CenteredLoadingView(label: "Loading artists")
   }
 }
 
@@ -296,7 +229,7 @@ private struct ArtistAvatar: View {
   var body: some View {
     Group {
       if let url {
-        LoadingImage(url: url, cornerRadius: 0, showsLoading: false)
+        RemoteArtworkImage(url: url, cornerRadius: 0, showsLoading: false)
       } else {
         MusicCircularPlaceholder()
       }
@@ -512,17 +445,7 @@ private struct ArtistSongRow: View {
 
 private struct ArtistSongsSkeleton: View {
   var body: some View {
-    LazyVStack(spacing: 0) {
-      ForEach(0..<7, id: \.self) { _ in
-        SongRowSkeleton(size: .regular)
-          .padding(.horizontal)
-          .padding(.vertical, 8)
-        Divider().padding(.leading, 76)
-      }
-    }
-    .redacted(reason: .placeholder)
-    .musicSkeletonShimmer(active: true)
-    .accessibilityLabel("Loading artist songs")
+    CenteredLoadingView(label: "Loading artist songs")
   }
 }
 

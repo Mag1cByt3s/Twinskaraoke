@@ -27,7 +27,7 @@ struct SongsView: View {
       if viewModel.isLoading && viewModel.songs.isEmpty {
         HStack {
           Spacer()
-          WatchLoadingIndicator(size: 20)
+          ProgressView()
           Spacer()
         }
       } else if viewModel.songs.isEmpty {
@@ -159,7 +159,8 @@ private struct WatchSongsLibraryHeader: View {
         Spacer(minLength: 4)
 
         if isLoading {
-          WatchLoadingIndicator(size: 16)
+          ProgressView()
+            .controlSize(.small)
             .accessibilityHidden(true)
         }
       }
