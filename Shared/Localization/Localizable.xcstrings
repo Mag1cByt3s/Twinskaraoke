@@ -100,7 +100,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ artwork"
+            "value" : "%@ 封面
           }
         }
       }
@@ -152,7 +152,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ badges unlocked"
+            "value" : "%@ 解锁徽章
           }
         }
       }
@@ -256,7 +256,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@, %2$@ playlist"
+            "value" : "%1$@, %2$@ 播放列表
           }
         }
       }
@@ -516,7 +516,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld artworks"
+            "value" : "%lld 封面
           }
         }
       }
@@ -568,7 +568,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld likes"
+            "value" : "%lld 收藏"
           }
         }
       }
@@ -620,7 +620,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld listeners"
+            "value" : "%lld 听众"
           }
         }
       }
@@ -672,7 +672,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld listening"
+            "value" : "%lld 聆听中"
           }
         }
       }
@@ -724,7 +724,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld percent"
+            "value" : "%lld 百分之"
           }
         }
       }
@@ -776,7 +776,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld playlists"
+            "value" : "%lld 播放列表"
           }
         }
       }
@@ -828,7 +828,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld songs"
+            "value" : "%lld 歌曲"
           }
         }
       }
@@ -880,7 +880,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld songs queued"
+            "value" : "%lld 歌曲已加入播放列表"
           }
         }
       }
@@ -932,7 +932,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld to next level"
+            "value" : "%lld 到下一等级"
           }
         }
       }
@@ -984,7 +984,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld XP"
+            "value" : "%lld 经验值"
           }
         }
       }
@@ -1036,7 +1036,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld XP to next level"
+            "value" : "%lld 经验值到下一等级"
           }
         }
       }
@@ -1244,7 +1244,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "© 2026 Neuro & Evil Karaoke Web Player\nFan-made by Soul. Unofficial."
+            "value" : "© 2026 Neuro & Evil Karaoke Web Player 本项目为 Soul 制作的非官方同人项目。"
           }
         }
       }
@@ -1296,7 +1296,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 listener"
+            "value" : "1 听众"
           }
         }
       }
@@ -1348,7 +1348,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 song queued"
+            "value" : "1 歌曲已加入播放列表"
           }
         }
       }
@@ -1452,7 +1452,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "10-band parametric EQ. Drag each band between -12 dB and +12 dB."
+            "value" : "10 段参数均衡器。拖动每个频段在 -12 dB 到 +12 dB 之间调整。"
           }
         }
       }
@@ -1608,7 +1608,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A native SwiftUI client for the Neuro & Evil Karaoke Web Player. Built around the public Neurokaraoke API, with offline downloads, karaoke vocal removal, beat-aware crossfade, and Live Radio playback."
+            "value" : "这是一个基于 SwiftUI 的原生客户端，用于 Neuro & Evil 卡拉OK网页播放器。它基于公开的 Neurokaraoke API 构建，支持离线下载、卡拉OK人声消除、节拍感知淡入淡出和实时电台播放。"
           }
         }
       }
