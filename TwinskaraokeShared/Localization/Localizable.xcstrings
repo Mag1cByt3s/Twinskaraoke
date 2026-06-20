@@ -94,13 +94,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ artwork"
+            "value" : "%@ 艺术作品"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 艺术作品"
+            "value" : "%@ 藝術作品"
           }
         }
       }
@@ -146,13 +146,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ badges unlocked"
+            "value" : "%@ 解锁徽章"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 解锁徽章"
+            "value" : "%@ 解鎖徽章"
           }
         }
       }
@@ -256,7 +256,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@, %2$@ 播放列表"
+            "value" : "%1$@, %2$@ 播放清單"
           }
         }
       }
@@ -510,13 +510,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld artworks"
+            "value" : "%lld 艺术作品"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 封面"
+            "value" : "%lld 藝術作品"
           }
         }
       }
@@ -562,13 +562,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld likes"
+            "value" : "%lld 收藏"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 收藏"
+            "value" : "%lld 喜好項目"
           }
         }
       }
@@ -614,13 +614,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld listeners"
+            "value" : "%lld 听众"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 听众"
+            "value" : "%lld 聽眾"
           }
         }
       }
@@ -666,13 +666,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld listening"
+            "value" : "%lld 聆听中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 聆听中"
+            "value" : "%lld 聆聽中"
           }
         }
       }
@@ -718,7 +718,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld percent"
+            "value" : "%lld 百分之"
           }
         },
         "zh-Hant" : {
@@ -770,13 +770,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld playlists"
+            "value" : "%lld 播放列表"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 播放列表"
+            "value" : "%lld 播放清單"
           }
         }
       }
@@ -822,7 +822,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld songs"
+            "value" : "%lld 歌曲"
           }
         },
         "zh-Hant" : {
@@ -874,13 +874,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld songs queued"
+            "value" : "%lld 歌曲已加入播放列表"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 歌曲已加入播放列表"
+            "value" : "%lld 歌曲已列入播放清單"
           }
         }
       }
@@ -926,13 +926,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld to next level"
+            "value" : "%lld 到下一等级"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 到下一等级"
+            "value" : "%lld 至下一等級"
           }
         }
       }
@@ -978,13 +978,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld XP"
+            "value" : "%lld 经验值"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 经验值"
+            "value" : "%lld 經驗值"
           }
         }
       }
@@ -1030,13 +1030,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld XP to next level"
+            "value" : "%lld 经验到下一等级"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 经验值到下一等级"
+            "value" : "%lld 經驗至下一等級"
           }
         }
       }
@@ -1238,13 +1238,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "© 2026 Neuro & Evil Karaoke Web Player\nFan-made by Soul. Unofficial."
+            "value" : "© 2026 Neuro & Evil Karaoke Web Player 本项目为 Soul 制作的非官方同人项目。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "© 2026 Neuro & Evil Karaoke Web Player 本项目为 Soul 制作的非官方同人项目。"
+            "value" : "© 2026 Neuro & Evil Karaoke Web Player 本計畫為 Soul 製作的非官方同人計畫。"
           }
         }
       }
@@ -1290,13 +1290,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 listener"
+            "value" : "1 听众"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 听众"
+            "value" : "1 聽眾"
           }
         }
       }
@@ -1342,13 +1342,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 song queued"
+            "value" : "1 歌曲已加入播放列表"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 歌曲已加入播放列表"
+            "value" : "1 歌曲已列入播放列表"
           }
         }
       }
@@ -1446,13 +1446,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "10-band parametric EQ. Drag each band between -12 dB and +12 dB."
+            "value" : "10 段参数均衡器。拖动每个频段在 -12 dB 到 +12 dB 之间调整。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "10 段参数均衡器。拖动每个频段在 -12 dB 到 +12 dB 之间调整。"
+            "value" : "10 段參數等化器。拖曳每個頻段在 -12 dB 到 +12 dB 之間調整。"
           }
         }
       }
@@ -1602,13 +1602,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A native SwiftUI client for the Neuro & Evil Karaoke Web Player. Built around the public Neurokaraoke API, with offline downloads, karaoke vocal removal, beat-aware crossfade, and Live Radio playback."
+            "value" : "这是一个 Neuro & Evil 卡拉OK网页播放器的原生 SwiftUI 客户端。基于公共 Neurokaraoke API 构建，具备离线下载、卡拉OK人声消除、节拍匹配交叉混音（Crossfade）和实时电台播放功能。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这是一个基于 SwiftUI 的原生客户端，用于 Neuro & Evil 卡拉OK网页播放器。它基于公开的 Neurokaraoke API 构建，支持离线下载、卡拉OK人声消除、节拍感知淡入淡出和实时电台播放。"
+            "value" : "這是一個 Neuro & Evil 卡拉OK網頁播放器的原生 SwiftUI 用戶端。基於公共 Neurokaraoke API 建構，具備離線下載、卡拉OK人聲消除、節拍匹配交叉淡入淡出（Crossfade）和即時電台播放功能。"
           }
         }
       }
@@ -1654,13 +1654,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About"
+            "value" : "关于"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About"
+            "value" : "關於"
           }
         }
       }
@@ -1706,13 +1706,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About Neuro & Evil Karaoke Web Player"
+            "value" : "关于 Neuro & Evil 歌回播放器"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About Neuro & Evil Karaoke Web Player"
+            "value" : "關於 Neuro & Evil 歌回播放器"
           }
         }
       }
@@ -1758,13 +1758,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Access your library, favorites, and playlists across devices."
+            "value" : "可跨设备访问你的资料库、收藏、以及播放列表。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Access your library, favorites, and playlists across devices."
+            "value" : "可跨裝置存取您的資料庫、收藏以及播放清單。"
           }
         }
       }
@@ -1811,13 +1811,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Karaoke controls"
+            "value" : "卡拉OK控制"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Karaoke controls"
+            "value" : "卡拉OK控制"
           }
         }
       }
@@ -1864,13 +1864,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading playlists"
+            "value" : "正在加载播放列表"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading playlists"
+            "value" : "正在載入播放清單……"
           }
         }
       }
@@ -1917,13 +1917,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading song"
+            "value" : "正在加载歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading song"
+            "value" : "正在載入歌曲"
           }
         }
       }
@@ -1970,13 +1970,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Playback Position"
+            "value" : "播放位置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Playback Position"
+            "value" : "播放進度"
           }
         }
       }
@@ -2023,13 +2023,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preparing karaoke"
+            "value" : "正在准备卡拉OK"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preparing karaoke"
+            "value" : "正在準備卡拉OK"
           }
         }
       }
@@ -2076,13 +2076,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Searching songs"
+            "value" : "正在搜索歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Searching songs"
+            "value" : "正在搜尋歌曲"
           }
         }
       }
@@ -2129,13 +2129,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn Off Vocal Removal"
+            "value" : "关闭人声消除"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn Off Vocal Removal"
+            "value" : "關閉人聲消除"
           }
         }
       }
@@ -2181,13 +2181,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account"
+            "value" : "账号"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account"
+            "value" : "帳戶"
           }
         }
       }
@@ -2234,13 +2234,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About"
+            "value" : "关于"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About"
+            "value" : "關於"
           }
         }
       }
@@ -2287,13 +2287,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "China CDN"
+            "value" : "中国 CDN"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "China CDN"
+            "value" : "中國大陸 CDN"
           }
         }
       }
@@ -2340,13 +2340,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Global CDN"
+            "value" : "全球 CDN"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Global CDN"
+            "value" : "全球 CDN"
           }
         }
       }
@@ -2393,13 +2393,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest ID"
+            "value" : "游客 ID"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest ID"
+            "value" : "訪客 ID"
           }
         }
       }
@@ -2446,13 +2446,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest Listener"
+            "value" : "游客听众"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest Listener"
+            "value" : "訪客聽眾"
           }
         }
       }
@@ -2499,13 +2499,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest playback"
+            "value" : "游客播放"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guest playback"
+            "value" : "訪客播放"
           }
         }
       }
@@ -2552,7 +2552,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ready for browsing, radio, and karaoke songs"
+            "value" : "已准备就绪，随时可以浏览、收听电台和演唱卡拉OK。"
           }
         },
         "zh-Hant" : {
@@ -2605,13 +2605,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hide ID"
+            "value" : "隐藏 ID"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hide ID"
+            "value" : "隐藏 ID"
           }
         }
       }
@@ -2658,13 +2658,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Notifications"
+            "value" : "消息通知"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Notifications"
+            "value" : "訊息通知"
           }
         }
       }
@@ -2711,13 +2711,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not signed in"
+            "value" : "未登录"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not signed in"
+            "value" : "未登入"
           }
         }
       }
@@ -2764,13 +2764,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Profile"
+            "value" : "个人资料"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Profile"
+            "value" : "個人資料"
           }
         }
       }
@@ -2817,13 +2817,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reveal ID"
+            "value" : "显示 ID"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reveal ID"
+            "value" : "顯示 ID"
           }
         }
       }
@@ -2870,13 +2870,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Service"
+            "value" : "服务器"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Service"
+            "value" : "伺服器"
           }
         }
       }
@@ -2923,13 +2923,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in on web"
+            "value" : "网页端登录"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in on web"
+            "value" : "網頁版登入"
           }
         }
       }
@@ -2976,13 +2976,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to access your library"
+            "value" : "登录以访问你的资料库"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to access your library"
+            "value" : "登入以存取您的資料庫"
           }
         }
       }
@@ -3029,13 +3029,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You'll need to sign in again to access your library and account features."
+            "value" : "您需要重新登录才能访问您的资料库和账号功能。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You'll need to sign in again to access your library and account features."
+            "value" : "您需要重新登入才能存取您的資料庫和帳戶功能。"
           }
         }
       }
@@ -3082,13 +3082,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign out?"
+            "value" : "确定要退出吗？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign out?"
+            "value" : "確定要登出嗎？"
           }
         }
       }
@@ -3135,13 +3135,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account"
+            "value" : "账号"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account"
+            "value" : "帳戶"
           }
         }
       }
@@ -3187,13 +3187,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Achievements"
+            "value" : "成就"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Achievements"
+            "value" : "成就"
           }
         }
       }
@@ -3239,13 +3239,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Favorite Songs"
+            "value" : "添加收藏中的歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Favorite Songs"
+            "value" : "加入喜好項目中的歌曲"
           }
         }
       }
@@ -3291,13 +3291,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Playlist Songs"
+            "value" : "添加歌单中的歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Playlist Songs"
+            "value" : "加入播放清單中的歌曲"
           }
         }
       }
@@ -3343,13 +3343,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Song"
+            "value" : "添加歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Song"
+            "value" : "加入歌曲"
           }
         }
       }
@@ -3395,13 +3395,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add songs to your library when you add them to playlists or favorite them. Sync keeps library changes available across this app on your devices."
+            "value" : "将歌曲添加至歌单或进行收藏时，系统会自动将其添加至您的资料库。同步功能可确保该资料库的更改在您所有设备的此应用中保持一致。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add songs to your library when you add them to playlists or favorite them. Sync keeps library changes available across this app on your devices."
+            "value" : "將歌曲加入播放清單或喜好項目時，系統會自動將其加入您的資料庫。同步功能可確保此資料庫的變更在您所有裝置的此 App 中保持一致。"
           }
         }
       }
@@ -3447,13 +3447,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Favorites"
+            "value" : "添加到收藏"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Favorites"
+            "value" : "加入喜好項目"
           }
         }
       }
@@ -3499,13 +3499,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Library"
+            "value" : "添加到资料库"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Library"
+            "value" : "加入資料庫"
           }
         }
       }
@@ -3551,13 +3551,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Playlist"
+            "value" : "添加至歌单"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add to Playlist"
+            "value" : "加入播放清單"
           }
         }
       }
@@ -3603,13 +3603,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Additional Contributions"
+            "value" : "更多贡献"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Additional Contributions"
+            "value" : "額外貢獻"
           }
         }
       }
@@ -3655,13 +3655,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Audio"
+            "value" : "AI 音频"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Audio"
+            "value" : "AI 音訊"
           }
         }
       }
@@ -3707,13 +3707,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Audio Processing"
+            "value" : "AI 音频处理"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Audio Processing"
+            "value" : "AI 音訊處理"
           }
         }
       }
