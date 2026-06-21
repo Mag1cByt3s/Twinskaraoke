@@ -389,11 +389,12 @@ struct AccountToolbarButton: View {
 struct ToolbarIconButton: View {
   let systemImage: String
   let accessibilityLabel: String
+  var foregroundColor: Color = .primary
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      ToolbarIconLabel(systemImage: systemImage)
+      ToolbarIconLabel(systemImage: systemImage, foregroundColor: foregroundColor)
     }
     .buttonStyle(PressableButtonStyle(scale: 0.92, dim: 0.78, haptic: .selection))
     .accessibilityLabel(accessibilityLabel)
@@ -417,6 +418,7 @@ struct ToolbarCapsuleMenu<Content: View>: View {
 
 private struct ToolbarIconLabel: View {
   let systemImage: String
+  var foregroundColor: Color = .primary
   @Environment(\.isEnabled) private var isEnabled
 
   var body: some View {
@@ -439,12 +441,12 @@ private struct ToolbarIconLabel: View {
   private var iconImage: some View {
     Image(systemName: systemImage)
       .font(.headline)
-      .symbolRenderingMode(.hierarchical)
-      .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+      .symbolRenderingMode(.monochrome)
+      .foregroundStyle(isEnabled ? foregroundColor : Color.secondary)
   }
 
   private var iconHorizontalOffset: CGFloat {
-    systemImage == "ellipsis" ? -1.5 : 0
+    0
   }
 }
 

@@ -170,59 +170,19 @@ private struct CreatePlaylistArtworkPreview: View {
   let name: String
   let isPublic: Bool
 
-  private var initials: String {
-    let pieces = name
-      .split(separator: " ")
-      .prefix(2)
-      .compactMap(\.first)
-    let text = String(pieces).uppercased()
-    return text.isEmpty ? "NK" : text
-  }
-
   var body: some View {
-    VStack(spacing: 14) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .fill(
-            LinearGradient(
-              colors: [
-                .appAccent,
-                .appPlaceholderTertiary,
-                .appControlActiveFill.opacity(0.9),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
+    VStack(spacing: 6) {
+      Text(name.isEmpty ? "New Playlist" : name)
+        .font(.system(size: 28, weight: .bold))
+        .foregroundColor(.primary)
+        .lineLimit(2)
+        .multilineTextAlignment(.center)
 
-        VStack(spacing: 12) {
-          Text(initials)
-            .font(.system(size: name.isEmpty ? 36 : 44, weight: .black, design: .rounded))
-            .foregroundStyle(.white)
-            .minimumScaleFactor(0.55)
-            .lineLimit(1)
-          Image(systemName: isPublic ? "person.2.fill" : "lock.fill")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.88))
-        }
-      }
-      .frame(width: 172, height: 172)
-      .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-      .shadow(color: Color.appShadow, radius: 18, y: 10)
-      .scaleEffect(name.isEmpty ? 0.97 : 1)
-
-      VStack(spacing: 3) {
-        Text(name.isEmpty ? "Untitled Playlist" : name)
-          .font(.system(size: 21, weight: .bold))
-          .foregroundColor(.primary)
-          .lineLimit(2)
-          .multilineTextAlignment(.center)
-        Text(isPublic ? "Public Playlist" : "Private Playlist")
-          .font(.system(size: 14, weight: .medium))
-          .foregroundStyle(.secondary)
-      }
-      .frame(maxWidth: .infinity)
+      Label(isPublic ? "Public Playlist" : "Private Playlist", systemImage: isPublic ? "person.2.fill" : "lock.fill")
+        .font(.system(size: 15, weight: .medium))
+        .foregroundStyle(.secondary)
     }
+    .frame(maxWidth: .infinity)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(name.isEmpty ? "New private playlist" : "\(name), \(isPublic ? "public" : "private") playlist")
   }

@@ -3801,7 +3801,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : 取消下載"
+            "value" : "取消下載"
           }
         }
       }
@@ -9810,6 +9810,9 @@
         }
       }
     },
+    "Loads a new random set." : {
+
+    },
     "Locked" : {
       "localizations" : {
         "de" : {
@@ -13138,6 +13141,9 @@
         }
       }
     },
+    "Play random songs" : {
+
+    },
     "Playback" : {
       "localizations" : {
         "de" : {
@@ -14652,6 +14658,9 @@
         }
       }
     },
+    "Random songs artwork" : {
+
+    },
     "Ready" : {
       "localizations" : {
         "de" : {
@@ -15067,6 +15076,9 @@
           }
         }
       }
+    },
+    "Refresh Random Songs" : {
+
     },
     "Refresh Set" : {
       "localizations" : {
@@ -18191,6 +18203,9 @@
           }
         }
       }
+    },
+    "Shuffle random songs" : {
+
     },
     "Sign In" : {
       "localizations" : {

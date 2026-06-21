@@ -80,28 +80,40 @@ final class RadioController: ObservableObject {
     isRefreshing = true
     defer { isRefreshing = false }
 
-    do {
-      let (data, _) = try await URLSession.shared.data(from: Self.metadataURL)
-      let np = try JSONDecoder().decode(RadioNowPlaying.self, from: data)
-      nowPlaying = np
-      refreshErrorMessage = nil
-      lastUpdated = Date()
-      if AudioPlayerManager.shared.isRadioMode, let info = np.nowPlaying?.song {
-        let signature = metadataSignature(for: info)
-        if signature != lastMetadataSignature {
-          lastMetadataSignature = signature
-          let song = info.toSong(stationID: Self.stationID)
-          let art = info.art.flatMap { URL(string: $0) }
-          AudioPlayerManager.shared.updateRadioMetadata(song: song, artworkURL: art)
+    let maxRetries = 3
+    var lastError: Error?
+
+    for attempt in 0..<maxRetries {
+      do {
+        let (data, _) = try await URLSession.shared.data(from: Self.metadataURL)
+        let np = try JSONDecoder().decode(RadioNowPlaying.self, from: data)
+        nowPlaying = np
+        refreshErrorMessage = nil
+        lastUpdated = Date()
+        if AudioPlayerManager.shared.isRadioMode, let info = np.nowPlaying?.song {
+          let signature = metadataSignature(for: info)
+          if signature != lastMetadataSignature {
+            lastMetadataSignature = signature
+            let song = info.toSong(stationID: Self.stationID)
+            let art = info.art.flatMap { URL(string: $0) }
+            AudioPlayerManager.shared.updateRadioMetadata(song: song, artworkURL: art)
+          }
+        }
+        return
+      } catch {
+        guard !Task.isCancelled else { return }
+        lastError = error
+        if attempt < maxRetries - 1 {
+          let delay = Double(1 << attempt)
+          try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
       }
-    } catch {
-      guard !Task.isCancelled else { return }
-      refreshErrorMessage =
-        nowPlaying == nil
-        ? "Radio metadata is temporarily unavailable."
-        : "Couldn't refresh radio metadata."
     }
+
+    refreshErrorMessage =
+      nowPlaying == nil
+      ? "Radio metadata is temporarily unavailable."
+      : "Couldn't refresh radio metadata."
   }
 
   private func metadataSignature(for info: RadioNowPlaying.SongInfo) -> String {

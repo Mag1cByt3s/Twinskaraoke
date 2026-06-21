@@ -10,6 +10,8 @@ final class LyricsTranslationService {
 
   private let defaults = UserDefaults.standard
   private let endpointKey = "nk.lyricsTranslationEndpoint"
+  private let maxRetries = 3
+  private let baseDelay: TimeInterval = 1.0
 
   private init() {}
 
@@ -30,19 +32,51 @@ final class LyricsTranslationService {
     GuestIdentity.applyIfNeeded(to: &request)
     request.httpBody = try JSONEncoder().encode(TranslationRequest(songID: songID, lyrics: lyrics))
 
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-      throw LyricsTranslationError.invalidResponse
+    var lastError: Error?
+    for attempt in 0..<maxRetries {
+      do {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+          throw LyricsTranslationError.invalidResponse
+        }
+
+        if (200..<300).contains(http.statusCode) {
+          let translatedLines = try decodeTranslations(from: data)
+          guard translatedLines.count == lyrics.count else {
+            throw LyricsTranslationError.invalidResponse
+          }
+
+          return zip(lyrics, translatedLines).map { line, translatedText in
+            line.withTranslation(translatedText)
+          }
+        }
+
+        if http.statusCode >= 500 || http.statusCode == 429 {
+          lastError = LyricsTranslationError.invalidResponse
+          if attempt < maxRetries - 1 {
+            let delay = baseDelay * pow(2.0, Double(attempt))
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            continue
+          }
+        }
+
+        throw LyricsTranslationError.invalidResponse
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch let error as URLError {
+        lastError = error
+        if shouldRetry(urlError: error) && attempt < maxRetries - 1 {
+          let delay = baseDelay * pow(2.0, Double(attempt))
+          try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+          continue
+        }
+        throw error
+      } catch {
+        throw error
+      }
     }
 
-    let translatedLines = try decodeTranslations(from: data)
-    guard translatedLines.count == lyrics.count else {
-      throw LyricsTranslationError.invalidResponse
-    }
-
-    return zip(lyrics, translatedLines).map { line, translatedText in
-      line.withTranslation(translatedText)
-    }
+    throw lastError ?? LyricsTranslationError.invalidResponse
   }
 
   private var endpointURL: URL? {
@@ -70,6 +104,15 @@ final class LyricsTranslationService {
       }
     }
     throw LyricsTranslationError.invalidResponse
+  }
+
+  private func shouldRetry(urlError: URLError) -> Bool {
+    switch urlError.code {
+    case .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .dnsLookupFailed:
+      return true
+    default:
+      return false
+    }
   }
 }
 

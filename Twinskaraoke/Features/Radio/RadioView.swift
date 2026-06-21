@@ -91,17 +91,21 @@ struct RadioView: View {
       .navigationBarTitleDisplayMode(.large)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          HStack(spacing: 6) {
-            ToolbarIconButton(
-              systemImage: "list.bullet",
-              accessibilityLabel: "Live Schedule"
-            ) {
-              showLiveSchedule()
-            }
-            .accessibilityHint("Shows live now, up next, and recently played songs.")
-
-            AccountToolbarButton()
+          ToolbarIconButton(
+            systemImage: "list.bullet",
+            accessibilityLabel: "Live Schedule"
+          ) {
+            showLiveSchedule()
           }
+          .accessibilityHint("Shows live now, up next, and recently played songs.")
+        }
+
+        if #available(iOS 26.0, *) {
+          ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+          AccountToolbarButton()
         }
       }
       .onAppear { radio.start() }

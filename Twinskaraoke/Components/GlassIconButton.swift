@@ -13,8 +13,8 @@ struct GlassXButton: View {
         .font(.headline)
         .foregroundStyle(Color.appGlassForeground)
         .frame(width: size, height: size)
+        .contentShape(Circle())
     }
-    .modifier(GlassCircle())
     .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
   }
 }
@@ -33,9 +33,9 @@ struct GlassCheckmarkButton: View {
         .font(.headline)
         .foregroundStyle(isEnabled ? Color.appGlassForeground : Color.secondary)
         .frame(width: size, height: size)
+        .contentShape(Circle())
     }
     .disabled(!isEnabled)
-    .modifier(GlassCircle())
     .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
   }
 }

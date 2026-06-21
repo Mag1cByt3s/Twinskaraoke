@@ -40,6 +40,9 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
   private var expectedContentLength: Int64 = NSURLSessionTransferSizeUnknown
   private let stateLock = NSLock()
   private var isCancelled = false
+  private var retryCount = 0
+  private let maxRetries = 3
+  private var retryTimer: Timer?
   var onCompletion: ((URL?) -> Void)?
   var onPlayableFallbackReady: ((URL) -> Void)?
 
@@ -82,6 +85,8 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     session?.invalidateAndCancel()
     fileHandle?.closeFile()
     fileHandle = nil
+    retryTimer?.invalidate()
+    retryTimer = nil
     stateLock.unlock()
     try? FileManager.default.removeItem(at: partialURL)
     AudioCacheStore.writeMainSourceURL(nil, for: songID)
@@ -137,9 +142,13 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
     stateLock.unlock()
     session.invalidateAndCancel()
     guard !cancelled else { return }
-    if error != nil {
+    if let error = error {
+      if shouldRetry(error: error) {
+        scheduleRetry()
+        return
+      }
       DebugLogger.log(
-        "Audio cache download failed for \(songID): bytes=\(partialFileSize), error=\(error?.localizedDescription ?? "unknown")",
+        "Audio cache download failed for \(songID): bytes=\(partialFileSize), error=\(error.localizedDescription), retries=\(retryCount)",
         category: .cache)
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
@@ -147,6 +156,10 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
       return
     }
     if let http = task.response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+      if shouldRetryHTTPStatus(http.statusCode) {
+        scheduleRetry()
+        return
+      }
       DebugLogger.log(
         "Audio cache download failed for \(songID): HTTP \(http.statusCode), bytes=\(partialFileSize)",
         category: .cache)
@@ -199,6 +212,74 @@ private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
       try? FileManager.default.removeItem(at: partialURL)
       AudioCacheStore.writeMainSourceURL(nil, for: songID)
       DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
+    }
+  }
+
+  private func shouldRetry(error: Error) -> Bool {
+    guard retryCount < maxRetries else { return false }
+    let nsError = error as NSError
+    if nsError.domain == NSURLErrorDomain {
+      switch nsError.code {
+      case NSURLErrorTimedOut,
+           NSURLErrorCannotConnectToHost,
+           NSURLErrorNetworkConnectionLost,
+           NSURLErrorDNSLookupFailed,
+           NSURLErrorNotConnectedToInternet:
+        return true
+      default:
+        return false
+      }
+    }
+    return false
+  }
+
+  private func shouldRetryHTTPStatus(_ statusCode: Int) -> Bool {
+    guard retryCount < maxRetries else { return false }
+    switch statusCode {
+    case 408, 429, 500, 502, 503, 504:
+      return true
+    default:
+      return false
+    }
+  }
+
+  private func scheduleRetry() {
+    retryCount += 1
+    let delay = min(pow(2.0, Double(retryCount)), 8.0)
+    DebugLogger.log(
+      "Scheduling retry \(retryCount)/\(maxRetries) for \(songID) after \(delay)s",
+      category: .cache)
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.retryTimer?.invalidate()
+      self.retryTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        guard let self = self else { return }
+        guard !self.isCancelled, let remoteURL = self.remoteURL else { return }
+        DebugLogger.log(
+          "Retrying download for \(self.songID) (attempt \(self.retryCount))",
+          category: .cache)
+        self.retryTimer = nil
+        self.hasReportedPlayableFallback = false
+        self.expectedContentLength = NSURLSessionTransferSizeUnknown
+        try? FileManager.default.removeItem(at: self.partialURL)
+        FileManager.default.createFile(atPath: self.partialURL.path, contents: nil)
+        self.fileHandle = try? FileHandle(forWritingTo: self.partialURL)
+        guard self.fileHandle != nil else {
+          try? FileManager.default.removeItem(at: self.partialURL)
+          AudioCacheStore.writeMainSourceURL(nil, for: self.songID)
+          self.onCompletion?(nil)
+          return
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 300
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.task = self.session?.dataTask(with: remoteURL)
+        self.task?.resume()
+      }
     }
   }
 }

@@ -9,6 +9,8 @@ struct LibraryActionButtonLabel: View {
   var cornerRadius: CGFloat = 10
 
   var body: some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
     HStack(spacing: 6) {
       Image(systemName: symbol)
         .font(iconFont)
@@ -17,8 +19,12 @@ struct LibraryActionButtonLabel: View {
     .frame(maxWidth: .infinity)
     .padding(.vertical, 12)
     .foregroundStyle(foregroundColor)
-    .background(backgroundColor)
-    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    .background(backgroundColor, in: shape)
+    .overlay {
+      shape.strokeBorder(borderColor, lineWidth: 0.7)
+    }
+    .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
+    .contentShape(shape)
   }
 
   private var foregroundColor: Color {
@@ -33,6 +39,26 @@ struct LibraryActionButtonLabel: View {
       return .appControlInactiveFill
     case .tertiary:
       return Color(.tertiarySystemFill)
+    }
+  }
+
+  private var borderColor: Color {
+    switch style {
+    case .primary:
+      return Color.white.opacity(0.16)
+    case .secondary:
+      return Color.appDivider.opacity(0.9)
+    case .tertiary:
+      return Color.appDivider.opacity(0.72)
+    }
+  }
+
+  private var shadowColor: Color {
+    switch style {
+    case .primary:
+      return Color.appShadow.opacity(0.42)
+    case .secondary, .tertiary:
+      return Color.appShadow.opacity(0.18)
     }
   }
 

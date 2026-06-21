@@ -119,7 +119,17 @@ nonisolated enum KaraokeAPIClient {
   }
 
   static func randomSongs() async throws -> [Song] {
-    let request = try request(path: "/api/songs/random")
+    var request = try request(
+      path: "/api/songs/random",
+      queryItems: [
+        URLQueryItem(
+          name: "_",
+          value: String(Int(Date().timeIntervalSince1970 * 1000))
+        ),
+      ]
+    )
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
     let data = try await data(for: request)
     do {
       return try decode([Song].self, from: data)
@@ -232,14 +242,65 @@ nonisolated enum KaraokeAPIClient {
   }
 
   private static func data(for request: URLRequest) async throws -> Data {
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let httpResponse = response as? HTTPURLResponse else {
-      throw APIError.invalidResponse
+    let maxRetries = 3
+    let baseDelay: UInt64 = 500_000_000 // 0.5 seconds in nanoseconds
+
+    for attempt in 0..<maxRetries {
+      do {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+          throw APIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+          // Only retry on specific transient HTTP errors
+          if shouldRetry(statusCode: httpResponse.statusCode) && attempt < maxRetries - 1 {
+            let delay = baseDelay * UInt64(1 << attempt) // Exponential backoff
+            try await Task.sleep(nanoseconds: delay)
+            continue
+          }
+          throw APIError.httpStatus(httpResponse.statusCode)
+        }
+        return data
+      } catch let error as URLError {
+        // Retry on transient network errors
+        if shouldRetry(urlError: error) && attempt < maxRetries - 1 {
+          let delay = baseDelay * UInt64(1 << attempt) // Exponential backoff
+          try await Task.sleep(nanoseconds: delay)
+          continue
+        }
+        throw error
+      } catch {
+        // Non-retryable errors (e.g., APIError types)
+        throw error
+      }
     }
-    guard (200..<300).contains(httpResponse.statusCode) else {
-      throw APIError.httpStatus(httpResponse.statusCode)
+
+    // Should never reach here, but required for compiler
+    throw APIError.invalidResponse
+  }
+
+  private static func shouldRetry(statusCode: Int) -> Bool {
+    // Retry on server errors and rate limiting
+    return statusCode == 408 || // Request Timeout
+           statusCode == 429 || // Too Many Requests
+           statusCode >= 500    // Server errors
+  }
+
+  private static func shouldRetry(urlError: URLError) -> Bool {
+    // Retry on transient network failures
+    switch urlError.code {
+    case .timedOut,
+         .cannotFindHost,
+         .cannotConnectToHost,
+         .networkConnectionLost,
+         .dnsLookupFailed,
+         .notConnectedToInternet,
+         .resourceUnavailable,
+         .badServerResponse:
+      return true
+    default:
+      return false
     }
-    return data
   }
 
   private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

@@ -207,7 +207,8 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
       request.cachePolicy = .reloadIgnoringLocalCacheData
       request.timeoutInterval = 10
       GuestIdentity.applyIfNeeded(to: &request)
-      URLSession.shared.dataTask(with: request) { data, _, _ in
+
+      retryDataTask(with: request, maxAttempts: 3) { data, _, _ in
         defer { group.leave() }
         guard let data = data,
               let item = try? JSONDecoder().decode(RandomArtItem.self, from: data),
@@ -220,7 +221,8 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
         var headRequest = URLRequest(url: urlWithQuality)
         headRequest.httpMethod = "HEAD"
         headRequest.timeoutInterval = 10
-        URLSession.shared.dataTask(with: headRequest) { _, response, error in
+
+        self.retryDataTask(with: headRequest, maxAttempts: 3) { _, response, error in
           defer { group.leave() }
           guard error == nil,
                 let httpResponse = response as? HTTPURLResponse,
@@ -231,8 +233,8 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
           syncQueue.sync {
             fetchedItems.append(fallbackItem)
           }
-        }.resume()
-      }.resume()
+        }
+      }
     }
 
     group.notify(queue: .main) { [weak self] in
@@ -249,6 +251,26 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
       // pool was ready (song.imageURL / randomURL) re-render and pick it up.
       self.objectWillChange.send()
     }
+  }
+
+  private func retryDataTask(
+    with request: URLRequest,
+    maxAttempts: Int,
+    attempt: Int = 1,
+    completion: @escaping (Data?, URLResponse?, Error?) -> Void
+  ) {
+    URLSession.shared.dataTask(with: request) { data, response, error in
+      let shouldRetry = error != nil || (response as? HTTPURLResponse).map { !((200...299).contains($0.statusCode)) } ?? true
+
+      if shouldRetry && attempt < maxAttempts {
+        let delay = min(pow(2.0, Double(attempt - 1)), 4.0)
+        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
+          self?.retryDataTask(with: request, maxAttempts: maxAttempts, attempt: attempt + 1, completion: completion)
+        }
+      } else {
+        completion(data, response, error)
+      }
+    }.resume()
   }
 
   private func repairDuplicateBindings() {

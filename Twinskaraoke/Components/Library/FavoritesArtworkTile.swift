@@ -140,20 +140,8 @@ struct PlaylistPlaceholderArtwork: View {
 
   var body: some View {
     GeometryReader { geo in
-      let side = min(geo.size.width, geo.size.height)
-      ZStack {
-        MusicArtworkPlaceholder(cornerRadius: 0)
-        RoundedRectangle(cornerRadius: max(side * 0.05, 4), style: .continuous)
-          .fill(Color.appPlaceholderSecondary.opacity(0.72))
-          .frame(width: side * 0.54, height: side * 0.54)
-          .offset(x: -side * 0.12, y: -side * 0.10)
-        VStack(alignment: .leading, spacing: max(side * 0.035, 4)) {
-          MusicSkeletonLine(width: side * 0.34, height: max(side * 0.045, 6), tone: .tertiary)
-          MusicSkeletonLine(width: side * 0.24, height: max(side * 0.035, 5), tone: .primary)
-        }
-        .offset(x: side * 0.18, y: side * 0.21)
-      }
-      .frame(width: geo.size.width, height: geo.size.height)
+      MusicArtworkPlaceholder(cornerRadius: 0)
+        .frame(width: geo.size.width, height: geo.size.height)
     }
   }
 

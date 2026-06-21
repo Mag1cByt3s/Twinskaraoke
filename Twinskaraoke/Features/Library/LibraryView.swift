@@ -110,17 +110,22 @@ struct LibraryView: View {
       .navigationBarTitleDisplayMode(.large)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          HStack(spacing: usesCompactToolbar ? 4 : 6) {
-            LibraryToolbarActions(
-              compact: usesCompactToolbar,
-              onCreatePlaylist: {
-                AppHaptic.selection.play()
-                showCreateSheet = true
-              },
-              onRefresh: refreshLibrary
-            )
-            AccountToolbarButton()
-          }
+          LibraryToolbarActions(
+            compact: usesCompactToolbar,
+            onCreatePlaylist: {
+              AppHaptic.selection.play()
+              showCreateSheet = true
+            },
+            onRefresh: refreshLibrary
+          )
+        }
+
+        if #available(iOS 26.0, *) {
+          ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+          AccountToolbarButton()
         }
       }
       .refreshable {
@@ -256,6 +261,15 @@ struct LibraryView: View {
         showsDivider: false
       )
     }
+    .background(
+      Color.appSecondaryBackground,
+      in: RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
+        .strokeBorder(Color.appDivider.opacity(0.55), lineWidth: 0.6)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
   }
 
   private var librarySecondaryLinks: some View {
@@ -1550,17 +1564,13 @@ struct PlaylistsGridScreen: View {
     .toolbar {
       if isLoggedIn {
         ToolbarItem(placement: .topBarTrailing) {
-          Button {
-            AppHaptic.selection.play()
+          ToolbarIconButton(
+            systemImage: "plus",
+            accessibilityLabel: "New Playlist",
+            foregroundColor: .appAccent
+          ) {
             showCreateSheet = true
-          } label: {
-            Image(systemName: "plus")
-              .font(.headline)
-              .foregroundStyle(Color.appAccent)
-              .frame(width: 44, height: 44)
-              .contentShape(Circle())
           }
-          .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.72))
         }
       }
     }
