@@ -3431,13 +3431,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "横幅与品牌设计"
+            "value" : "横幅与视觉标识"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "橫幅與品牌設計"
+            "value" : "橫幅與視覺標識"
           }
         }
       }
@@ -4318,13 +4318,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Community Artwork"
+            "value" : "社区艺术作品"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Community Artwork"
+            "value" : "社群藝術作品"
           }
         }
       }
@@ -4370,13 +4370,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Congratulations on moving up from Level %lld."
+            "value" : "恭喜！你已从 %lld 级升级到下一级。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Congratulations on moving up from Level %lld."
+            "value" : "恭喜！你已從 %lld 級升級到下一級。"
           }
         }
       }
@@ -4425,13 +4425,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Continue with Discord"
+            "value" : "通过 Discord 继续"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Continue with Discord"
+            "value" : "透過 Discord 繼續"
           }
         }
       }
@@ -4477,13 +4477,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contributing"
+            "value" : "贡献"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contributing"
+            "value" : "貢獻"
           }
         }
       }
@@ -4529,13 +4529,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Controls the current song."
+            "value" : "控制当前歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Controls the current song."
+            "value" : "控制目前歌曲"
           }
         }
       }
@@ -4581,13 +4581,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Controls the live radio stream."
+            "value" : "控制电台直播"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Controls the live radio stream."
+            "value" : "控制電台直播"
           }
         }
       }
@@ -4633,13 +4633,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copy Link"
+            "value" : "复制链接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copy Link"
+            "value" : "複製連結"
           }
         }
       }
@@ -4688,13 +4688,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create playlist"
+            "value" : "创建歌单"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create playlist"
+            "value" : "建立播放清單"
           }
         }
       }
@@ -4740,13 +4740,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create Playlist"
+            "value" : "创建歌单"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create Playlist"
+            "value" : "建立播放清單"
           }
         }
       }
@@ -4792,13 +4792,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creating..."
+            "value" : "正在创建..."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creating..."
+            "value" : "正在建立..."
           }
         }
       }
