@@ -1158,6 +1158,7 @@ class AudioPlayerManager: ObservableObject {
     for song: Song, stems: CachedStems, sourceURL: URL,
     onReady: (() -> Void)? = nil
   ) {
+    guard !isRadioMode else { return }
     suppressPlaybackEndedCallbacks()
     let shouldResume = isPlaybackRequested
     let startAt = activePlaybackTime(for: song)
@@ -1551,6 +1552,8 @@ class AudioPlayerManager: ObservableObject {
 
   private func startPlayingFile(_ url: URL, startAt: TimeInterval = 0) {
     suppressPlaybackEndedCallbacks()
+    stopRadioPlayer()
+    stopStreamPlayer()
     instrumentalTask?.cancel()
     instrumentalTask = nil
     separationGeneration &+= 1
@@ -1579,6 +1582,9 @@ class AudioPlayerManager: ObservableObject {
 
   private func fallBackToMainPlayback(for song: Song, startAt: TimeInterval) {
     suppressPlaybackEndedCallbacks()
+    stopRadioPlayer()
+    stopStreamPlayer()
+    avEngine.stop()
     aiStemSwitchInFlightSongID = nil
     VocalSeparator.shared.cancel()
     VocalSeparator.shared.cancelBackgroundAnalysis()
@@ -2027,6 +2033,8 @@ class AudioPlayerManager: ObservableObject {
     autoplay: Bool = true
   ) {
     stopStreamPlayer()
+    stopRadioPlayer()
+    avEngine.stop()
     currentPlaybackURL = url
     DebugLogger.log(
       "Starting stream playback for \(songID): source=\(playbackSourceDescription(url)), startAt=\(startAt), autoplay=\(autoplay)",
