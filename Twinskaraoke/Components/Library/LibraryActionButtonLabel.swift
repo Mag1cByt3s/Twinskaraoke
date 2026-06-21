@@ -20,9 +20,6 @@ struct LibraryActionButtonLabel: View {
     .padding(.vertical, 12)
     .foregroundStyle(foregroundColor)
     .background(backgroundColor, in: shape)
-    .overlay {
-      shape.strokeBorder(borderColor, lineWidth: 0.7)
-    }
     .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
     .contentShape(shape)
   }
@@ -47,9 +44,9 @@ struct LibraryActionButtonLabel: View {
     case .primary:
       return Color.white.opacity(0.16)
     case .secondary:
-      return Color.appDivider.opacity(0.9)
+      return Color.appDivider
     case .tertiary:
-      return Color.appDivider.opacity(0.72)
+      return Color.appDivider
     }
   }
 

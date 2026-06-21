@@ -45,6 +45,7 @@ struct RandomSongsView: View {
           RandomSongsToolbarButtonLabel(systemImage: "arrow.triangle.2.circlepath")
         }
         .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.65, haptic: .selection))
+        .buttonBorderShape(.circle)
         .accessibilityLabel("Refresh Random Songs")
         .accessibilityHint("Loads a new random set.")
       }
@@ -64,6 +65,7 @@ struct RandomSongsView: View {
           RandomSongsToolbarButtonLabel(systemImage: "ellipsis")
         }
         .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.65, haptic: .selection))
+        .buttonBorderShape(.circle)
         .accessibilityLabel("More Actions")
       }
     }
@@ -273,8 +275,6 @@ private struct RandomSongsToolbarButtonLabel: View {
   var body: some View {
     if #available(iOS 26.0, *) {
       iconImage
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
     } else {
       ZStack {
         Circle()

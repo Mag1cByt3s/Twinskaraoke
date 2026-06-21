@@ -199,27 +199,8 @@ struct MusicArtworkPlaceholder: View {
 
   var body: some View {
     GeometryReader { proxy in
-      ZStack {
-        LinearGradient(
-          colors: [
-            .appPlaceholderSecondary,
-            .appPlaceholderPrimary,
-            .appPlaceholderQuaternary,
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
-        LinearGradient(
-          colors: [
-            .appPlaceholderSheenSoft,
-            Color.clear,
-            Color.black.opacity(0.08),
-          ],
-          startPoint: .top,
-          endPoint: .bottomTrailing
-        )
-      }
-      .frame(width: proxy.size.width, height: proxy.size.height)
+      Color.appPlaceholderPrimary
+        .frame(width: proxy.size.width, height: proxy.size.height)
     }
     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
   }

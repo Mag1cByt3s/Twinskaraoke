@@ -68,12 +68,10 @@ struct AboutIconBadge: View {
 
   var body: some View {
     Image(systemName: systemImage)
-      .font(.system(size: size * 0.48, weight: .semibold))
+      .font(.system(size: size * 0.63, weight: .semibold))
       .symbolRenderingMode(.hierarchical)
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(
-        color, in: RoundedRectangle(cornerRadius: min(8, size * 0.25), style: .continuous))
+      .foregroundStyle(Color.appAccent)
+      .frame(width: size + 6, height: size)
   }
 }
 

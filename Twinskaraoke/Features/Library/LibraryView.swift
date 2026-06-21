@@ -261,15 +261,6 @@ struct LibraryView: View {
         showsDivider: false
       )
     }
-    .background(
-      Color.appSecondaryBackground,
-      in: RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-    )
-    .overlay {
-      RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous)
-        .strokeBorder(Color.appDivider.opacity(0.55), lineWidth: 0.6)
-    }
-    .clipShape(RoundedRectangle(cornerRadius: AM.Radius.card, style: .continuous))
   }
 
   private var librarySecondaryLinks: some View {

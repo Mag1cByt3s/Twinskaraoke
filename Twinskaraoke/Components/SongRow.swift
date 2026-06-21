@@ -148,7 +148,6 @@ struct SongRow: View {
             .font(.headline)
             .foregroundStyle(.secondary)
             .frame(width: 44, height: 44)
-            .background(.primary.opacity(0.055), in: Circle())
             .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.65, haptic: .selection))

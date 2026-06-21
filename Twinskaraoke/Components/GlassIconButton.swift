@@ -8,14 +8,20 @@ struct GlassXButton: View {
 
   var body: some View {
     Button(action: action) {
-      Label(accessibilityLabel, systemImage: "xmark")
-        .labelStyle(.iconOnly)
-        .font(.headline)
-        .foregroundStyle(Color.appGlassForeground)
+      icon
         .frame(width: size, height: size)
+        .modifier(GlassCircle())
         .contentShape(Circle())
     }
     .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+    .buttonBorderShape(.circle)
+  }
+
+  private var icon: some View {
+    Label(accessibilityLabel, systemImage: "xmark")
+      .labelStyle(.iconOnly)
+      .font(.system(size: iconSize, weight: .semibold))
+      .foregroundStyle(Color.appGlassForeground)
   }
 }
 
@@ -28,14 +34,20 @@ struct GlassCheckmarkButton: View {
 
   var body: some View {
     Button(action: action) {
-      Label(accessibilityLabel, systemImage: "checkmark")
-        .labelStyle(.iconOnly)
-        .font(.headline)
-        .foregroundStyle(isEnabled ? Color.appGlassForeground : Color.secondary)
+      icon
         .frame(width: size, height: size)
+        .modifier(GlassCircle())
         .contentShape(Circle())
     }
     .disabled(!isEnabled)
     .buttonStyle(PressableButtonStyle(scale: 0.88, dim: 0.6))
+    .buttonBorderShape(.circle)
+  }
+
+  private var icon: some View {
+    Label(accessibilityLabel, systemImage: "checkmark")
+      .labelStyle(.iconOnly)
+      .font(.system(size: iconSize, weight: .semibold))
+      .foregroundStyle(isEnabled ? Color.appGlassForeground : Color.secondary)
   }
 }

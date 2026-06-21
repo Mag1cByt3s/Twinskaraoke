@@ -627,9 +627,9 @@ private struct SettingsStorageActionRow: View {
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: symbol)
-        .font(.headline.weight(.semibold))
+        .font(.title3.weight(.semibold))
         .foregroundStyle(Color.appAccent)
-        .frame(width: 30, height: 44)
+        .frame(width: 36, height: 44)
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
           .font(.body)

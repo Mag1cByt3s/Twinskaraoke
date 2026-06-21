@@ -25,11 +25,11 @@ final class RadioController: ObservableObject {
       return
     }
 
-    scheduleRefresh()
+    Task { await refresh() }
     pollTimer?.invalidate()
     let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
       Task { @MainActor [weak self] in
-        self?.scheduleRefresh()
+        await self?.refresh()
       }
     }
     pollTimer = timer
@@ -62,21 +62,30 @@ final class RadioController: ObservableObject {
     let artURL = info?.art.flatMap { URL(string: $0) }
     AudioPlayerManager.shared.playRadio(streamURL: streamURL, song: song, artworkURL: artURL)
   }
-  private func scheduleRefresh() {
-    guard refreshTask == nil else { return }
-    refreshTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      await self.refresh()
-      self.refreshTask = nil
-    }
-  }
   func refresh() async {
     if AppRuntime.isUITestMode {
       applyUITestFixture()
       return
     }
 
-    guard !isRefreshing else { return }
+    // Coalesce concurrent refreshes: if one is already in flight, await it so
+    // user-initiated pull-to-refresh observes a real refresh result instead of
+    // silently no-op-ing when the auto-poll or initial load happens to be running.
+    if let existing = refreshTask {
+      await existing.value
+      return
+    }
+
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.performRefresh()
+      self.refreshTask = nil
+    }
+    refreshTask = task
+    await task.value
+  }
+
+  private func performRefresh() async {
     isRefreshing = true
     defer { isRefreshing = false }
 
