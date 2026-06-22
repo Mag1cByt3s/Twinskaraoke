@@ -253,7 +253,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@, %2$@ playlist"
+            "value" : "%1$@, %2$@ 播放清单"
           }
         },
         "zh-Hant" : {
@@ -1299,7 +1299,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 歌曲已列入播放列表"
+            "value" : "1 歌曲已加入播放清單"
           }
         }
       }
@@ -8493,13 +8493,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Latest Video"
+            "value" : "最新视频"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Latest Video"
+            "value" : "最新影片"
           }
         }
       }
@@ -8545,13 +8545,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LATEST VIDEO"
+            "value" : "最新视频"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LATEST VIDEO"
+            "value" : "最新影片"
           }
         }
       }
@@ -8597,13 +8597,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Legal"
+            "value" : "法律信息"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Legal"
+            "value" : "法律資訊"
           }
         }
       }
@@ -8649,13 +8649,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Level Up"
+            "value" : "升级"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Level Up"
+            "value" : "升級"
           }
         }
       }
@@ -8701,13 +8701,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Library"
+            "value" : "资料库"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Library"
+            "value" : "資料庫"
           }
         }
       }
@@ -8753,13 +8753,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Listen Now"
+            "value" : "现在就听"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Listen Now"
+            "value" : "立即聆聽"
           }
         }
       }
@@ -8805,13 +8805,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live"
+            "value" : "直播中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live"
+            "value" : "直播中"
           }
         }
       }
@@ -8857,13 +8857,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LIVE"
+            "value" : "直播中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LIVE"
+            "value" : "直播中"
           }
         }
       }
@@ -8909,13 +8909,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live and playing"
+            "value" : "正在直播并播放"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live and playing"
+            "value" : "正在直播並播放"
           }
         }
       }
@@ -8961,13 +8961,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live now"
+            "value" : "现正直播"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live now"
+            "value" : "現正直播"
           }
         }
       }
@@ -9013,13 +9013,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Now"
+            "value" : "现正直播"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Now"
+            "value" : "現正直播"
           }
         }
       }
@@ -9065,13 +9065,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live now, on air"
+            "value" : "正在放送"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live now, on air"
+            "value" : "正在放送"
           }
         }
       }
@@ -9117,13 +9117,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live radio"
+            "value" : "电台直播"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live radio"
+            "value" : "电台直播"
           }
         }
       }
@@ -9169,13 +9169,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LIVE RADIO"
+            "value" : "电台直播"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LIVE RADIO"
+            "value" : "电台直播"
           }
         }
       }
@@ -9221,13 +9221,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live station"
+            "value" : "实时电台"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live station"
+            "value" : "即時電台"
           }
         }
       }
@@ -9273,13 +9273,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Station"
+            "value" : "实时电台"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Station"
+            "value" : "即時電台"
           }
         }
       }
@@ -9325,13 +9325,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading %@ songs"
+            "value" : "加载 %@ 首歌中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading %@ songs"
+            "value" : "正在載入 %@ 首歌曲"
           }
         }
       }
@@ -9378,13 +9378,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading artist songs"
+            "value" : "正在加载艺人歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading artist songs"
+            "value" : "正在載入藝人歌曲"
           }
         }
       }
@@ -9431,13 +9431,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading artists"
+            "value" : "正在加载艺人"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading artists"
+            "value" : "正在載入藝人"
           }
         }
       }
@@ -9483,13 +9483,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading lyrics"
+            "value" : "歌词加载中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading lyrics"
+            "value" : "歌詞載入中"
           }
         }
       }
@@ -9536,7 +9536,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading playlist songs"
+            "value" : "加载歌单的歌曲中"
           }
         },
         "zh-Hant" : {
@@ -9589,7 +9589,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading playlists"
+            "value" : "歌单加载中"
           }
         },
         "zh-Hant" : {
@@ -9641,7 +9641,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading Playlists"
+            "value" : "歌单加载中"
           }
         },
         "zh-Hant" : {
@@ -9694,7 +9694,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading random songs"
+            "value" : "随机歌曲加载中"
           }
         },
         "zh-Hant" : {
@@ -9746,7 +9746,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading songs"
+            "value" : "歌曲加载中"
           }
         },
         "zh-Hant" : {
@@ -9799,7 +9799,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading videos"
+            "value" : "视频加载中"
           }
         },
         "zh-Hant" : {
@@ -9854,7 +9854,8 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Locked"
+            "value" : "已锁定"
+            // 有可能是指个人信息"已隐藏"
           }
         },
         "zh-Hant" : {
@@ -9906,7 +9907,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Logging"
+            "value" : "日志"
           }
         },
         "zh-Hant" : {
@@ -9958,7 +9959,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lossless"
+            "value" : "无损"
           }
         },
         "zh-Hant" : {
@@ -10062,7 +10063,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lyrics"
+            "value" : "歌词"
           }
         },
         "zh-Hant" : {
@@ -10114,7 +10115,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "More"
+            "value" : "更多"
           }
         },
         "zh-Hant" : {
@@ -10166,7 +10167,8 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "More actions"
+            "value" : "更多功能"
+            //无法确定是 更多功能 还是 更多选项
           }
         },
         "zh-Hant" : {
@@ -10218,7 +10220,8 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "More Actions"
+            "value" : "更多功能"
+            //无法确定是 更多功能 还是 更多选项
           }
         },
         "zh-Hant" : {
@@ -10270,7 +10273,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Motion"
+            "value" : "动态效果"
           }
         },
         "zh-Hant" : {
@@ -10322,7 +10325,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Music"
+            "value" : "音乐"
           }
         },
         "zh-Hant" : {
@@ -10426,7 +10429,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New"
+            "value" : "最新"
           }
         },
         "zh-Hant" : {
@@ -10478,7 +10481,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New Playlist"
+            "value" : "新歌单"
           }
         },
         "zh-Hant" : {
@@ -10530,7 +10533,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New private playlist"
+            "value" : "最新的私人歌单"
           }
         },
         "zh-Hant" : {
@@ -10582,7 +10585,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NEXT"
+            "value" : "下一首"
           }
         },
         "zh-Hant" : {
@@ -10634,7 +10637,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Next Badge"
+            "value" : "下一个徽章"
           }
         },
         "zh-Hant" : {
@@ -10686,7 +10689,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Next track"
+            "value" : "下一首"
           }
         },
         "zh-Hant" : {
@@ -10738,7 +10741,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Downloads"
+            "value" : "空空如也"
           }
         },
         "zh-Hant" : {
@@ -10790,7 +10793,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Link Available"
+            "value" : "没有可用的链接"
           }
         },
         "zh-Hant" : {
@@ -10842,7 +10845,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Results"
+            "value" : "空空如也"
           }
         },
         "zh-Hant" : {
@@ -10894,7 +10897,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No socials"
+            "value" : "暂无社交链接"
           }
         },
         "zh-Hant" : {
@@ -10946,7 +10949,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No songs"
+            "value" : "暂无歌曲"
           }
         },
         "zh-Hant" : {
@@ -10998,7 +11001,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Songs"
+            "value" : "暂无歌曲"
           }
         },
         "zh-Hant" : {
@@ -11050,7 +11053,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No songs matched \"%@\"."
+            "value" : "没有搜索到与\"%@\"相关的歌曲."
           }
         },
         "zh-Hant" : {
@@ -11102,7 +11105,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No songs queued"
+            "value" : "列队暂无歌曲"
           }
         },
         "zh-Hant" : {
@@ -11154,7 +11157,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not signed in"
+            "value" : "暂未登录"
           }
         },
         "zh-Hant" : {
