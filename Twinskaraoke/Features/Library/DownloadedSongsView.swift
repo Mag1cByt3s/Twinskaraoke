@@ -20,16 +20,17 @@ struct DownloadedSongsView: View {
 
   var body: some View {
     GeometryReader { geo in
+      let viewportSize = sanitizedViewportSize(geo.size)
       ScrollView {
         if localSongs.isEmpty {
           DownloadedEmptyStateView {
             refresh()
           }
-            .frame(width: geo.size.width, height: geo.size.height - 100)
+            .frame(width: viewportSize.width, height: max(viewportSize.height - 100, 1))
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
         } else {
           VStack(spacing: 18) {
-            heroHeader(width: geo.size.width)
+            heroHeader(width: viewportSize.width)
             VStack(spacing: 4) {
               Text("Downloaded")
                 .font(.title2.bold())
@@ -119,6 +120,15 @@ struct DownloadedSongsView: View {
     }
     .onAppear { refresh() }
     .onChange(of: downloads.downloadedIDs) { _, _ in refresh() }
+  }
+
+  private func sanitizedViewportSize(_ size: CGSize) -> CGSize {
+    // GeometryReader can briefly report zero, negative, or non-finite dimensions
+    // during navigation/layout transitions. Clamp before passing values to
+    // frame modifiers so SwiftUI never receives an invalid frame dimension.
+    let width = size.width.isFinite ? max(size.width, 1) : 1
+    let height = size.height.isFinite ? max(size.height, 1) : 1
+    return CGSize(width: width, height: height)
   }
 
   private var downloadedSubtitle: String {

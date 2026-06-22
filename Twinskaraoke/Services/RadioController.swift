@@ -90,7 +90,6 @@ final class RadioController: ObservableObject {
     defer { isRefreshing = false }
 
     let maxRetries = 3
-    var lastError: Error?
 
     for attempt in 0..<maxRetries {
       do {
@@ -111,7 +110,6 @@ final class RadioController: ObservableObject {
         return
       } catch {
         guard !Task.isCancelled else { return }
-        lastError = error
         if attempt < maxRetries - 1 {
           let delay = Double(1 << attempt)
           try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
