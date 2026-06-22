@@ -76,10 +76,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
     if !items.isEmpty {
       return items[Int.random(in: 0..<items.count)].url
     }
-    // Cold start: the validated pool hasn't been fetched yet. Fall back to a
-    // real image URL previously assigned to a song (persisted across launches)
-    // so the hero/genre artwork can still load instead of trying to render the
-    // JSON random-art endpoint as an image.
+
     return cache.values.map(\.url).randomElement()
   }
 
@@ -247,8 +244,7 @@ nonisolated final class FallbackArtProvider: ObservableObject, @unchecked Sendab
       self.items = uniqueItems
       self.repairDuplicateBindings()
       self.lock.unlock()
-      // Notify observers so views that resolved a nil fallback URL before the
-      // pool was ready (song.imageURL / randomURL) re-render and pick it up.
+
       self.objectWillChange.send()
     }
   }

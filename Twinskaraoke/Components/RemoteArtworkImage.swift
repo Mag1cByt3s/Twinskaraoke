@@ -15,8 +15,7 @@ enum ImageCacheConfig {
     cfg.maxDiskAge = 30 * 24 * 60 * 60
     SDImageCache.shared.clearMemory()
     let dl = SDWebImageDownloader.shared
-    // Keep network/decode concurrency below the point where image work can steal
-    // main-thread time from touch tracking on ProMotion devices.
+
     dl.config.maxConcurrentDownloads = 4
     dl.requestModifier = SDWebImageDownloaderRequestModifier { request in
       var r = request
@@ -34,8 +33,7 @@ enum ImageCacheConfig {
     #endif
   }
   static let thumbnailPixelSize = CGSize(width: 480, height: 480)
-  /// Keep list artwork on normal priority so image fetch/decode work does not
-  /// compete with touch tracking during scroll. Callers can opt into full size separately.
+
   static let defaultOptions: SDWebImageOptions = [
     .retryFailed,
     .scaleDownLargeImages
@@ -50,8 +48,7 @@ struct RemoteArtworkImage: View {
   var lowResURL: URL? = nil
   var transparentBackground: Bool = false
   var fullResolution: Bool = false
-  /// Use this for fixed-size thumbnails to avoid a GeometryReader per cell and
-  /// to downsample the source image to the actual display size.
+
   var fixedDisplaySize: CGSize? = nil
   @State private var fullLoaded: Bool = false
   @State private var loadFailed: Bool = false
@@ -85,9 +82,7 @@ struct RemoteArtworkImage: View {
       ? [:] : [
         .imageThumbnailPixelSize: pixelSize,
         .imageDecodeOptions: [SDImageCoderOption.decodeScaleFactor: 1.0],
-        // Thumbnail decode can leave SDWebImage without original bytes, forcing
-        // ImageIO to re-encode formats such as WebP for disk storage. Keep the
-        // thumbnail variant in memory and store/query the original bytes on disk.
+
         .storeCacheType: NSNumber(value: SDImageCacheType.memory.rawValue),
         .originalStoreCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
         .originalQueryCacheType: NSNumber(value: SDImageCacheType.disk.rawValue)
@@ -165,16 +160,14 @@ struct RemoteArtworkImage: View {
   }
 
   private func evictFailedImageCache(for failedURL: URL) {
-    // A corrupt cached image will keep hitting ImageIO on every render. Remove
-    // both cache tiers so the next attempt has to fetch fresh bytes.
+
     let cacheKey = failedURL.absoluteString
     SDImageCache.shared.removeImageFromMemory(forKey: cacheKey)
     SDImageCache.shared.removeImageFromDisk(forKey: cacheKey)
   }
 
   private func sanitizedDisplaySize(_ size: CGSize) -> CGSize {
-    // SwiftUI can briefly report non-finite geometry during aggressive layout
-    // churn. Clamp before using the values in fixed frames or decode requests.
+
     let width = size.width.isFinite ? max(size.width, 1) : 1
     let height = size.height.isFinite ? max(size.height, 1) : 1
     return CGSize(width: width, height: height)
@@ -206,8 +199,6 @@ struct MusicArtworkPlaceholder: View {
   }
 }
 
-/// Centered loading indicator shown while content loads, replacing grey skeleton
-/// element placeholders. Matches Apple Music's simple spinner loading style.
 struct CenteredLoadingView: View {
   var minHeight: CGFloat = 280
   var label: String = "Loading"

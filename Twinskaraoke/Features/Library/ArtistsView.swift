@@ -272,8 +272,7 @@ struct ArtistDetailView: View {
           }
           .padding(.horizontal)
           if !songs.isEmpty {
-            // Artist pages can return hundreds of tracks; skip artwork past this
-            // point so a fling does not queue hundreds of image loads.
+
             let showsRowArtwork = songs.count <= 200
             actionButtons
             LazyVStack(spacing: 0) {
@@ -427,7 +426,7 @@ struct ArtistDetailView: View {
 
 private struct ArtistSongRow: View {
   let song: Song
-  /// Propagated from ArtistDetailView so large artist catalogs can use cheaper rows.
+
   var showsArtwork = true
   let onPlay: () -> Void
 
@@ -579,8 +578,7 @@ private struct ArtistActionsMenu: View {
 
   init(songs: [Song]) {
     self.songs = songs
-    // Snapshot download state for transparent menu stability. Live progress
-    // updates can otherwise invalidate an open menu repeatedly.
+
     let downloads = DownloadManager.shared
     self.pendingDownloads = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
     self.downloadingCount = songs.filter { downloads.isDownloading($0.id) }.count
@@ -639,7 +637,6 @@ private struct ArtistScrollOffsetKey: PreferenceKey {
 }
 
 private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
-  // Keep parallax/header state coarse; tiny offset changes are visually irrelevant
-  // but still cause SwiftUI to re-evaluate the detail view.
+
   (offset / 8).rounded() * 8
 }

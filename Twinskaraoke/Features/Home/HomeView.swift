@@ -1151,8 +1151,7 @@ struct BrowseSongCollectionView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var scrollOffset: CGFloat = 0
-  // Very large result sets skip per-row artwork to keep cell creation and image
-  // decoding from dominating a fast collection scroll.
+
   private var showsArtwork: Bool { songs.count <= 200 }
   private func usesWideOverview(availableWidth: CGFloat) -> Bool {
     AM.Layout.usesWideCanvas(
@@ -1373,8 +1372,7 @@ private struct BrowseScrollOffsetKey: PreferenceKey {
 }
 
 private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
-  // Parallax and nav chrome do not need pixel-accurate offsets; bucketing the value
-  // cuts down SwiftUI invalidations while preserving the visible effect.
+
   (offset / 8).rounded() * 8
 }
 

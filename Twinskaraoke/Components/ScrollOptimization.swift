@@ -12,8 +12,6 @@ final class ScrollPerformanceState: ObservableObject {
 
   private init() {}
 
-  /// Publish only scroll start/end transitions. Per-frame scroll offsets stay out of
-  /// SwiftUI state so image placeholders and row chrome do not invalidate every frame.
   func update(id: UUID, isScrolling scrolling: Bool) {
     if scrolling {
       scrollEndTask?.cancel()
@@ -46,10 +44,8 @@ final class ScrollPerformanceState: ObservableObject {
   }
 }
 
-/// Smooth scrolling optimizations for SwiftUI ScrollView and List.
 extension View {
-  /// Apply scroll defaults that match native-feeling touch tracking and mark active
-  /// scrolls so decorative work can pause during high-velocity gestures.
+
   func smoothScrolling(bounceBehavior: ScrollBounceBehavior = .basedOnSize) -> some View {
     modifier(SmoothScrollingModifier(bounceBehavior: bounceBehavior))
   }
@@ -79,8 +75,6 @@ private struct SmoothScrollingModifier: ViewModifier {
   }
 }
 
-/// Preference-based scroll tracking should publish coarse changes only; sub-point
-/// jitter creates unnecessary SwiftUI invalidations while the finger is moving.
 struct SmoothScrollOffsetPreferenceKey: PreferenceKey {
   static var defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -92,7 +86,7 @@ struct SmoothScrollOffsetPreferenceKey: PreferenceKey {
 }
 
 extension ScrollView {
-  /// Track scroll offset for coarse UI chrome changes.
+
   func trackScrollOffset(_ offset: Binding<CGFloat>, coordinateSpace: String = "scroll") -> some View {
     self
       .coordinateSpace(name: coordinateSpace)

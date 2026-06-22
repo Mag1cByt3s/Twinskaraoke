@@ -292,20 +292,10 @@ private enum ManagedAVPlayerKind {
   case radio, stream
 }
 
-/// Lightweight, isolated store for the high-frequency playback position.
-///
-/// `AudioPlayerManager`'s poll timer updates the normalized progress ~4×/second.
-/// Because `AudioPlayerManager` is a Combine `ObservableObject`, keeping progress
-/// among its `@Published` properties forced *every* observing view (the whole
-/// full-screen player tree) to re-evaluate its body 4×/second. Isolating the
-/// position here means only the small views that actually display it observe the
-/// high-frequency updates; the manager itself now publishes only on discrete
-/// state changes (track, play/pause, route, …).
 @MainActor
 final class PlaybackClock: ObservableObject {
   static let shared = PlaybackClock()
 
-  /// Normalized playback position in `0...1`.
   @Published var progress: Double = 0
 
   private init() {}
@@ -317,9 +307,7 @@ class AudioPlayerManager: ObservableObject {
   @Published var currentSong: Song?
   @Published var isPlaying = false
   @Published var isBuffering = false
-  /// Normalized playback position. Bridged to `PlaybackClock` so the ~4×/second
-  /// poll-timer updates no longer fan out to every `AudioPlayerManager` observer.
-  /// Existing read/write call sites keep working unchanged.
+
   var progress: Double {
     get { PlaybackClock.shared.progress }
     set { PlaybackClock.shared.progress = newValue }
@@ -2103,9 +2091,7 @@ class AudioPlayerManager: ObservableObject {
     guard let startedAt = streamStartedAt, Date().timeIntervalSince(startedAt) >= 3 else { return }
     let streamTime = streamPlayer?.currentTime().seconds ?? .nan
     let hasRemoteProgress = streamTime.isFinite && streamTime > 0.25
-    // The partial file is still being appended while the remote stream plays.
-    // Switching to it after playback has already progressed can strand AVPlayer at
-    // the current file length and manifest as a mid-song stall or glitch.
+
     guard !hasRemoteProgress else { return }
     DebugLogger.log(
       "Switching startup-stalled stream to local fallback for \(song.id)",
@@ -2600,10 +2586,7 @@ class AudioPlayerManager: ObservableObject {
   #if canImport(UIKit)
     private func handleBackgroundTransition() {
       endAudioCacheBackgroundTask()
-      // Only keep the app alive in the background when there is an in-flight
-      // cache download to finish. Otherwise there is nothing to protect and the
-      // task would linger until the OS expires it (triggering the
-      // "created over 30 seconds ago" warning).
+
       guard downloadSession != nil else { return }
       bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "AudioCache") { [weak self] in
         self?.endAudioCacheBackgroundTask()

@@ -6,8 +6,7 @@ struct DownloadedSongsView: View {
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var localSongs: [Song] = []
-  // Store only the navigation-bar threshold, not the raw offset, to avoid per-frame
-  // state updates while scrolling the downloaded list.
+
   @State private var showsCollapsedTitle = false
   @State private var showRemoveAllConfirmation = false
 
@@ -20,16 +19,17 @@ struct DownloadedSongsView: View {
 
   var body: some View {
     GeometryReader { geo in
+      let viewportSize = sanitizedViewportSize(geo.size)
       ScrollView {
         if localSongs.isEmpty {
           DownloadedEmptyStateView {
             refresh()
           }
-            .frame(width: geo.size.width, height: geo.size.height - 100)
+            .frame(width: viewportSize.width, height: max(viewportSize.height - 100, 1))
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
         } else {
           VStack(spacing: 18) {
-            heroHeader(width: geo.size.width)
+            heroHeader(width: viewportSize.width)
             VStack(spacing: 4) {
               Text("Downloaded")
                 .font(.title2.bold())
@@ -121,6 +121,15 @@ struct DownloadedSongsView: View {
     .onChange(of: downloads.downloadedIDs) { _, _ in refresh() }
   }
 
+  private func sanitizedViewportSize(_ size: CGSize) -> CGSize {
+    // GeometryReader can briefly report zero, negative, or non-finite dimensions
+    // during navigation/layout transitions. Clamp before passing values to
+    // frame modifiers so SwiftUI never receives an invalid frame dimension.
+    let width = size.width.isFinite ? max(size.width, 1) : 1
+    let height = size.height.isFinite ? max(size.height, 1) : 1
+    return CGSize(width: width, height: height)
+  }
+
   private var downloadedSubtitle: String {
     let count = localSongs.count == 1 ? "1 song" : "\(localSongs.count) songs"
     guard let duration = downloadedDurationText else { return count }
@@ -140,8 +149,7 @@ struct DownloadedSongsView: View {
 
   @ViewBuilder
   private func heroHeader(width: CGFloat) -> some View {
-    // This header intentionally stays fixed-size; animating blur/scale from raw
-    // scroll offset made the downloaded screen do extra work during every scroll tick.
+
     mosaicArtwork
       .frame(width: 240, height: 240)
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -415,8 +423,6 @@ private struct DownloadedSongsMenu: View {
   }
 }
 
-/// Reports whether the downloaded header has crossed the title-collapse threshold.
-/// The Bool value keeps preference churn lower than sending the full scroll offset.
 private struct DownloadedCollapsedTitleKey: PreferenceKey {
   static var defaultValue = false
   static func reduce(value: inout Bool, nextValue: () -> Bool) {

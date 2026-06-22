@@ -1,9 +1,6 @@
 import Combine
 import SwiftUI
 
-/// The radio screen only needs a few playback flags. Keeping this separate from
-/// AudioPlayerManager prevents progress and karaoke state updates from redrawing
-/// the whole ScrollView during fast inertial scrolling.
 @MainActor
 private final class RadioPlaybackState: ObservableObject {
   static let shared = RadioPlaybackState()
@@ -78,9 +75,7 @@ struct RadioView: View {
           .padding(.bottom, AM.Spacing.l)
         }
         .tabBarScrollInset()
-        // Radio can be shorter than the viewport, so keep vertical bounce
-        // always on here. Otherwise `.basedOnSize` can disable the overscroll
-        // gesture that reveals SwiftUI's refresh control.
+
         .smoothScrolling(bounceBehavior: .always)
         .musicScreenBackground()
       }
@@ -386,8 +381,7 @@ struct RadioView: View {
     .aspectRatio(16.0 / 9.0, contentMode: .fit)
     .frame(maxWidth: .infinity)
     .clipShape(RoundedRectangle(cornerRadius: AM.Radius.hero, style: .continuous))
-    // Keep the hero in one composited layer. A large clipped image plus gradient,
-    // controls, and shadow is otherwise expensive during high-velocity scroll.
+
     .compositingGroup()
     .shadow(color: Color.appHeroShadowIdle, radius: 10, y: 5)
   }

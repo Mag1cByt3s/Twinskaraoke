@@ -632,8 +632,7 @@ struct LibrarySongsView: View {
   var body: some View {
     let songs = viewModel.displayedSongs
     let isSearching = !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    // Once the library list gets large, omitting thumbnails removes a major source
-    // of row work: image decode, cache lookup, and extra view composition per cell.
+
     let showsRowArtwork = songs.count <= 200
     List {
       if viewModel.isLoading && songs.isEmpty {
@@ -757,7 +756,6 @@ struct LibrarySongsView: View {
       .buttonStyle(PressableButtonStyle(scale: 0.96, dim: 0.75, haptic: .medium))
     }
   }
-
 
   private func emptyState(isSearching: Bool) -> some View {
     MusicEmptyState(
@@ -1136,8 +1134,7 @@ struct LibraryCollectionDetailView: View {
           } else {
             actionButtons
               .padding(.horizontal)
-            // Collection detail screens can be arbitrarily long, so large ones use
-            // text-first rows to keep scrolling predictable on iPhone.
+
             let showsRowArtwork = collection.songs.count <= 200
             LazyVStack(spacing: 0) {
               ForEach(collection.songs) { song in
@@ -1268,8 +1265,7 @@ private struct LibraryCollectionActionsMenu: View {
 
   init(collection: LibrarySongCollection) {
     self.collection = collection
-    // Snapshot download state for transparent menu stability. Download progress
-    // can publish frequently while a menu is open.
+
     let downloads = DownloadManager.shared
     self.pendingDownloads = collection.songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
     self.downloadingCount = collection.songs.filter { downloads.isDownloading($0.id) }.count
@@ -1386,8 +1382,7 @@ private struct LibraryCollectionScrollOffsetKey: PreferenceKey {
 }
 
 private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
-  // Bucket scroll offset changes so the parallax artwork and collapsed title do not
-  // trigger a full view update for every sub-pixel movement.
+
   (offset / 8).rounded() * 8
 }
 

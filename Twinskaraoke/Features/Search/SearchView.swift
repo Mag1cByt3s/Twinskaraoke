@@ -2,8 +2,7 @@ import SwiftUI
 
 struct SearchView: View {
   @StateObject var viewModel = SearchViewModel()
-  // Search only needs the current song id to clear pending UI. Observing the full
-  // audio manager here would also subscribe the screen to progress ticks.
+
   @ObservedObject private var playback = PlaybackRowState.shared
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -544,7 +543,7 @@ struct GenreDetailView: View {
         }
       }
     } catch {
-      // Silent failure - will show empty state
+
     }
   }
 }

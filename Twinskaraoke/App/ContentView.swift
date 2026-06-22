@@ -80,9 +80,7 @@ private final class PopupPlaybackState: ObservableObject {
       let nextSnapshot = self.pendingSnapshot
       self.publishTask = nil
       guard !self.snapshot.matches(nextSnapshot) else { return }
-      // LNPopupUI stores title, image, and button data as SwiftUI preferences.
-      // Publishing one coalesced snapshot prevents rapid track changes from
-      // writing those preferences several times in a single render frame.
+
       self.snapshot = nextSnapshot
     }
   }
@@ -115,6 +113,7 @@ private struct PopupPlaybackSnapshot {
     private static let defaultTrailingControlHitWidth: CGFloat = 132
     private static let radioTrailingControlHitWidth: CGFloat = 192
     private static let tapMovementTolerance: CGFloat = 12
+    private static let visibleBarHitHeight: CGFloat = 116
     private var touchStartLocation: CGPoint?
     private var openIntentExpiresAt = Date.distantPast
     private var suppressOpenExpiresAt = Date.distantPast
@@ -162,6 +161,7 @@ private struct PopupPlaybackSnapshot {
       case .began:
         touchStartLocation = location
         guard Date() > suppressOpenExpiresAt,
+          isVisibleMiniPlayerTouch(location, in: popupBar),
           !isTrailingControlTouch(location, in: popupBar)
         else {
           openIntentExpiresAt = .distantPast
@@ -184,6 +184,22 @@ private struct PopupPlaybackSnapshot {
       default:
         break
       }
+    }
+
+    private func isVisibleMiniPlayerTouch(_ location: CGPoint, in popupBar: LNPopupBar) -> Bool {
+      let bounds = popupBar.bounds
+      guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else {
+        return false
+      }
+
+      // LNPopupUI can keep a larger transparent gesture surface around the
+      // floating bar. Treat only the visible bottom strip as a deliberate
+      // mini-player touch so unrelated UI taps cannot arm a popup-open intent.
+      let visibleHeight = min(bounds.height, Self.visibleBarHitHeight)
+      return location.x >= bounds.minX
+        && location.x <= bounds.maxX
+        && location.y >= bounds.maxY - visibleHeight
+        && location.y <= bounds.maxY
     }
 
     private func isTrailingControlTouch(_ location: CGPoint, in popupBar: LNPopupBar) -> Bool {
@@ -592,10 +608,7 @@ private struct PopupModifier: ViewModifier {
         PopupContent(popupState: popupState)
       }
       .popupBarStyle(.floating)
-      // Do not drive LNPopupUI's bar progress while playback is active. That
-      // preference update invalidates the root popup host repeatedly and causes
-      // iOS transparent context menus to flicker. Full-screen progress still
-      // observes PlaybackClock directly.
+
       .popupBarProgressViewStyle(.none)
       .popupCloseButtonStyle(.none)
       .popupInteractionStyle(.drag)
@@ -604,9 +617,7 @@ private struct PopupModifier: ViewModifier {
         popupBar.accessibilityIdentifier = "MiniPlayerBar"
         popupBar.accessibilityLabel = "Now Playing"
         popupBar.accessibilityHint = "Opens the full-screen player."
-        // LNPopupUI's drag recognizer can report an open during unrelated root
-        // navigation and system gestures. This touch marker lets the binding accept
-        // deliberate mini-player opens while LNPopupUI still owns the transition.
+
         PopupOpenIntentGate.shared.installTouchRecognizer(on: popupBar)
       }
   }

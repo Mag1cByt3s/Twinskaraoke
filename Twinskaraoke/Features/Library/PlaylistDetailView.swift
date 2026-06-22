@@ -192,8 +192,7 @@ struct PlaylistDetailView: View {
     rowHorizontalPadding: CGFloat = AM.Spacing.screenMargin
   ) -> some View {
     if !songs.isEmpty {
-      // On long playlists, thumbnail decoding and cache churn are more expensive than
-      // the metadata row itself, so keep the scrolling path text-first.
+
       let showsRowArtwork = songs.count <= 200
       VStack(spacing: 0) {
         if !isWideOverview {
@@ -367,8 +366,7 @@ struct PlaylistActionsMenuItems: View {
   init(playlist: Playlist, songs: [Song]) {
     self.playlist = playlist
     self.songs = songs
-    // Keep menu content as a snapshot so active download progress does not
-    // continuously redraw transparent context/menu surfaces.
+
     let downloads = DownloadManager.shared
     self.pendingSongs = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
     self.inFlightCount = songs.filter { downloads.isDownloading($0.id) }.count
@@ -439,14 +437,13 @@ private struct ScrollOffsetKey: PreferenceKey {
 }
 
 private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
-  // The hero/header only need coarse offset changes; 8-point buckets reduce redraws
-  // during high-velocity scrolling without making the parallax feel stepped.
+
   (offset / 8).rounded() * 8
 }
 
 struct PlaylistRow: View {
   let song: Song
-  /// Propagated from the parent so large playlists can render cheaper rows.
+
   var showsArtwork = true
   var horizontalPadding: CGFloat = AM.Spacing.screenMargin
 

@@ -68,9 +68,6 @@ final class RadioController: ObservableObject {
       return
     }
 
-    // Coalesce concurrent refreshes: if one is already in flight, await it so
-    // user-initiated pull-to-refresh observes a real refresh result instead of
-    // silently no-op-ing when the auto-poll or initial load happens to be running.
     if let existing = refreshTask {
       await existing.value
       return
@@ -90,7 +87,6 @@ final class RadioController: ObservableObject {
     defer { isRefreshing = false }
 
     let maxRetries = 3
-    var lastError: Error?
 
     for attempt in 0..<maxRetries {
       do {
@@ -111,7 +107,6 @@ final class RadioController: ObservableObject {
         return
       } catch {
         guard !Task.isCancelled else { return }
-        lastError = error
         if attempt < maxRetries - 1 {
           let delay = Double(1 << attempt)
           try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

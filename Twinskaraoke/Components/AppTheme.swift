@@ -423,9 +423,7 @@ private struct ToolbarIconLabel: View {
 
   var body: some View {
     if #available(iOS 26.0, *) {
-      // iOS 26 wraps toolbar buttons in system Liquid Glass. Handing it a compact
-      // icon — no custom disc or fixed-width frame — lets that glass render a
-      // native circle instead of stretching into a capsule.
+
       iconImage
     } else {
       ZStack {
@@ -457,8 +455,7 @@ private struct ToolbarControlBackground: View {
     Circle()
       .fill(.regularMaterial)
       .overlay {
-        // Domed top sheen: light grazes the upper surface and fades to clear,
-        // so the disc reads as a curved piece of glass rather than a flat fill.
+
         Circle()
           .fill(
             LinearGradient(
@@ -472,8 +469,7 @@ private struct ToolbarControlBackground: View {
           )
       }
       .overlay {
-        // Rim light: a hairline that catches light along the top edge and
-        // settles into shadow at the base — the polished "outside" of the control.
+
         Circle()
           .strokeBorder(
             LinearGradient(
@@ -485,8 +481,7 @@ private struct ToolbarControlBackground: View {
           )
       }
       .shadow(color: shadowColor, radius: 3, x: 0, y: 1)
-      // Inset the disc inside the 44pt tap frame so it (and its shadow) stay
-      // within the toolbar group's rounded border instead of bleeding past it.
+
       .padding(4)
   }
 
