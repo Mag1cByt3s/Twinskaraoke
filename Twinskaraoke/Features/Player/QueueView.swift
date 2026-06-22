@@ -245,8 +245,7 @@ struct QueueView: View {
             .lineLimit(1)
         }
         Spacer()
-        // Keep context-menu-backed rows static while playback is active; animated
-        // TimelineView content behind translucent menus can cause menu flicker.
+
         EqualizerBars(isAnimating: false)
           .frame(width: 16, height: 16)
           .foregroundStyle(Color.appAccent)

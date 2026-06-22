@@ -678,16 +678,10 @@ struct FullScreenPlayerView: View {
     Color.primary
   }
 
-  // The progress bar + time labels are the only part of the player that needs
-  // the ~4×/second position updates. Isolating them in `PlayerProgressSection`
-  // (which observes `PlaybackClock`) keeps the rest of the player tree from
-  // re-evaluating at that cadence.
   private func progressSection(song _: Song, metrics: PlayerLayoutMetrics) -> some View {
     PlayerProgressSection(metrics: metrics)
   }
 
-  /// Progress bar + elapsed/remaining labels. Observes `PlaybackClock` so only this
-  /// small view re-renders ~4×/second; reads computed time/duration off the manager.
   private struct PlayerProgressSection: View {
     let metrics: PlayerLayoutMetrics
     @EnvironmentObject private var audioManager: AudioPlayerManager
@@ -741,9 +735,6 @@ struct FullScreenPlayerView: View {
     }
   }
 
-  /// Thin wrapper that feeds the live playback time into `LyricsView`. It observes
-  /// `PlaybackClock`, so it (and only it) re-evaluates ~4×/second to keep the active
-  /// lyric line and autoscroll in sync now that the surrounding layout no longer does.
   private struct TimedLyricsView: View {
     let lyrics: [LyricLine]
     var showTranslations: Bool = false

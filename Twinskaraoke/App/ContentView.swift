@@ -80,9 +80,7 @@ private final class PopupPlaybackState: ObservableObject {
       let nextSnapshot = self.pendingSnapshot
       self.publishTask = nil
       guard !self.snapshot.matches(nextSnapshot) else { return }
-      // LNPopupUI stores title, image, and button data as SwiftUI preferences.
-      // Publishing one coalesced snapshot prevents rapid track changes from
-      // writing those preferences several times in a single render frame.
+
       self.snapshot = nextSnapshot
     }
   }
@@ -610,10 +608,7 @@ private struct PopupModifier: ViewModifier {
         PopupContent(popupState: popupState)
       }
       .popupBarStyle(.floating)
-      // Do not drive LNPopupUI's bar progress while playback is active. That
-      // preference update invalidates the root popup host repeatedly and causes
-      // iOS transparent context menus to flicker. Full-screen progress still
-      // observes PlaybackClock directly.
+
       .popupBarProgressViewStyle(.none)
       .popupCloseButtonStyle(.none)
       .popupInteractionStyle(.drag)
@@ -622,9 +617,7 @@ private struct PopupModifier: ViewModifier {
         popupBar.accessibilityIdentifier = "MiniPlayerBar"
         popupBar.accessibilityLabel = "Now Playing"
         popupBar.accessibilityHint = "Opens the full-screen player."
-        // LNPopupUI's drag recognizer can report an open during unrelated root
-        // navigation and system gestures. This touch marker lets the binding accept
-        // deliberate mini-player opens while LNPopupUI still owns the transition.
+
         PopupOpenIntentGate.shared.installTouchRecognizer(on: popupBar)
       }
   }

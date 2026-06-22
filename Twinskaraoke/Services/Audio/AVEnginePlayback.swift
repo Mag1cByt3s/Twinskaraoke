@@ -4,8 +4,8 @@ import Foundation
 enum AVEnginePlaybackMode { case single, aiStems }
 
 enum AVEnginePlaybackRampStyle {
-  case equalPower  // cos/sin curve — constant perceived loudness
-  case linear  // straight line — faster cuts
+  case equalPower
+  case linear
 }
 
 extension AVAudioTime {

@@ -340,9 +340,7 @@ private struct RadioQueueLivePill: View {
     HStack(spacing: 5) {
       ZStack {
         if isPlaying && !reduceMotion {
-          // Keep the live pill stable inside the queue sheet. It sits near
-          // translucent context menus, where frame-driven redraws can flicker
-          // while playback is active.
+
           Circle()
             .fill(Color.white.opacity(0.28))
             .frame(width: 11, height: 11)
@@ -436,8 +434,7 @@ private struct RadioQueueTrackRow: View {
       }
       Spacer()
       if isCurrent {
-        // Keep row-level menu backdrops stable. The live player screen still has
-        // motion, but context-menu rows should not repaint continuously.
+
         EqualizerBars(isAnimating: false)
           .frame(width: 18, height: 18)
           .foregroundStyle(Color.appAccent)

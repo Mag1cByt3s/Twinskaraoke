@@ -68,9 +68,6 @@ final class RadioController: ObservableObject {
       return
     }
 
-    // Coalesce concurrent refreshes: if one is already in flight, await it so
-    // user-initiated pull-to-refresh observes a real refresh result instead of
-    // silently no-op-ing when the auto-poll or initial load happens to be running.
     if let existing = refreshTask {
       await existing.value
       return

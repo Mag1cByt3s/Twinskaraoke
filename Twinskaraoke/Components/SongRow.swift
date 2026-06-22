@@ -1,8 +1,6 @@
 import Combine
 import SwiftUI
 
-/// Song rows only need a tiny playback snapshot. Observing the full audio manager here
-/// would make every visible row redraw on high-frequency progress updates while scrolling.
 @MainActor
 final class PlaybackRowState: ObservableObject {
   static let shared = PlaybackRowState()
@@ -78,7 +76,7 @@ enum SongRowSize {
 struct SongRow: View {
   let song: Song
   let size: SongRowSize
-  /// Large collection screens can hide thumbnails so rows stay cheap during fast flings.
+
   var showsArtwork: Bool = true
   var trailing: AnyView? = nil
   @ObservedObject private var playback = PlaybackRowState.shared
@@ -104,9 +102,7 @@ struct SongRow: View {
           RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous)
             .fill(Color.appArtworkOverlay)
             .frame(width: size.artSize, height: size.artSize)
-          // Keep row indicators static. Context menus on iOS are translucent and
-          // flicker if the list behind them keeps repainting via TimelineView while
-          // playback is active.
+
           EqualizerBars(isAnimating: false)
             .frame(width: size.indicatorSize, height: size.indicatorSize)
             .foregroundStyle(.primary)
@@ -298,8 +294,7 @@ struct MusicGridCard: View {
   @ViewBuilder
   private var artworkContent: some View {
     if let imageURL = playback.displayImageURL(for: song) {
-      // Fixed card dimensions let RemoteArtworkImage request a deterministic thumbnail size
-      // without measuring every card through GeometryReader.
+
       RemoteArtworkImage(
         url: imageURL,
         cornerRadius: AM.Radius.card,
@@ -333,9 +328,7 @@ struct SongActionsMenuItems: View {
   init(song: Song, onAddToPlaylist: @escaping () -> Void) {
     self.song = song
     self.onAddToPlaylist = onAddToPlaylist
-    // Snapshot download state when the menu is built. Observing live download
-    // progress from inside transparent iOS menus can cause the same preference
-    // churn/flicker as playback progress did in the popup bar.
+
     let downloads = DownloadManager.shared
     self.isDownloaded = downloads.isDownloaded(song.id)
     self.isDownloading = downloads.isDownloading(song.id)

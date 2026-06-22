@@ -9855,7 +9855,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已锁定"
-            // 有可能是指个人信息"已隐藏"
           }
         },
         "zh-Hant" : {
@@ -10168,7 +10167,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更多功能"
-            //无法确定是 更多功能 还是 更多选项
           }
         },
         "zh-Hant" : {
@@ -10221,7 +10219,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更多功能"
-            //无法确定是 更多功能 还是 更多选项
           }
         },
         "zh-Hant" : {

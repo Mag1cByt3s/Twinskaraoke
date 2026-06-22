@@ -6,8 +6,7 @@ struct DownloadedSongsView: View {
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @AppStorage("nk.respectReducedMotion") private var respectReducedMotion: Bool = true
   @State private var localSongs: [Song] = []
-  // Store only the navigation-bar threshold, not the raw offset, to avoid per-frame
-  // state updates while scrolling the downloaded list.
+
   @State private var showsCollapsedTitle = false
   @State private var showRemoveAllConfirmation = false
 
@@ -150,8 +149,7 @@ struct DownloadedSongsView: View {
 
   @ViewBuilder
   private func heroHeader(width: CGFloat) -> some View {
-    // This header intentionally stays fixed-size; animating blur/scale from raw
-    // scroll offset made the downloaded screen do extra work during every scroll tick.
+
     mosaicArtwork
       .frame(width: 240, height: 240)
       .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -425,8 +423,6 @@ private struct DownloadedSongsMenu: View {
   }
 }
 
-/// Reports whether the downloaded header has crossed the title-collapse threshold.
-/// The Bool value keeps preference churn lower than sending the full scroll offset.
 private struct DownloadedCollapsedTitleKey: PreferenceKey {
   static var defaultValue = false
   static func reduce(value: inout Bool, nextValue: () -> Bool) {

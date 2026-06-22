@@ -243,7 +243,7 @@ nonisolated enum KaraokeAPIClient {
 
   private static func data(for request: URLRequest) async throws -> Data {
     let maxRetries = 3
-    let baseDelay: UInt64 = 500_000_000 // 0.5 seconds in nanoseconds
+    let baseDelay: UInt64 = 500_000_000
 
     for attempt in 0..<maxRetries {
       do {
@@ -252,9 +252,9 @@ nonisolated enum KaraokeAPIClient {
           throw APIError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-          // Only retry on specific transient HTTP errors
+
           if shouldRetry(statusCode: httpResponse.statusCode) && attempt < maxRetries - 1 {
-            let delay = baseDelay * UInt64(1 << attempt) // Exponential backoff
+            let delay = baseDelay * UInt64(1 << attempt)
             try await Task.sleep(nanoseconds: delay)
             continue
           }
@@ -262,32 +262,31 @@ nonisolated enum KaraokeAPIClient {
         }
         return data
       } catch let error as URLError {
-        // Retry on transient network errors
+
         if shouldRetry(urlError: error) && attempt < maxRetries - 1 {
-          let delay = baseDelay * UInt64(1 << attempt) // Exponential backoff
+          let delay = baseDelay * UInt64(1 << attempt)
           try await Task.sleep(nanoseconds: delay)
           continue
         }
         throw error
       } catch {
-        // Non-retryable errors (e.g., APIError types)
+
         throw error
       }
     }
 
-    // Should never reach here, but required for compiler
     throw APIError.invalidResponse
   }
 
   private static func shouldRetry(statusCode: Int) -> Bool {
-    // Retry on server errors and rate limiting
-    return statusCode == 408 || // Request Timeout
-           statusCode == 429 || // Too Many Requests
-           statusCode >= 500    // Server errors
+
+    return statusCode == 408 ||
+           statusCode == 429 ||
+           statusCode >= 500
   }
 
   private static func shouldRetry(urlError: URLError) -> Bool {
-    // Retry on transient network failures
+
     switch urlError.code {
     case .timedOut,
          .cannotFindHost,
