@@ -362,8 +362,16 @@ struct PlaylistActionsMenuItems: View {
     let playlist: Playlist
     let songs: [Song]
     @ObservedObject private var savedStore: SavedPlaylistsStore = .shared
-    private let pendingSongs: [Song]
-    private let inFlightCount: Int
+    @ObservedObject private var downloads = DownloadManager.shared
+
+    private var pendingSongs: [Song] {
+        songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
+    }
+
+    private var inFlightCount: Int {
+        songs.filter { downloads.isDownloading($0.id) }.count
+    }
+
     private var pendingCount: Int {
         pendingSongs.count
     }
@@ -378,15 +386,6 @@ struct PlaylistActionsMenuItems: View {
 
     private var isSaved: Bool {
         savedStore.isSaved(playlist)
-    }
-
-    init(playlist: Playlist, songs: [Song]) {
-        self.playlist = playlist
-        self.songs = songs
-
-        let downloads = DownloadManager.shared
-        pendingSongs = songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
-        inFlightCount = songs.filter { downloads.isDownloading($0.id) }.count
     }
 
     var body: some View {
