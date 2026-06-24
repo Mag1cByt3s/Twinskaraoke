@@ -199,6 +199,7 @@ final class DownloadManager: ObservableObject {
         tasks.removeAll()
         inProgress.removeAll()
         progress.removeAll()
+        pendingWiFiRepairs.removeAll()
 
         let fm = FileManager.default
         if let files = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
@@ -368,13 +369,20 @@ final class DownloadManager: ObservableObject {
     }
 
     private func discardBrokenDownloadAndScheduleRepair(for song: Song, reason: String) {
+        let repairSong: Song? = if song.audioURL != nil {
+            song
+        } else if let persistedSong = readMetadata(for: song.id), persistedSong.audioURL != nil {
+            persistedSong
+        } else {
+            nil
+        }
         DebugLogger.log(
             "Removing confirmed broken download for \(song.id): \(reason)",
             category: .cache
         )
         removeBrokenAudioFiles(for: song)
-        guard song.audioURL != nil else { return }
-        pendingWiFiRepairs[song.id] = song
+        guard let repairSong else { return }
+        pendingWiFiRepairs[song.id] = repairSong
         startPendingWiFiRepairsIfPossible()
     }
 
@@ -386,7 +394,9 @@ final class DownloadManager: ObservableObject {
         try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(song.id).mp3"))
         try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(song.id).source"))
         downloadedIDs.remove(song.id)
-        writeMetadata(for: song)
+        if song.audioURL != nil {
+            writeMetadata(for: song)
+        }
     }
 
     private func startNetworkMonitoring() {
