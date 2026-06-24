@@ -1716,7 +1716,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可跨裝置存取您的資料庫、收藏以及歌單。"
+            "value" : "可跨裝置存取您的資料庫、喜好項目以及歌單。"
           }
         }
       }
@@ -2808,13 +2808,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画师"
+            "value" : "艺人"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "畫師"
+            "value" : "藝人"
           }
         }
       }
@@ -14963,13 +14963,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Library"
+            "value" : "刷新资料库"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Library"
+            "value" : "重新整理資料庫"
           }
         }
       }
@@ -15015,13 +15015,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Metadata"
+            "value" : "刷新元数据"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Metadata"
+            "value" : "重新整理中繼資料"
           }
         }
       }
@@ -15067,13 +15067,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh radio metadata"
+            "value" : "刷新电台信息"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh radio metadata"
+            "value" : "更新電台資訊"
           }
         }
       }
@@ -15122,13 +15122,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Set"
+            "value" : "刷新歌单"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refresh Set"
+            "value" : "更新歌單"
           }
         }
       }
@@ -15174,13 +15174,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes radio metadata."
+            "value" : "刷新电台信息"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes radio metadata."
+            "value" : "更新電台資訊"
           }
         }
       }
@@ -15226,13 +15226,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes the live radio station metadata."
+            "value" : "刷新直播电台信息"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes the live radio station metadata."
+            "value" : "更新直播電台資訊"
           }
         }
       }
@@ -15278,13 +15278,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes this category"
+            "value" : "刷新此分类"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshes this category"
+            "value" : "更新此類別"
           }
         }
       }
@@ -15330,13 +15330,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshing radio metadata"
+            "value" : "正在刷新电台信息"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshing radio metadata"
+            "value" : "正在更新電台資訊"
           }
         }
       }
@@ -15382,13 +15382,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removal Level"
+            "value" : "消除强度"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removal Level"
+            "value" : "消除強度"
           }
         }
       }
@@ -15434,13 +15434,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove"
+            "value" : "移除"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove"
+            "value" : "移除"
           }
         }
       }
@@ -15486,13 +15486,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove all downloads?"
+            "value" : "移除所有下载内容？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove all downloads?"
+            "value" : "移除所有下載內容？"
           }
         }
       }
@@ -15538,13 +15538,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Download"
+            "value" : "移除下载内容"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Download"
+            "value" : "移除下載內容"
           }
         }
       }
@@ -15590,13 +15590,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Downloads"
+            "value" : "移除下载内容"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Downloads"
+            "value" : "移除下載內容"
           }
         }
       }
@@ -15642,13 +15642,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Favorites"
+            "value" : "从收藏中移除"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Favorites"
+            "value" : "從喜好項目移除"
           }
         }
       }
@@ -15694,13 +15694,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Library"
+            "value" : "从资料库中移除"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Library"
+            "value" : "從資料庫移除"
           }
         }
       }
@@ -15746,13 +15746,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Queue"
+            "value" : "从队列移除"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove from Queue"
+            "value" : "從佇列移除"
           }
         }
       }
@@ -15798,13 +15798,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removes all songs from Playing Next."
+            "value" : "从“接下来播放”中移除所有歌曲"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removes all songs from Playing Next."
+            "value" : "從「接下來播放」中移除所有歌曲"
           }
         }
       }
@@ -16890,13 +16890,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Artists"
+            "value" : "搜索艺人"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Artists"
+            "value" : "搜尋演出者"
           }
         }
       }
