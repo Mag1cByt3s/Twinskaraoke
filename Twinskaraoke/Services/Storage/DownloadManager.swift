@@ -36,6 +36,10 @@ final class DownloadManager: ObservableObject {
         )
     }
 
+    deinit {
+        networkMonitor.cancel()
+    }
+
     private func files(for songID: String) -> SongFiles {
         let directory = cacheDir.appendingPathComponent(songID, isDirectory: true)
         return SongFiles(
