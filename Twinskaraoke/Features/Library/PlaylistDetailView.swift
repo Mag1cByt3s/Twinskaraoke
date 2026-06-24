@@ -364,20 +364,14 @@ struct PlaylistActionsMenuItems: View {
     @ObservedObject private var savedStore: SavedPlaylistsStore = .shared
     @ObservedObject private var downloads = DownloadManager.shared
 
-    private var pendingSongs: [Song] {
-        songs.filter { !downloads.isDownloaded($0.id) && !downloads.isDownloading($0.id) }
-    }
-
-    private var inFlightCount: Int {
-        songs.filter { downloads.isDownloading($0.id) }.count
-    }
-
-    private var pendingCount: Int {
-        pendingSongs.count
-    }
-
-    private var allDownloaded: Bool {
-        !songs.isEmpty && pendingCount == 0 && inFlightCount == 0
+    private var downloadState: (pendingSongs: [Song], inFlightCount: Int) {
+        songs.reduce(into: (pendingSongs: [], inFlightCount: 0)) { state, song in
+            if downloads.isDownloading(song.id) {
+                state.inFlightCount += 1
+            } else if !downloads.isDownloaded(song.id) {
+                state.pendingSongs.append(song)
+            }
+        }
     }
 
     private var canSaveToLibrary: Bool {
@@ -389,6 +383,12 @@ struct PlaylistActionsMenuItems: View {
     }
 
     var body: some View {
+        let downloadState = downloadState
+        let pendingCount = downloadState.pendingSongs.count
+        let allDownloaded = !songs.isEmpty
+            && pendingCount == 0
+            && downloadState.inFlightCount == 0
+
         if !songs.isEmpty {
             Button {
                 AppHaptic.selection.play()
@@ -423,8 +423,8 @@ struct PlaylistActionsMenuItems: View {
         }
 
         if !songs.isEmpty {
-            if inFlightCount > 0 {
-                Label("Downloading \(inFlightCount)…", systemImage: "arrow.down.circle")
+            if downloadState.inFlightCount > 0 {
+                Label("Downloading \(downloadState.inFlightCount)…", systemImage: "arrow.down.circle")
             } else if allDownloaded {
                 Button(role: .destructive) {
                     AppHaptic.warning.play()
@@ -437,7 +437,7 @@ struct PlaylistActionsMenuItems: View {
             } else {
                 Button {
                     AppHaptic.success.play()
-                    for s in pendingSongs {
+                    for s in downloadState.pendingSongs {
                         DownloadManager.shared.download(song: s)
                     }
                 } label: {
