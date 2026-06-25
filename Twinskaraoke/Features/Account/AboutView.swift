@@ -548,10 +548,6 @@ private struct AboutLegalContentView: View {
     }
 }
 
-enum AppLogoData {
-    static let shared: Data = NSDataAsset(name: "AppLogo")?.data ?? Data()
-}
-
 private struct EasterEggView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {

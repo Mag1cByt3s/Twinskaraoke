@@ -1,0 +1,164 @@
+import Combine
+import Foundation
+
+@MainActor
+final class LibrarySongsViewModel: ObservableObject {
+    @Published var songs: [Song] = []
+    @Published var isLoading = false
+    @Published var isLoadingMore = false
+    @Published var sort: LibrarySongSort = .recentlyAdded
+    @Published var searchText = ""
+    private var hasLoaded = false
+    private var canLoadMore = true
+    private var page = 1
+    private var requestToken = 0
+    private let pageSize = 40
+
+    var displayedSongs: [Song] {
+        let sorted: [Song] = switch sort {
+        case .recentlyAdded:
+            songs
+        case .title:
+            songs.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .artist:
+            songs.sorted {
+                $0.displayArtist.localizedStandardCompare($1.displayArtist) == .orderedAscending
+            }
+        case .duration:
+            songs.sorted { $0.duration < $1.duration }
+        }
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sorted }
+        return sorted.filter { song in
+            song.title.localizedCaseInsensitiveContains(query)
+                || song.displayArtist.localizedCaseInsensitiveContains(query)
+                || song.displayTitle.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    func loadIfNeeded() {
+        guard !hasLoaded else { return }
+        fetch(page: 1, replace: true)
+    }
+
+    func refresh() {
+        hasLoaded = false
+        canLoadMore = true
+        fetch(page: 1, replace: true)
+    }
+
+    func loadMoreIfNeeded(current: Song) {
+        guard canLoadMore, !isLoading, !isLoadingMore else { return }
+        guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let visible = displayedSongs
+        guard let index = visible.firstIndex(where: { $0.id == current.id }) else { return }
+        guard index >= visible.count - 8 else { return }
+        fetch(page: page + 1, replace: false)
+    }
+
+    func loadMore() {
+        guard canLoadMore, !isLoading, !isLoadingMore else { return }
+        guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        fetch(page: page + 1, replace: false)
+    }
+
+    private func fetch(page: Int, replace: Bool) {
+        guard canLoadMore || replace else { return }
+        guard !isLoading, !isLoadingMore else { return }
+        guard let url = URL(string: "\(StorageHost.api)/api/songs") else { return }
+
+        requestToken += 1
+        let token = requestToken
+        if replace {
+            isLoading = songs.isEmpty
+        } else {
+            isLoadingMore = true
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = UserDefaults.standard.string(forKey: "nk.token") {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        GuestIdentity.applyIfNeeded(to: &request)
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "page": page,
+            "pageSize": pageSize,
+            "search": "",
+            "sortBy": "CreatedAt",
+            "sortDescending": true,
+        ])
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            Task { @MainActor [weak self, data, response, error, page, replace, token] in
+                self?.applyResponse(
+                    data,
+                    response: response,
+                    error: error,
+                    page: page,
+                    replace: replace,
+                    token: token
+                )
+            }
+        }.resume()
+    }
+
+    private func applyResponse(
+        _ data: Data?,
+        response: URLResponse?,
+        error: Error?,
+        page: Int,
+        replace: Bool,
+        token: Int
+    ) {
+        guard token == requestToken else { return }
+        defer {
+            isLoading = false
+            isLoadingMore = false
+        }
+
+        if let error {
+            DebugLogger.log("Library songs fetch failed: \(error.localizedDescription)", category: .network)
+            return
+        }
+        if let http = response as? HTTPURLResponse, !(200 ... 299).contains(http.statusCode) {
+            DebugLogger.log("Library songs HTTP \(http.statusCode)", category: .network)
+            return
+        }
+
+        let decoded = Self.decodeSongs(from: data)
+        let filtered = decoded.filter {
+            !$0.title.localizedCaseInsensitiveContains("Temporary Stream Audio")
+        }
+        let pageSongs = filtered.isEmpty ? decoded : filtered
+
+        if replace {
+            songs = pageSongs
+            hasLoaded = true
+        } else {
+            let existing = Set(songs.map(\.id))
+            songs += pageSongs.filter { !existing.contains($0.id) }
+        }
+
+        canLoadMore = pageSongs.count == pageSize
+        if !pageSongs.isEmpty || replace {
+            self.page = page
+        }
+        ArtworkPrefetcher.shared.prefetchSongs(
+            Array(pageSongs.prefix(18)),
+            limit: 18,
+            reason: replace ? "library songs initial" : "library songs page"
+        )
+    }
+
+    private static func decodeSongs(from data: Data?) -> [Song] {
+        guard let data else { return [] }
+        if let decoded = try? JSONDecoder().decode(SearchResponse.self, from: data) {
+            return decoded.items
+        }
+        return SongPayloadDecoder.decodeSongs(from: data) ?? []
+    }
+}
