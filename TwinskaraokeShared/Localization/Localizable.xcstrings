@@ -17749,13 +17749,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Password"
+            "value" : "显示密码"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Password"
+            "value" : "顯示密碼"
           }
         }
       }
@@ -17801,13 +17801,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show the queue for %@"
+            "value" : "显示 %@ 的队列"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show the queue for %@"
+            "value" : "顯示 %@ 的佇列"
           }
         }
       }
@@ -17853,13 +17853,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows a QR code to authorize a browser session."
+            "value" : "显示二维码以验证网页端登录"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows a QR code to authorize a browser session."
+            "value" : "顯示行動條碼以驗證網頁端登入"
           }
         }
       }
@@ -17905,13 +17905,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows actions for %@."
+            "value" : "显示 %@ 的功能菜单"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows actions for %@."
+            "value" : "顯示 %@ 的功能清單"
           }
         }
       }
