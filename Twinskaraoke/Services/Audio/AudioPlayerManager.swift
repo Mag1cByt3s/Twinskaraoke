@@ -2293,10 +2293,18 @@ class AudioPlayerManager: ObservableObject {
             if Thread.isMainThread {
                 return MainActor.assumeIsolated { action() }
             }
-            DispatchQueue.main.async {
-                _ = MainActor.assumeIsolated { action() }
+            // MediaPlayer can deliver remote-command callbacks off the main thread.
+            // Return only after the playback state and Now Playing info have changed;
+            // returning .success before the main actor update lets Control Center redraw
+            // from stale state and can leave the play/pause button out of sync.
+            // Apple documents the public integration path as MPRemoteCommandCenter
+            // handlers plus MPNowPlayingInfoCenter metadata/rate updates:
+            // https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/MediaPlaybackGuide/Contents/Resources/en.lproj/RefiningTheUserExperience/RefiningTheUserExperience.html
+            var status: MPRemoteCommandHandlerStatus = .commandFailed
+            DispatchQueue.main.sync {
+                status = MainActor.assumeIsolated { action() }
             }
-            return .success
+            return status
         }
 
         cc.playCommand.removeTarget(nil)
@@ -2458,10 +2466,18 @@ class AudioPlayerManager: ObservableObject {
         includeExistingArtwork: Bool
     ) -> [String: Any] {
         let currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        // Keep the system surfaces driven by the public Now Playing contract:
+        // metadata, elapsed time, duration, and playback rate. Do not use
+        // MPNowPlayingInfoCenter.playbackState here; on iOS it logs an ignored
+        // MediaRemote private-entitlement warning for third-party apps. The audio
+        // media type matches public Swift player integrations such as Expo's
+        // MediaController:
+        // https://github.com/expo/expo/blob/main/packages/expo-audio/ios/MediaController.swift
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyArtist: song.originalArtists?.joined(separator: ", ") ?? "",
             MPMediaItemPropertyMediaType: MPMediaType.music.rawValue,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
         ]

@@ -935,6 +935,12 @@ final class AVEnginePlayback {
         } else {
             mainPlayer.pause()
         }
+        // File playback uses AVAudioEngine rather than AVPlayer. Pausing only the
+        // AVAudioPlayerNode leaves the engine running, and iOS Control Center can
+        // keep treating the session as actively playing even when Now Playing rate
+        // is 0.0. Pausing the engine makes app, lock-screen, and Control Center
+        // play/pause state agree; resume() restarts it through startEngineIfNeeded().
+        engine.pause()
     }
 
     func resume() {
