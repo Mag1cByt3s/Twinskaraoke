@@ -2330,6 +2330,12 @@ class AudioPlayerManager: ObservableObject {
             return performOnMain {
                 DebugLogger.log("Remote pause command received", category: .playback)
                 if !self.isPlaybackRequested {
+                    // Some iOS surfaces can send pauseCommand from a stale paused
+                    // visual state even when the user is pressing the center play
+                    // button. Treat that stale pause as resume; removing this
+                    // fallback made lock-screen/control state diverge in device
+                    // testing, so this intentionally preserves the working
+                    // system-integration behavior over strict command semantics.
                     return self.resumeCurrentPlayback(source: "remote.pauseAsPlay") ? .success : .commandFailed
                 }
                 return self.pauseCurrentPlayback(source: "remote.pause") ? .success : .commandFailed
@@ -2473,9 +2479,18 @@ class AudioPlayerManager: ObservableObject {
         // media type matches public Swift player integrations such as Expo's
         // MediaController:
         // https://github.com/expo/expo/blob/main/packages/expo-audio/ios/MediaController.swift
+        let originalArtists = song.originalArtists?
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        let artist: String
+        if let originalArtists, !originalArtists.isEmpty {
+            artist = originalArtists
+        } else {
+            artist = song.artistName
+        }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
-            MPMediaItemPropertyArtist: song.originalArtists?.joined(separator: ", ") ?? "",
+            MPMediaItemPropertyArtist: artist,
             MPMediaItemPropertyMediaType: MPMediaType.music.rawValue,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
@@ -2502,7 +2517,7 @@ class AudioPlayerManager: ObservableObject {
         artworkTask = nil
         #if canImport(UIKit)
             if let cached = AudioPlayerManager.artworkCache.object(forKey: url as NSURL) {
-                applyArtwork(cached, for: songID)
+                applyArtwork(cached, for: songID, artworkURL: url)
                 return
             }
             let pixelSize = NSValue(
@@ -2532,18 +2547,19 @@ class AudioPlayerManager: ObservableObject {
                         * squareImage.scale * 4
                 )
                 AudioPlayerManager.artworkCache.setObject(squareImage, forKey: url as NSURL, cost: cost)
-                applyArtwork(squareImage, for: songID)
+                applyArtwork(squareImage, for: songID, artworkURL: url)
             }
         #endif
     }
 
     #if canImport(UIKit)
-        private func applyArtwork(_ image: UIImage, for songID: String?) {
+        private func applyArtwork(_ image: UIImage, for songID: String?, artworkURL requestedURL: URL) {
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             DispatchQueue.main.async { [weak self] in
                 guard let self,
                       let song = self.currentSong,
-                      song.id == songID
+                      song.id == songID,
+                      self.artworkURL == requestedURL
                 else { return }
                 var info = self.makeNowPlayingInfo(
                     for: song,
