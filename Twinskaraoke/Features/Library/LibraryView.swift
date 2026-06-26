@@ -93,7 +93,7 @@ struct LibraryView: View {
                 recentSongsViewModel.loadIfNeeded()
             }
             .onChange(of: favorites.favoriteIDs) { _, _ in
-                viewModel.fetchFavoriteSongs()
+                viewModel.fetchFavoriteSongs(force: true)
             }
             .animation(
                 reduceMotion ? nil : AppMotion.spring(response: 0.34, dampingFraction: 0.84),
@@ -233,8 +233,8 @@ struct LibraryView: View {
     private func refreshLibrary() {
         AppHaptic.selection.play()
         favorites.loadIfNeeded()
-        viewModel.fetchPlaylists()
-        viewModel.fetchFavoriteSongs()
+        viewModel.fetchPlaylists(force: true)
+        viewModel.fetchFavoriteSongs(force: true)
         recentSongsViewModel.refresh()
     }
 }
@@ -374,7 +374,6 @@ struct LibrarySongsView: View {
         let songs = viewModel.displayedSongs
         let isSearching = !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-        let showsRowArtwork = songs.count <= 200
         List {
             if viewModel.isLoading, songs.isEmpty {
                 skeletonRows
@@ -395,7 +394,7 @@ struct LibrarySongsView: View {
                         Button {
                             play(song, context: songs)
                         } label: {
-                            SongRow(song: song, size: .regular, showsArtwork: showsRowArtwork)
+                            SongRow(song: song, size: .regular, showsArtwork: true)
                                 .padding(.vertical, 6)
                                 .contentShape(Rectangle())
                                 .songRowAccessibility(song: song) {
@@ -674,7 +673,7 @@ struct PlaylistsGridScreen: View {
         }
         .task { userManager.loadIfNeeded() }
         .onChange(of: favorites.favoriteIDs) { _, _ in
-            viewModel.fetchFavoriteSongs()
+            viewModel.fetchFavoriteSongs(force: true)
         }
         .animation(
             reduceMotion ? nil : AppMotion.spring(response: 0.34, dampingFraction: 0.84),

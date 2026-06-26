@@ -7,6 +7,7 @@ final class PlaylistsViewModel: ObservableObject {
     @Published var isLoading = false
 
     func fetchMusic() {
+        guard !isLoading, playlists.isEmpty else { return }
         isLoading = true
         Task { [weak self] in
             guard let self else { return }

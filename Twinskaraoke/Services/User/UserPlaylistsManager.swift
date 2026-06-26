@@ -11,12 +11,15 @@ final class UserPlaylistsManager: ObservableObject {
     private var loaded = false
 
     func loadIfNeeded() {
-        fetchPlaylists()
+        fetchPlaylists(force: false)
     }
 
-    func fetchPlaylists() {
+    func fetchPlaylists(force: Bool = true) {
+        guard !isLoading else { return }
+        guard force || !loaded else { return }
         guard UserDefaults.standard.string(forKey: "nk.token") != nil else {
             playlists = []
+            loaded = false
             return
         }
 
@@ -31,6 +34,7 @@ final class UserPlaylistsManager: ObservableObject {
 
             await MainActor.run {
                 self.playlists = decoded
+                self.loaded = true
                 RecentlyAddedTracker.shared.registerIfNew(decoded.map(\.id))
             }
         }

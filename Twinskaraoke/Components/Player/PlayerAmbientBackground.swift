@@ -1,6 +1,7 @@
 import SwiftUI
 
 #if canImport(UIKit)
+    import SDWebImage
     import SDWebImageSwiftUI
 #endif
 
@@ -65,7 +66,12 @@ struct PlayerAmbientBackground: View {
                 WebImage(
                     url: artworkURL,
                     options: ImageCacheConfig.defaultOptions,
-                    context: [.imageThumbnailPixelSize: pixelSize]
+                    context: [
+                        .imageThumbnailPixelSize: pixelSize,
+                        .storeCacheType: NSNumber(value: SDImageCacheType.memory.rawValue),
+                        .originalStoreCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                        .originalQueryCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                    ]
                 ) { image in
                     image
                         .resizable()
@@ -165,8 +171,13 @@ struct PlayerAmbientBackground: View {
             let pixelSize = NSValue(cgSize: CGSize(width: 96, height: 96))
             SDWebImageManager.shared.loadImage(
                 with: url,
-                options: [.retryFailed, .scaleDownLargeImages],
-                context: [.imageThumbnailPixelSize: pixelSize],
+                options: [.scaleDownLargeImages],
+                context: [
+                    .imageThumbnailPixelSize: pixelSize,
+                    .storeCacheType: NSNumber(value: SDImageCacheType.memory.rawValue),
+                    .originalStoreCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                    .originalQueryCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                ],
                 progress: nil
             ) { image, _, _, _, _, _ in
                 guard let image else { return }

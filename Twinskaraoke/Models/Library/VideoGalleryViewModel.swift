@@ -9,15 +9,20 @@ final class VideoGalleryViewModel: ObservableObject {
     @Published var canLoadMore = true
     private var page = 1
     private let pageSize = 25
+    private var loadGeneration = 0
+    private var activeTask: URLSessionDataTask?
 
     func fetchInitial() {
-        guard videos.isEmpty else { return }
+        guard videos.isEmpty, !isLoading else { return }
         page = 1
         canLoadMore = true
         load(reset: true)
     }
 
     func refresh() {
+        activeTask?.cancel()
+        activeTask = nil
+        isLoading = false
         page = 1
         canLoadMore = true
         load(reset: true)
@@ -31,6 +36,7 @@ final class VideoGalleryViewModel: ObservableObject {
     }
 
     private func load(reset: Bool) {
+        guard !isLoading else { return }
         let urlString =
             "\(StorageHost.api)/api/videos?page=\(page)&pageSize=\(pageSize)&sortBy=UploadedAt&sortDescending=True"
         guard let url = URL(string: urlString) else {
@@ -39,22 +45,37 @@ final class VideoGalleryViewModel: ObservableObject {
         }
         isLoading = true
         if reset { errorMessage = nil }
+        loadGeneration += 1
+        let generation = loadGeneration
         var request = URLRequest(url: url)
         GuestIdentity.applyIfNeeded(to: &request)
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            Task { @MainActor [weak self, data, response, error, reset] in
-                self?.applyVideosResponse(data, response: response, error: error, reset: reset)
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            Task { @MainActor [weak self, data, response, error, reset, generation] in
+                self?.applyVideosResponse(
+                    data,
+                    response: response,
+                    error: error,
+                    reset: reset,
+                    generation: generation
+                )
             }
-        }.resume()
+        }
+        activeTask = task
+        task.resume()
     }
 
     private func applyVideosResponse(
         _ data: Data?,
         response: URLResponse?,
         error: Error?,
-        reset: Bool
+        reset: Bool,
+        generation: Int
     ) {
-        defer { isLoading = false }
+        guard generation == loadGeneration else { return }
+        defer {
+            isLoading = false
+            activeTask = nil
+        }
 
         if let error {
             errorMessage = error.localizedDescription
@@ -86,7 +107,7 @@ final class SimilarVideosViewModel: ObservableObject {
     @Published var isLoading = false
 
     func fetch(excluding currentID: String) {
-        guard videos.isEmpty else { return }
+        guard videos.isEmpty, !isLoading else { return }
         let urlString =
             "\(StorageHost.api)/api/videos?startIndex=0&pageSize=20&sortBy=CreatedAt&sortDescending=true"
         guard let url = URL(string: urlString) else { return }

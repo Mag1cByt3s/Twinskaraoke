@@ -203,7 +203,6 @@ struct PlaylistDetailView: View {
         rowHorizontalPadding: CGFloat = AM.Spacing.screenMargin
     ) -> some View {
         if !songs.isEmpty {
-            let showsRowArtwork = songs.count <= 200
             VStack(spacing: 0) {
                 if !isWideOverview {
                     actionButtons(songs: songs)
@@ -213,7 +212,7 @@ struct PlaylistDetailView: View {
                         Button {
                             play(song, context: songs)
                         } label: {
-                            PlaylistRow(song: song, showsArtwork: showsRowArtwork, horizontalPadding: rowHorizontalPadding)
+                            PlaylistRow(song: song, showsArtwork: true, horizontalPadding: rowHorizontalPadding)
                                 .contentShape(Rectangle())
                                 .songRowAccessibility(song: song) {
                                     play(song, context: songs)
@@ -368,4 +367,3 @@ private struct ScrollOffsetKey: PreferenceKey {
 private func quantizedScrollOffset(_ offset: CGFloat) -> CGFloat {
     (offset / 8).rounded() * 8
 }
-

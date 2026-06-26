@@ -176,8 +176,10 @@ final class GenresViewModel: ObservableObject {
     @Published var canLoadMore = true
     private var page = 0
     private let pageSize = 50
+    private var hasLoaded = false
     private var genreDetailOrder: [String] = []
     private let maxCachedGenreDetails = 30
+    private var detailRequestsInFlight = Set<String>()
     private var genresNeedingFallback = Set<String>()
     private var fallbackCancellable: AnyCancellable?
 
@@ -206,6 +208,7 @@ final class GenresViewModel: ObservableObject {
     }
 
     func loadIfNeeded() {
+        guard !hasLoaded, !isLoading else { return }
         fetchPage(0, replace: true)
     }
 
@@ -223,6 +226,8 @@ final class GenresViewModel: ObservableObject {
     }
 
     private func fetchPage(_ page: Int, replace: Bool) {
+        guard replace || (!isLoadingMore && canLoadMore) else { return }
+        guard !isLoading else { return }
         guard
             let url = URL(
                 string:
@@ -231,6 +236,7 @@ final class GenresViewModel: ObservableObject {
         else { return }
         if replace {
             isLoading = true
+            detailRequestsInFlight.removeAll()
         } else {
             isLoadingMore = true
         }
@@ -257,6 +263,7 @@ final class GenresViewModel: ObservableObject {
         let filtered = list.filter { $0.songCount > 0 }
         if replace {
             genres = filtered
+            hasLoaded = true
         } else {
             let existing = Set(genres.map(\.id))
             genres += filtered.filter { !existing.contains($0.id) }
@@ -270,7 +277,9 @@ final class GenresViewModel: ObservableObject {
 
     private func fetchDetail(for genre: GenreSummary) {
         if allSongs[genre.id] != nil { return }
+        guard detailRequestsInFlight.insert(genre.id).inserted else { return }
         guard let url = URL(string: "\(StorageHost.api)/api/genres/\(genre.id)") else {
+            detailRequestsInFlight.remove(genre.id)
             return
         }
         var request = URLRequest(url: url)
@@ -283,6 +292,7 @@ final class GenresViewModel: ObservableObject {
     }
 
     private func applyGenreDetailResponse(_ data: Data?, for genre: GenreSummary) {
+        defer { detailRequestsInFlight.remove(genre.id) }
         guard let data,
               let detail = try? JSONDecoder().decode(GenreDetail.self, from: data),
               let songs = detail.songs
@@ -325,7 +335,7 @@ final class SearchCategorySongsViewModel: ObservableObject {
     }
 
     func loadIfNeeded() {
-        guard !hasLoaded else { return }
+        guard !hasLoaded, !isLoading else { return }
         hasLoaded = true
         fetch()
     }

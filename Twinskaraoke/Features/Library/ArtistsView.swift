@@ -171,11 +171,10 @@ struct ArtistDetailView: View {
                     }
                     .padding(.horizontal)
                     if !songs.isEmpty {
-                        let showsRowArtwork = songs.count <= 200
                         actionButtons
                         LazyVStack(spacing: 0) {
                             ForEach(songs) { song in
-                                ArtistSongRow(song: song, showsArtwork: showsRowArtwork) {
+                                ArtistSongRow(song: song, showsArtwork: true) {
                                     play(song)
                                 }
                                 .padding(.horizontal)

@@ -39,12 +39,16 @@ struct GalleryArt: Codable, Identifiable, Equatable {
     }
 }
 
-class ArtGalleryViewModel: ObservableObject {
+@MainActor
+final class ArtGalleryViewModel: ObservableObject {
     @Published var artists: [GalleryArtist] = []
     @Published var isLoading = false
     @Published var loadFailed = false
+    private var hasLoaded = false
+
     func fetch(force: Bool = false) {
-        guard force || artists.isEmpty else { return }
+        guard !isLoading else { return }
+        guard force || !hasLoaded else { return }
         guard let url = URL(string: "\(StorageHost.api)/api/media/artists?loadArts=true")
         else { return }
         loadFailed = false
@@ -52,20 +56,24 @@ class ArtGalleryViewModel: ObservableObject {
         var request = URLRequest(url: url)
         GuestIdentity.applyIfNeeded(to: &request)
         URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-            guard let self else { return }
-            if let data, let decoded = try? JSONDecoder().decode([GalleryArtist].self, from: data) {
-                let filtered = decoded.filter { ($0.arts?.count ?? 0) > 0 }
+            let filtered = data.flatMap { data -> [GalleryArtist]? in
+                guard let decoded = try? JSONDecoder().decode([GalleryArtist].self, from: data) else {
+                    return nil
+                }
+                return decoded
+                    .filter { ($0.arts?.count ?? 0) > 0 }
                     .sorted { ($0.arts?.count ?? 0) > ($1.arts?.count ?? 0) }
-                DispatchQueue.main.async {
-                    self.artists = filtered
-                    self.loadFailed = false
-                    self.isLoading = false
+            }
+            Task { @MainActor [weak self, filtered] in
+                guard let self else { return }
+                if let filtered {
+                    artists = filtered
+                    hasLoaded = true
+                    loadFailed = false
+                } else {
+                    loadFailed = artists.isEmpty
                 }
-            } else {
-                DispatchQueue.main.async {
-                    self.loadFailed = self.artists.isEmpty
-                    self.isLoading = false
-                }
+                isLoading = false
             }
         }.resume()
     }

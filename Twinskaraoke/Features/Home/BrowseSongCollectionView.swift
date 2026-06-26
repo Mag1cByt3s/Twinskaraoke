@@ -7,10 +7,6 @@ struct BrowseSongCollectionView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var scrollOffset: CGFloat = 0
 
-    private var showsArtwork: Bool {
-        songs.count <= 200
-    }
-
     private func usesWideOverview(availableWidth: CGFloat) -> Bool {
         AM.Layout.usesWideCanvas(
             horizontalSizeClass: horizontalSizeClass,
@@ -157,7 +153,7 @@ struct BrowseSongCollectionView: View {
                         Button {
                             play(song)
                         } label: {
-                            SongRow(song: song, size: .regular, showsArtwork: showsArtwork)
+                            SongRow(song: song, size: .regular, showsArtwork: true)
                                 .padding(.horizontal, rowHorizontalPadding)
                                 .padding(.vertical, 6)
                                 .contentShape(Rectangle())
@@ -168,7 +164,7 @@ struct BrowseSongCollectionView: View {
                         .buttonStyle(PressableButtonStyle(scale: 0.985, dim: 0.78, haptic: .selection))
                         .accessibilityHint("Starts playback.")
                         .accessibilityIdentifier("BrowseSongCollection.song.\(song.id)")
-                        Divider().padding(.leading, rowHorizontalPadding + (showsArtwork ? 60 : 12))
+                        Divider().padding(.leading, rowHorizontalPadding + 60)
                     }
                 }
             }

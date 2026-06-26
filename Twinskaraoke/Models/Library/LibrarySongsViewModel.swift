@@ -6,15 +6,20 @@ final class LibrarySongsViewModel: ObservableObject {
     @Published var songs: [Song] = []
     @Published var isLoading = false
     @Published var isLoadingMore = false
-    @Published var sort: LibrarySongSort = .recentlyAdded
-    @Published var searchText = ""
+    @Published var sort: LibrarySongSort = .recentlyAdded {
+        didSet { rebuildDisplayedSongs() }
+    }
+    @Published var searchText = "" {
+        didSet { rebuildDisplayedSongs() }
+    }
+    @Published private(set) var displayedSongs: [Song] = []
     private var hasLoaded = false
     private var canLoadMore = true
     private var page = 1
     private var requestToken = 0
     private let pageSize = 40
 
-    var displayedSongs: [Song] {
+    private func rebuildDisplayedSongs() {
         let sorted: [Song] = switch sort {
         case .recentlyAdded:
             songs
@@ -29,8 +34,11 @@ final class LibrarySongsViewModel: ObservableObject {
         }
 
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sorted }
-        return sorted.filter { song in
+        guard !query.isEmpty else {
+            displayedSongs = sorted
+            return
+        }
+        displayedSongs = sorted.filter { song in
             song.title.localizedCaseInsensitiveContains(query)
                 || song.displayArtist.localizedCaseInsensitiveContains(query)
                 || song.displayTitle.localizedCaseInsensitiveContains(query)
@@ -142,6 +150,7 @@ final class LibrarySongsViewModel: ObservableObject {
             let existing = Set(songs.map(\.id))
             songs += pageSongs.filter { !existing.contains($0.id) }
         }
+        rebuildDisplayedSongs()
 
         canLoadMore = pageSongs.count == pageSize
         if !pageSongs.isEmpty || replace {

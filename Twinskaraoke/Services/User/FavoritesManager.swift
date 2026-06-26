@@ -8,22 +8,31 @@ final class FavoritesManager: ObservableObject {
     @Published private(set) var favoriteIDs: Set<String> = []
     private var inFlight: Set<String> = []
     private var loaded = false
+    private var isLoading = false
+    private var lastLoadFailure: Date?
+    private let loadFailureRetryDelay: TimeInterval = 30
 
     func isFavorite(_ songID: String) -> Bool {
         favoriteIDs.contains(songID)
     }
 
     func loadIfNeeded() {
-        reload()
+        guard !loaded, !isLoading else { return }
+        if let lastLoadFailure, Date().timeIntervalSince(lastLoadFailure) < loadFailureRetryDelay {
+            return
+        }
+        Task { @MainActor in await load() }
     }
 
     func reload() {
-        Task { await load() }
+        guard !isLoading else { return }
+        Task { @MainActor in await load() }
     }
 
     func clear() {
         favoriteIDs = []
         loaded = false
+        lastLoadFailure = nil
     }
 
     func toggle(songID: String) {
@@ -52,11 +61,18 @@ final class FavoritesManager: ObservableObject {
 
     private func load() async {
         guard UserDefaults.standard.string(forKey: "nk.token") != nil else { return }
+        isLoading = true
+        defer { isLoading = false }
         guard let req = try? KaraokeAPIClient.request(path: "/api/user/favorites"),
               let data = try? await KaraokeAPIClient.data(for: req)
-        else { return }
+        else {
+            lastLoadFailure = Date()
+            return
+        }
         let ids = Self.parseIDs(from: data)
-        await MainActor.run { self.favoriteIDs = Set(ids) }
+        favoriteIDs = Set(ids)
+        loaded = true
+        lastLoadFailure = nil
     }
 
     private func send(songID: String) async -> Bool {

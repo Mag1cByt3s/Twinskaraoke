@@ -9,7 +9,7 @@ final class ArtistsViewModel: ObservableObject {
     private var page = 0
     private let pageSize = 25
     func fetchInitial() {
-        guard artists.isEmpty else { return }
+        guard artists.isEmpty, !isLoading else { return }
         page = 0
         canLoadMore = true
         load(reset: true)
@@ -29,6 +29,7 @@ final class ArtistsViewModel: ObservableObject {
     }
 
     private func load(reset: Bool) {
+        guard !isLoading else { return }
         let startIndex = page * pageSize
         let urlString =
             "\(StorageHost.api)/api/artists?startIndex=\(startIndex)&pageSize=\(pageSize)&search=&sortBy=Name&sortDescending=False"
@@ -80,13 +81,14 @@ final class ArtistDetailViewModel: ObservableObject {
         var request = URLRequest(url: url)
         GuestIdentity.applyIfNeeded(to: &request)
         URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-            Task { @MainActor [weak self, data] in
-                self?.applyArtistDetailResponse(data)
+            Task { @MainActor [weak self, data, id] in
+                self?.applyArtistDetailResponse(data, id: id)
             }
         }.resume()
     }
 
-    private func applyArtistDetailResponse(_ data: Data?) {
+    private func applyArtistDetailResponse(_ data: Data?, id: String) {
+        guard loadedID == id else { return }
         defer { isLoading = false }
 
         guard let data else {

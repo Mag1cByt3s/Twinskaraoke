@@ -31,280 +31,6 @@ enum RepeatMode {
     }
 }
 
-private final class AudioDownloadSession: NSObject, URLSessionDataDelegate {
-    private let songID: String
-    private let partialURL: URL
-    private let finalURL: URL
-    private let minimumPlayableBytes = 512 * 1024
-    private var remoteURL: URL?
-    private var fileHandle: FileHandle?
-    private var task: URLSessionDataTask?
-    private var session: URLSession?
-    private var hasReportedPlayableFallback = false
-    private var expectedContentLength: Int64 = NSURLSessionTransferSizeUnknown
-    private let stateLock = NSLock()
-    private var isCancelled = false
-    private var retryCount = 0
-    private let maxRetries = 3
-    private var retryTimer: Timer?
-    var onCompletion: ((URL?) -> Void)?
-    var onPlayableFallbackReady: ((URL) -> Void)?
-
-    private var partialFileSize: Int {
-        (try? partialURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-    }
-
-    init(songID: String) {
-        self.songID = songID
-        let songFiles = AudioCacheStore.files(for: songID)
-        finalURL = songFiles.main
-        partialURL = songFiles.mainPartial
-        super.init()
-    }
-
-    func start(from remoteURL: URL) {
-        self.remoteURL = remoteURL
-        try? FileManager.default.removeItem(at: partialURL)
-        FileManager.default.createFile(atPath: partialURL.path, contents: nil)
-        fileHandle = try? FileHandle(forWritingTo: partialURL)
-        guard fileHandle != nil else {
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.urlCache = nil
-        configuration.waitsForConnectivity = false
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 300
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-        task = session?.dataTask(with: remoteURL)
-        task?.resume()
-    }
-
-    func cancel() {
-        stateLock.lock()
-        isCancelled = true
-        task?.cancel()
-        session?.invalidateAndCancel()
-        fileHandle?.closeFile()
-        fileHandle = nil
-        retryTimer?.invalidate()
-        retryTimer = nil
-        stateLock.unlock()
-        try? FileManager.default.removeItem(at: partialURL)
-        AudioCacheStore.writeMainSourceURL(nil, for: songID)
-    }
-
-    private func reportPlayableFallbackIfPossible() {
-        guard !hasReportedPlayableFallback else { return }
-        guard
-            let fileSize = try? partialURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-            fileSize >= minimumPlayableBytes
-        else { return }
-        guard AVEnginePlayback.hasValidAudioHeader(at: partialURL) else { return }
-        hasReportedPlayableFallback = true
-        let fallbackURL = partialURL
-        DispatchQueue.main.async { [weak self] in
-            self?.onPlayableFallbackReady?(fallbackURL)
-        }
-    }
-
-    func urlSession(
-        _: URLSession, dataTask _: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        guard AudioCacheStore.acceptsAudioResponse(response) else {
-            DebugLogger.log(
-                "Audio cache download rejected for \(songID): \(response.mimeType ?? "unknown MIME")",
-                category: .cache
-            )
-            completionHandler(.cancel)
-            return
-        }
-        if let http = response as? HTTPURLResponse {
-            expectedContentLength = response.expectedContentLength
-            DebugLogger.log(
-                "Audio cache download response for \(songID): HTTP \(http.statusCode), expectedBytes=\(response.expectedContentLength)",
-                category: .cache
-            )
-        }
-        completionHandler(.allow)
-    }
-
-    func urlSession(_: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
-        stateLock.lock()
-        let cancelled = isCancelled
-        if !cancelled {
-            fileHandle?.write(data)
-        }
-        stateLock.unlock()
-        guard !cancelled else { return }
-        reportPlayableFallbackIfPossible()
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        stateLock.lock()
-        let cancelled = isCancelled
-        fileHandle?.closeFile()
-        fileHandle = nil
-        stateLock.unlock()
-        session.invalidateAndCancel()
-        guard !cancelled else { return }
-        if let error {
-            if shouldRetry(error: error) {
-                scheduleRetry()
-                return
-            }
-            DebugLogger.log(
-                "Audio cache download failed for \(songID): bytes=\(partialFileSize), error=\(error.localizedDescription), retries=\(retryCount)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        if let http = task.response as? HTTPURLResponse, !(200 ... 299).contains(http.statusCode) {
-            if shouldRetryHTTPStatus(http.statusCode) {
-                scheduleRetry()
-                return
-            }
-            DebugLogger.log(
-                "Audio cache download failed for \(songID): HTTP \(http.statusCode), bytes=\(partialFileSize)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        guard let validRemoteURL = remoteURL else {
-            DebugLogger.log(
-                "Audio cache download failed for \(songID): missing remote URL, bytes=\(partialFileSize)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        guard AudioCacheStore.isPlayableAudioFile(at: partialURL) else {
-            DebugLogger.log(
-                "Audio cache download produced unplayable file for \(songID): bytes=\(partialFileSize)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        try? FileManager.default.removeItem(at: finalURL)
-        let completedBytes = partialFileSize
-        if expectedContentLength > 0, Int64(completedBytes) < expectedContentLength {
-            DebugLogger.log(
-                "Audio cache download incomplete for \(songID): bytes=\(completedBytes), expectedBytes=\(expectedContentLength)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-            return
-        }
-        do {
-            try FileManager.default.moveItem(at: partialURL, to: finalURL)
-            AudioCacheStore.writeMainSourceURL(validRemoteURL, for: songID)
-            DebugLogger.log(
-                "Audio cache download completed for \(songID): bytes=\(completedBytes)",
-                category: .cache
-            )
-            let final = finalURL
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(final) }
-        } catch {
-            DebugLogger.log(
-                "Audio cache download move failed for \(songID): \(error.localizedDescription)",
-                category: .cache
-            )
-            try? FileManager.default.removeItem(at: partialURL)
-            AudioCacheStore.writeMainSourceURL(nil, for: songID)
-            DispatchQueue.main.async { [weak self] in self?.onCompletion?(nil) }
-        }
-    }
-
-    private func shouldRetry(error: Error) -> Bool {
-        guard retryCount < maxRetries else { return false }
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain {
-            switch nsError.code {
-            case NSURLErrorTimedOut,
-                 NSURLErrorCannotConnectToHost,
-                 NSURLErrorNetworkConnectionLost,
-                 NSURLErrorDNSLookupFailed,
-                 NSURLErrorNotConnectedToInternet:
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
-
-    private func shouldRetryHTTPStatus(_ statusCode: Int) -> Bool {
-        guard retryCount < maxRetries else { return false }
-        switch statusCode {
-        case 408, 429, 500, 502, 503, 504:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func scheduleRetry() {
-        retryCount += 1
-        let delay = min(pow(2.0, Double(retryCount)), 8.0)
-        DebugLogger.log(
-            "Scheduling retry \(retryCount)/\(maxRetries) for \(songID) after \(delay)s",
-            category: .cache
-        )
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            retryTimer?.invalidate()
-            retryTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                guard !isCancelled, let remoteURL else { return }
-                DebugLogger.log(
-                    "Retrying download for \(songID) (attempt \(retryCount))",
-                    category: .cache
-                )
-                retryTimer = nil
-                hasReportedPlayableFallback = false
-                expectedContentLength = NSURLSessionTransferSizeUnknown
-                try? FileManager.default.removeItem(at: partialURL)
-                FileManager.default.createFile(atPath: partialURL.path, contents: nil)
-                fileHandle = try? FileHandle(forWritingTo: partialURL)
-                guard fileHandle != nil else {
-                    try? FileManager.default.removeItem(at: partialURL)
-                    AudioCacheStore.writeMainSourceURL(nil, for: songID)
-                    onCompletion?(nil)
-                    return
-                }
-                let configuration = URLSessionConfiguration.ephemeral
-                configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-                configuration.urlCache = nil
-                configuration.waitsForConnectivity = false
-                configuration.timeoutIntervalForRequest = 30
-                configuration.timeoutIntervalForResource = 300
-                session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-                task = session?.dataTask(with: remoteURL)
-                task?.resume()
-            }
-        }
-    }
-}
-
 private enum AudioEffect {
     case karaoke, bassEnhance, vocalEnhance, instrumentalEnhance
 }
@@ -589,6 +315,7 @@ class AudioPlayerManager: ObservableObject {
     #endif
     private var lastNowPlayingElapsedSecond: Int?
     private var lastNowPlayingPlaybackRate: Double?
+    private var lastLoggedNowPlayingElapsedSecond: Int?
     private static func loadCrossfadeSeconds() -> Double {
         let raw = UserDefaults.standard.object(forKey: "nk.crossfadeSeconds") as? Double ?? 6.0
         return min(15, max(1, raw))
@@ -621,7 +348,6 @@ class AudioPlayerManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var artworkURL: URL?
     private var artworkTask: (any SDWebImageOperation)?
-    private var downloadSession: AudioDownloadSession?
     private var currentPlaybackURL: URL?
     private var instrumentalTask: Task<Void, Never>?
     private var backgroundAnalysisRetryTask: Task<Void, Never>?
@@ -637,7 +363,6 @@ class AudioPlayerManager: ObservableObject {
     private var handlingAudioSessionInterruption = false
 
     #if canImport(UIKit)
-        private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
         private var trackTransitionTaskID: UIBackgroundTaskIdentifier = .invalid
     #endif
 
@@ -838,9 +563,6 @@ class AudioPlayerManager: ObservableObject {
             .sink { [weak self] _ in self?.handleMediaServicesReset() }
             .store(in: &cancellables)
         #if canImport(UIKit)
-            NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
-                .sink { [weak self] _ in self?.handleBackgroundTransition() }
-                .store(in: &cancellables)
             NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
                 .sink { [weak self] _ in self?.handleMemoryWarning() }
                 .store(in: &cancellables)
@@ -857,22 +579,14 @@ class AudioPlayerManager: ObservableObject {
             existing.player.removeTimeObserver(existing.token)
         }
         artworkTask?.cancel()
-        downloadSession?.cancel()
         cacheCompressionTask?.cancel()
         radioPlayer?.pause()
         #if canImport(UIKit)
-            let backgroundTaskID = bgTaskID
             let transitionTaskID = trackTransitionTaskID
-            bgTaskID = .invalid
             trackTransitionTaskID = .invalid
-            if backgroundTaskID != .invalid || transitionTaskID != .invalid {
+            if transitionTaskID != .invalid {
                 Task { @MainActor in
-                    if backgroundTaskID != .invalid {
-                        UIApplication.shared.endBackgroundTask(backgroundTaskID)
-                    }
-                    if transitionTaskID != .invalid {
-                        UIApplication.shared.endBackgroundTask(transitionTaskID)
-                    }
+                    UIApplication.shared.endBackgroundTask(transitionTaskID)
                 }
             }
         #endif
@@ -881,23 +595,6 @@ class AudioPlayerManager: ObservableObject {
     private func cancelBackgroundAnalysisRetry() {
         backgroundAnalysisRetryTask?.cancel()
         backgroundAnalysisRetryTask = nil
-    }
-
-    private func cancelDownloadSession() {
-        downloadSession?.cancel()
-        downloadSession = nil
-        #if canImport(UIKit)
-            endAudioCacheBackgroundTask()
-        #endif
-    }
-
-    private func completeDownloadSession(_ session: AudioDownloadSession?) -> Bool {
-        guard let session, downloadSession === session else { return false }
-        downloadSession = nil
-        #if canImport(UIKit)
-            endAudioCacheBackgroundTask()
-        #endif
-        return true
     }
 
     private func localPlaybackFileURL(for song: Song) -> URL? {
@@ -1275,7 +972,6 @@ class AudioPlayerManager: ObservableObject {
             category: .playback
         )
         cancelPendingTransitionWork()
-        cancelDownloadSession()
         instrumentalTask?.cancel()
         instrumentalTask = nil
         cancelBackgroundAnalysisRetry()
@@ -1477,7 +1173,6 @@ class AudioPlayerManager: ObservableObject {
                 originalQueue = []
             }
         }
-        cancelDownloadSession()
         let fileURL = localPlaybackFileURL(for: song)
         if let fileURL, let stems = stemsForCachedAIMode(song: song) {
             instrumentalTask?.cancel()
@@ -1528,50 +1223,6 @@ class AudioPlayerManager: ObservableObject {
                 triggerBackgroundAnalysis(for: song)
             }
         }
-        let songID = song.id
-        let session = AudioDownloadSession(songID: songID)
-        downloadSession = session
-        session.onPlayableFallbackReady = { [weak self, weak session] fallbackURL in
-            guard let self else { return }
-            guard downloadSession === session else { return }
-            guard let currentSong, currentSong.id == songID else { return }
-            switchSilentStreamToLocalFallback(fallbackURL, for: currentSong)
-        }
-        session.onCompletion = { [weak self, weak session] url in
-            guard let self else { return }
-            guard completeDownloadSession(session) else { return }
-            guard let url else { return }
-            CacheManager.shared.recordAccess(for: url)
-            let protectedIDs = activeSongIDs()
-            CacheManager.shared.enforceMusicCacheLimits(excluding: protectedIDs)
-            guard let currentSong, currentSong.id == songID else { return }
-            let expectedDuration = currentSong.duration > 0 ? TimeInterval(currentSong.duration) : nil
-            guard
-                let playableURL = AudioCacheStore.playableMainURL(
-                    for: songID,
-                    expectedRemoteURL: currentSong.audioURL,
-                    expectedDuration: expectedDuration
-                )
-            else { return }
-            if isStreamMode, currentPlaybackURL?.path != playableURL.path {
-                let resumeAt = max(0, activePlaybackTime(for: currentSong))
-                let shouldAutoplay = streamPlaybackRequested || isPlaying
-                startStreamPlayback(
-                    url: playableURL,
-                    songID: songID,
-                    startAt: resumeAt,
-                    autoplay: shouldAutoplay
-                )
-            }
-            currentPlaybackURL = playableURL
-            prepareBackgroundStemPlaybackIfPossible(for: currentSong)
-            if anyAIEffectActive {
-                applyMLSeparationIfNeeded()
-            } else if aiEnabled, aiAutoAnalyze {
-                triggerBackgroundAnalysis(for: currentSong)
-            }
-        }
-        session.start(from: remoteURL)
     }
 
     func playNext(song: Song) {
@@ -2126,7 +1777,6 @@ class AudioPlayerManager: ObservableObject {
         deferredAIEffect = nil
         VocalSeparator.shared.cancel()
         VocalSeparator.shared.cancelBackgroundAnalysis()
-        cancelDownloadSession()
         scheduleIdleCacheCompression(excluding: Set<String>())
         isRadioMode = true
         radioArtworkURL = artworkURL
@@ -2152,11 +1802,15 @@ class AudioPlayerManager: ObservableObject {
         player.volume = 1.0
         radioPlayer = player
         radioPlaybackRequested = true
-        setPlaybackState(playing: false, buffering: true, reason: "startRadio")
+        setPlaybackState(
+            playing: false,
+            buffering: true,
+            reloadArtwork: true,
+            reason: "startRadio"
+        )
         observeManagedPlayer(player, item: item, kind: .radio)
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         player.play()
-        updateNowPlayingInfo(reloadArtwork: true)
     }
 
     private func stopRadioPlayer() {
@@ -2197,7 +1851,12 @@ class AudioPlayerManager: ObservableObject {
         streamPlayer = player
         streamStartedAt = Date()
         streamPlaybackRequested = autoplay
-        setPlaybackState(playing: false, buffering: autoplay, reason: "startStreamPlayback")
+        setPlaybackState(
+            playing: false,
+            buffering: autoplay,
+            reloadArtwork: true,
+            reason: "startStreamPlayback"
+        )
         observeManagedPlayer(player, item: item, kind: .stream)
         if startAt > 0 {
             setPreferredStreamResumeTime(startAt, for: songID)
@@ -2239,24 +1898,6 @@ class AudioPlayerManager: ObservableObject {
         } else if autoplay {
             player.play()
         }
-        updateNowPlayingInfo(reloadArtwork: true)
-    }
-
-    private func switchSilentStreamToLocalFallback(_ fallbackURL: URL, for song: Song) {
-        guard isStreamMode, !isRadioMode else { return }
-        guard streamPlaybackRequested else { return }
-        guard currentSong?.id == song.id else { return }
-        guard let startedAt = streamStartedAt, Date().timeIntervalSince(startedAt) >= 3 else { return }
-        let streamTime = streamPlayer?.currentTime().seconds ?? .nan
-        let hasRemoteProgress = streamTime.isFinite && streamTime > 0.25
-
-        guard !hasRemoteProgress else { return }
-        DebugLogger.log(
-            "Switching startup-stalled stream to local fallback for \(song.id)",
-            category: .playback
-        )
-        let resumeAt = max(0, activePlaybackTime(for: song))
-        startStreamPlayback(url: fallbackURL, songID: song.id, startAt: resumeAt)
     }
 
     private func stopStreamPlayer() {
@@ -2314,7 +1955,6 @@ class AudioPlayerManager: ObservableObject {
         DebugLogger.log("Clearing all cache", category: .cache)
         cancelPendingTransitionWork()
         cacheCompressionTask?.cancel()
-        cancelDownloadSession()
         instrumentalTask?.cancel()
         instrumentalTask = nil
         preparedStemSongID = nil
@@ -2653,10 +2293,18 @@ class AudioPlayerManager: ObservableObject {
             if Thread.isMainThread {
                 return MainActor.assumeIsolated { action() }
             }
-            DispatchQueue.main.async {
-                _ = MainActor.assumeIsolated { action() }
+            // MediaPlayer can deliver remote-command callbacks off the main thread.
+            // Return only after the playback state and Now Playing info have changed;
+            // returning .success before the main actor update lets Control Center redraw
+            // from stale state and can leave the play/pause button out of sync.
+            // Apple documents the public integration path as MPRemoteCommandCenter
+            // handlers plus MPNowPlayingInfoCenter metadata/rate updates:
+            // https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/MediaPlaybackGuide/Contents/Resources/en.lproj/RefiningTheUserExperience/RefiningTheUserExperience.html
+            var status: MPRemoteCommandHandlerStatus = .commandFailed
+            DispatchQueue.main.sync {
+                status = MainActor.assumeIsolated { action() }
             }
-            return .success
+            return status
         }
 
         cc.playCommand.removeTarget(nil)
@@ -2681,6 +2329,15 @@ class AudioPlayerManager: ObservableObject {
             guard let self else { return .commandFailed }
             return performOnMain {
                 DebugLogger.log("Remote pause command received", category: .playback)
+                if !self.isPlaybackRequested {
+                    // Some iOS surfaces can send pauseCommand from a stale paused
+                    // visual state even when the user is pressing the center play
+                    // button. Treat that stale pause as resume; removing this
+                    // fallback made lock-screen/control state diverge in device
+                    // testing, so this intentionally preserves the working
+                    // system-integration behavior over strict command semantics.
+                    return self.resumeCurrentPlayback(source: "remote.pauseAsPlay") ? .success : .commandFailed
+                }
                 return self.pauseCurrentPlayback(source: "remote.pause") ? .success : .commandFailed
             }
         }
@@ -2746,27 +2403,18 @@ class AudioPlayerManager: ObservableObject {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             lastNowPlayingElapsedSecond = nil
             lastNowPlayingPlaybackRate = nil
+            lastLoggedNowPlayingElapsedSecond = nil
             updateRemoteCommandAvailability()
             return
         }
-        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        info[MPMediaItemPropertyTitle] = song.title
-        info[MPMediaItemPropertyArtist] = song.originalArtists?.joined(separator: ", ") ?? ""
-        info[MPMediaItemPropertyMediaType] = MPMediaType.music.rawValue
-        if isRadioMode {
-            info[MPNowPlayingInfoPropertyIsLiveStream] = true
-            info[MPMediaItemPropertyPlaybackDuration] = nil
-            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nil
-        } else {
-            info[MPNowPlayingInfoPropertyIsLiveStream] = false
-            info[MPMediaItemPropertyPlaybackDuration] = playbackDuration
-            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = playbackTime
-        }
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         let targetArt = isRadioMode ? radioArtworkURL : song.imageURL
-        if reloadArtwork || artworkURL != targetArt {
-            info[MPMediaItemPropertyArtwork] = nil
+        let shouldReloadArtwork = reloadArtwork || artworkURL != targetArt
+        let info = makeNowPlayingInfo(
+            for: song,
+            elapsed: isRadioMode ? nil : playbackTime,
+            includeExistingArtwork: !shouldReloadArtwork
+        )
+        if shouldReloadArtwork {
             artworkURL = targetArt
             #if canImport(UIKit)
                 if reloadArtwork { nowPlayingArtwork = nil }
@@ -2775,14 +2423,15 @@ class AudioPlayerManager: ObservableObject {
                 loadArtworkAsync(from: targetArt)
             }
         }
-        updateRemoteCommandAvailability()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        updateRemoteCommandAvailability()
         DebugLogger.log(
             "Now Playing updated: rate=\(isPlaying ? 1.0 : 0.0), playing=\(isPlaying), buffering=\(isBuffering)",
             category: .playback
         )
         lastNowPlayingElapsedSecond = isRadioMode ? nil : Int(playbackTime.rounded(.down))
         lastNowPlayingPlaybackRate = isPlaying ? 1.0 : 0.0
+        lastLoggedNowPlayingElapsedSecond = nil
     }
 
     private func updateNowPlayingElapsed(_ elapsed: Double) {
@@ -2794,17 +2443,72 @@ class AudioPlayerManager: ObservableObject {
         let playbackRate = isPlaying ? 1.0 : 0.0
         guard roundedSecond != lastNowPlayingElapsedSecond
             || playbackRate != lastNowPlayingPlaybackRate else { return }
-        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
-        info[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
-        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        DebugLogger.log(
-            "Now Playing elapsed update: elapsed=\(elapsed), rate=\(playbackRate)",
-            category: .playback
+        guard let song = currentSong else {
+            updateNowPlayingInfo(reloadArtwork: false)
+            return
+        }
+        let info = makeNowPlayingInfo(
+            for: song,
+            elapsed: isRadioMode ? nil : elapsed,
+            includeExistingArtwork: true
         )
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        if lastLoggedNowPlayingElapsedSecond == nil
+            || roundedSecond - (lastLoggedNowPlayingElapsedSecond ?? 0) >= 15
+        {
+            DebugLogger.log(
+                "Now Playing elapsed update: elapsed=\(elapsed), rate=\(playbackRate)",
+                category: .playback
+            )
+            lastLoggedNowPlayingElapsedSecond = roundedSecond
+        }
         lastNowPlayingElapsedSecond = roundedSecond
         lastNowPlayingPlaybackRate = playbackRate
+    }
+
+    private func makeNowPlayingInfo(
+        for song: Song,
+        elapsed: TimeInterval?,
+        includeExistingArtwork: Bool
+    ) -> [String: Any] {
+        let currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        // Keep the system surfaces driven by the public Now Playing contract:
+        // metadata, elapsed time, duration, and playback rate. Do not use
+        // MPNowPlayingInfoCenter.playbackState here; on iOS it logs an ignored
+        // MediaRemote private-entitlement warning for third-party apps. The audio
+        // media type matches public Swift player integrations such as Expo's
+        // MediaController:
+        // https://github.com/expo/expo/blob/main/packages/expo-audio/ios/MediaController.swift
+        let originalArtists = song.originalArtists?
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        let artist: String
+        if let originalArtists, !originalArtists.isEmpty {
+            artist = originalArtists
+        } else {
+            artist = song.artistName
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: artist,
+            MPMediaItemPropertyMediaType: MPMediaType.music.rawValue,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
+        ]
+        if includeExistingArtwork,
+           let artwork = currentInfo?[MPMediaItemPropertyArtwork]
+        {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        if isRadioMode {
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        } else {
+            info[MPNowPlayingInfoPropertyIsLiveStream] = false
+            info[MPMediaItemPropertyPlaybackDuration] = playbackDuration
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed ?? playbackTime
+        }
+        return info
     }
 
     private func loadArtworkAsync(from url: URL) {
@@ -2813,7 +2517,7 @@ class AudioPlayerManager: ObservableObject {
         artworkTask = nil
         #if canImport(UIKit)
             if let cached = AudioPlayerManager.artworkCache.object(forKey: url as NSURL) {
-                applyArtwork(cached, for: songID)
+                applyArtwork(cached, for: songID, artworkURL: url)
                 return
             }
             let pixelSize = NSValue(
@@ -2824,8 +2528,13 @@ class AudioPlayerManager: ObservableObject {
             )
             artworkTask = SDWebImageManager.shared.loadImage(
                 with: url,
-                options: [.retryFailed, .scaleDownLargeImages],
-                context: [.imageThumbnailPixelSize: pixelSize],
+                options: [.scaleDownLargeImages],
+                context: [
+                    .imageThumbnailPixelSize: pixelSize,
+                    .storeCacheType: NSNumber(value: SDImageCacheType.memory.rawValue),
+                    .originalStoreCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                    .originalQueryCacheType: NSNumber(value: SDImageCacheType.disk.rawValue),
+                ],
                 progress: nil
             ) { [weak self] image, _, _, _, _, _ in
                 guard let self, currentSong?.id == songID else { return }
@@ -2838,40 +2547,33 @@ class AudioPlayerManager: ObservableObject {
                         * squareImage.scale * 4
                 )
                 AudioPlayerManager.artworkCache.setObject(squareImage, forKey: url as NSURL, cost: cost)
-                applyArtwork(squareImage, for: songID)
+                applyArtwork(squareImage, for: songID, artworkURL: url)
             }
         #endif
     }
 
     #if canImport(UIKit)
-        private func applyArtwork(_ image: UIImage, for songID: String?) {
+        private func applyArtwork(_ image: UIImage, for songID: String?, artworkURL requestedURL: URL) {
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             DispatchQueue.main.async { [weak self] in
-                guard let self, currentSong?.id == songID else { return }
-                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                guard let self,
+                      let song = self.currentSong,
+                      song.id == songID,
+                      self.artworkURL == requestedURL
+                else { return }
+                var info = self.makeNowPlayingInfo(
+                    for: song,
+                    elapsed: self.isRadioMode ? nil : self.playbackTime,
+                    includeExistingArtwork: false
+                )
                 info[MPMediaItemPropertyArtwork] = artwork
                 MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                nowPlayingArtwork = image
+                self.nowPlayingArtwork = image
             }
         }
     #endif
 
     #if canImport(UIKit)
-        private func handleBackgroundTransition() {
-            endAudioCacheBackgroundTask()
-
-            guard downloadSession != nil else { return }
-            bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "AudioCache") { [weak self] in
-                self?.endAudioCacheBackgroundTask()
-            }
-        }
-
-        private func endAudioCacheBackgroundTask() {
-            guard bgTaskID != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(bgTaskID)
-            bgTaskID = .invalid
-        }
-
         private func beginTrackTransitionBackgroundTask() {
             endTrackTransitionBackgroundTask()
             trackTransitionTaskID = UIApplication.shared.beginBackgroundTask(
@@ -3083,7 +2785,6 @@ class AudioPlayerManager: ObservableObject {
         }
         stopStreamPlayer()
         clearPreferredStreamResumeTime()
-        cancelDownloadSession()
         let song = plan.nextSong
         currentPlaybackURL = plan.nextFileURL
         CacheManager.shared.recordAccess(for: plan.nextFileURL)

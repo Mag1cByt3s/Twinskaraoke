@@ -6,6 +6,9 @@ final class PlaylistsViewModel: ObservableObject {
     @Published var playlists: [Playlist] = []
     @Published var favoriteSongs: [Song] = []
     @Published var isLoading = false
+    @Published var isLoadingFavorites = false
+    private var hasLoadedPlaylists = false
+    private var hasLoadedFavoriteSongs = false
 
     var favoritesPlaylist: Playlist {
         let favoriteCount = max(favoriteSongs.count, FavoritesManager.shared.favoriteIDs.count)
@@ -34,7 +37,9 @@ final class PlaylistsViewModel: ObservableObject {
         return [favoritesPlaylist] + combined
     }
 
-    func fetchPlaylists() {
+    func fetchPlaylists(force: Bool = false) {
+        guard !isLoading else { return }
+        guard force || !hasLoadedPlaylists else { return }
         isLoading = true
         Task { [weak self] in
             guard let self else { return }
@@ -47,20 +52,30 @@ final class PlaylistsViewModel: ObservableObject {
                     sortDescending: false
                 )
                 playlists = loaded
+                hasLoadedPlaylists = true
                 RecentlyAddedTracker.shared.registerIfNew(loaded.map(\.id))
             } catch {
-                playlists = []
+                if force || playlists.isEmpty {
+                    playlists = []
+                }
             }
         }
     }
 
-    func fetchFavoriteSongs() {
+    func fetchFavoriteSongs(force: Bool = false) {
+        guard !isLoadingFavorites else { return }
+        guard force || !hasLoadedFavoriteSongs else { return }
+        isLoadingFavorites = true
         Task { [weak self] in
             guard let self else { return }
+            defer { isLoadingFavorites = false }
             do {
                 favoriteSongs = try await KaraokeAPIClient.favoriteSongs()
+                hasLoadedFavoriteSongs = true
             } catch {
-                favoriteSongs = []
+                if force || favoriteSongs.isEmpty {
+                    favoriteSongs = []
+                }
             }
         }
     }

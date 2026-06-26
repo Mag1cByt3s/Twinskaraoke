@@ -174,7 +174,7 @@ struct RandomSongsView: View {
                         } label: {
                             PlaylistRow(
                                 song: song,
-                                showsArtwork: songs.count <= 200,
+                                showsArtwork: true,
                                 horizontalPadding: rowHorizontalPadding
                             )
                             .contentShape(Rectangle())

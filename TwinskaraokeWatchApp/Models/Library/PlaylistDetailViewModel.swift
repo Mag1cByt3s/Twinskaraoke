@@ -12,6 +12,7 @@ final class PlaylistDetailViewModel: ObservableObject {
     }
 
     func fetchSongs() {
+        guard !isLoading, songs.isEmpty else { return }
         isLoading = true
         Task { [weak self] in
             guard let self else { return }

@@ -11,11 +11,11 @@ final class ArtworkPrefetcher {
     private let reuseWindow: TimeInterval = 45
 
     private init() {
-        prefetcher.maxConcurrentPrefetchCount = 2
+        prefetcher.maxConcurrentPrefetchCount = 1
     }
 
     func prefetchSongs(_ songs: [Song], limit: Int = 18, reason: String) {
-        prefetch(urls: songs.compactMap(\.imageURL), limit: limit, reason: reason)
+        prefetch(urls: songs.compactMap(\.imageURL), limit: min(limit, 8), reason: reason)
     }
 
     func prefetchPlaylists(_ playlists: [Playlist], limit: Int = 12, reason: String) {
@@ -27,11 +27,11 @@ final class ArtworkPrefetcher {
             values.append(contentsOf: playlist.initialMosaicArtworkURLs)
             return values
         }
-        prefetch(urls: urls, limit: limit, reason: reason)
+        prefetch(urls: urls, limit: min(limit, 6), reason: reason)
     }
 
     func prefetch(urls: [URL], limit: Int = 18, reason: String) {
-        let selected = freshUniqueURLs(from: urls, limit: limit)
+        let selected = freshUniqueURLs(from: urls, limit: adjustedLimit(limit, reason: reason))
         guard !selected.isEmpty else { return }
 
         let context: [SDWebImageContextOption: Any] = [
@@ -48,7 +48,7 @@ final class ArtworkPrefetcher {
 
         prefetcher.prefetchURLs(
             selected,
-            options: [.lowPriority, .retryFailed, .scaleDownLargeImages],
+            options: [.lowPriority, .scaleDownLargeImages],
             context: context,
             progress: nil
         ) { finished, skipped in
@@ -57,6 +57,17 @@ final class ArtworkPrefetcher {
                 category: .cache
             )
         }
+    }
+
+    private func adjustedLimit(_ limit: Int, reason: String) -> Int {
+        guard limit > 0 else { return 0 }
+        if DownloadManager.shared.hasActiveQueue {
+            return min(limit, reason == "radio metadata" ? 3 : 2)
+        }
+        if AudioPlayerManager.shared.isPlaying {
+            return min(limit, reason == "radio metadata" ? 5 : 4)
+        }
+        return limit
     }
 
     private func freshUniqueURLs(from urls: [URL], limit: Int) -> [URL] {
@@ -70,6 +81,7 @@ final class ArtworkPrefetcher {
             let key = url.absoluteString
             guard seen.insert(key).inserted else { continue }
             guard recentlyRequested[key] == nil else { continue }
+            guard !ArtworkFailureBackoff.shared.isBlocked(url) else { continue }
             recentlyRequested[key] = now
             result.append(url)
             if result.count == limit { break }

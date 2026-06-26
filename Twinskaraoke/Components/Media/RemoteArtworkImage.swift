@@ -55,8 +55,11 @@ struct RemoteArtworkImage: View {
             if let lowResURL, !fullLoaded {
                 WebImage(
                     url: lowResURL,
-                    options: [.retryFailed, .scaleDownLargeImages, .fromCacheOnly],
-                    context: [.imageThumbnailPixelSize: NSValue(cgSize: CGSize(width: 120, height: 120))]
+                    options: [.scaleDownLargeImages, .fromCacheOnly],
+                    context: [
+                        .imageThumbnailPixelSize: NSValue(cgSize: CGSize(width: 120, height: 120)),
+                        .storeCacheType: NSNumber(value: SDImageCacheType.memory.rawValue),
+                    ]
                 ) { image in
                     image
                         .resizable()
@@ -68,7 +71,7 @@ struct RemoteArtworkImage: View {
                     Color.clear
                 }
             }
-            if let url, !loadFailed {
+            if let url, !loadFailed, !ArtworkFailureBackoff.shared.isBlocked(url) {
                 WebImage(
                     url: url,
                     options: ImageCacheConfig.defaultOptions,
@@ -85,8 +88,8 @@ struct RemoteArtworkImage: View {
                 } placeholder: {
                     Color.clear
                 }
-                .onFailure { _ in
-                    markFinishedAfterFailure(for: url)
+                .onFailure { error in
+                    markFinishedAfterFailure(for: url, error: error)
                 }
                 .onSuccess { _, _, cacheType in
                     ArtworkLoadMetrics.shared.record(cacheType: cacheType)
@@ -106,18 +109,38 @@ struct RemoteArtworkImage: View {
                 fullLoaded = true
                 loadFailed = false
             }
+            ArtworkFailureBackoff.shared.clear(loadedURL)
         }
     }
 
-    private func markFinishedAfterFailure(for failedURL: URL) {
+    private func markFinishedAfterFailure(for failedURL: URL, error: Error) {
         guard url == failedURL, !loadFailed else { return }
+        let safeURL = Self.redactedURLString(failedURL)
+        DebugLogger.log(
+            "Artwork load failed for \(safeURL): \(error.localizedDescription)",
+            category: .cache
+        )
+        ArtworkFailureBackoff.shared.recordFailure(failedURL)
         evictFailedImageCache(for: failedURL)
         Task { @MainActor in
             guard url == failedURL, !loadFailed else { return }
             withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
                 loadFailed = true
             }
+            try? await Task.sleep(nanoseconds: ArtworkFailureBackoff.shared.cooldownNanoseconds)
+            guard url == failedURL, loadFailed else { return }
+            ArtworkFailureBackoff.shared.clear(failedURL)
+            withOptionalAnimation(AppMotion.spring(response: 0.12, dampingFraction: 0.9)) {
+                loadFailed = false
+            }
         }
+    }
+
+    private static func redactedURLString(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        components?.fragment = nil
+        return components?.string ?? url.lastPathComponent
     }
 
     private func evictFailedImageCache(for failedURL: URL) {
@@ -142,6 +165,39 @@ struct RemoteArtworkImage: View {
         let h = max(displaySize.height, 1) * scale
         let cap = ImageCacheConfig.thumbnailPixelSize
         return CGSize(width: min(w, cap.width), height: min(h, cap.height))
+    }
+}
+
+final class ArtworkFailureBackoff {
+    static let shared = ArtworkFailureBackoff()
+
+    private let cooldown: TimeInterval = 300
+    private let lock = NSLock()
+    private var blockedUntil: [URL: Date] = [:]
+
+    var cooldownNanoseconds: UInt64 {
+        UInt64(cooldown * 1_000_000_000)
+    }
+
+    func isBlocked(_ url: URL) -> Bool {
+        let now = Date()
+        lock.lock()
+        defer { lock.unlock() }
+        blockedUntil = blockedUntil.filter { $0.value > now }
+        guard let until = blockedUntil[url] else { return false }
+        return until > now
+    }
+
+    func recordFailure(_ url: URL) {
+        lock.lock()
+        blockedUntil[url] = Date().addingTimeInterval(cooldown)
+        lock.unlock()
+    }
+
+    func clear(_ url: URL) {
+        lock.lock()
+        blockedUntil.removeValue(forKey: url)
+        lock.unlock()
     }
 }
 

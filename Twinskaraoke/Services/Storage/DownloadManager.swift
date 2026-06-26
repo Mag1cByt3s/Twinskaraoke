@@ -3,6 +3,36 @@ import Foundation
 import Network
 import SwiftUI
 
+private final class DownloadTaskRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeTokens: [String: UUID] = [:]
+
+    func register(songID: String, token: UUID) {
+        lock.lock()
+        activeTokens[songID] = token
+        lock.unlock()
+    }
+
+    func cancel(songID: String) {
+        lock.lock()
+        activeTokens.removeValue(forKey: songID)
+        lock.unlock()
+    }
+
+    func clear() {
+        lock.lock()
+        activeTokens.removeAll()
+        lock.unlock()
+    }
+
+    func performIfActive<T>(songID: String, token: UUID, _ body: () throws -> T) rethrows -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeTokens[songID] == token else { return nil }
+        return try body()
+    }
+}
+
 @MainActor
 final class DownloadManager: ObservableObject {
     private struct SongFiles {
@@ -12,16 +42,30 @@ final class DownloadManager: ObservableObject {
         let metadata: URL
     }
 
+    private struct ValidDownloadCacheEntry {
+        let source: String?
+        let expectedDuration: TimeInterval?
+        let modifiedAt: Date?
+    }
+
     static let shared = DownloadManager()
     @Published private(set) var downloadedIDs: Set<String> = []
     @Published private(set) var inProgress: Set<String> = []
     @Published private(set) var progress: [String: Double] = [:]
     private let cacheDir: URL
     private var tasks: [String: URLSessionDownloadTask] = [:]
+    private var queuedDownloads: [String: Song] = [:]
+    private var queuedDownloadOrder: [String] = []
+    private var isLoggingDownloadQueue = false
+    private var completedInCurrentQueue = 0
+    private var failedInCurrentQueue = 0
     private var pendingWiFiRepairs: [String: Song] = [:]
+    private var validDownloadCache: [String: ValidDownloadCacheEntry] = [:]
     private var isWiFiAvailable = false
+    private let taskRegistry = DownloadTaskRegistry()
     private let networkMonitor = NWPathMonitor()
     private let networkMonitorQueue = DispatchQueue(label: "DownloadManager.NetworkMonitor")
+    private let maxConcurrentDownloads = 6
 
     private init() {
         cacheDir = FileManager.default
@@ -96,6 +140,10 @@ final class DownloadManager: ObservableObject {
         (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
     }
 
+    private nonisolated static func modificationDate(at url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+    }
+
     func isDownloaded(_ songID: String) -> Bool {
         downloadedIDs.contains(songID)
     }
@@ -104,16 +152,51 @@ final class DownloadManager: ObservableObject {
         inProgress.contains(songID)
     }
 
+    var hasActiveQueue: Bool {
+        !tasks.isEmpty || !queuedDownloadOrder.isEmpty
+    }
+
     func download(song: Song) {
-        guard let remote = song.audioURL else { return }
+        guard song.audioURL != nil else { return }
         if isDownloaded(song.id), playableURL(for: song) != nil { return }
         guard !isDownloading(song.id) else { return }
+        if !isLoggingDownloadQueue {
+            isLoggingDownloadQueue = true
+            completedInCurrentQueue = 0
+            failedInCurrentQueue = 0
+            DebugLogger.log("Download queue started", category: .network)
+        }
         pendingWiFiRepairs.removeValue(forKey: song.id)
-        DebugLogger.log("Starting download: \(song.id)", category: .network)
         inProgress.insert(song.id)
         progress[song.id] = 0
+        queuedDownloads[song.id] = song
+        queuedDownloadOrder.append(song.id)
+        startQueuedDownloadsIfPossible()
+    }
+
+    private func startQueuedDownloadsIfPossible() {
+        while tasks.count < maxConcurrentDownloads, !queuedDownloadOrder.isEmpty {
+            let songID = queuedDownloadOrder.removeFirst()
+            guard let song = queuedDownloads.removeValue(forKey: songID) else { continue }
+            guard inProgress.contains(songID), !downloadedIDs.contains(songID) else {
+                inProgress.remove(songID)
+                progress.removeValue(forKey: songID)
+                continue
+            }
+            startDownloadTask(song: song)
+        }
+    }
+
+    private func startDownloadTask(song: Song) {
+        guard let remote = song.audioURL else {
+            finishDownload(songID: song.id, song: song, moved: false)
+            return
+        }
         let songID = song.id
         let songFiles = files(for: songID)
+        let token = UUID()
+        let taskRegistry = taskRegistry
+        taskRegistry.register(songID: songID, token: token)
         ensureSongDirectory(for: songID)
         let task = URLSession.shared.downloadTask(with: remote) { [weak self] tempURL, response, error in
             var moved = false
@@ -126,18 +209,23 @@ final class DownloadManager: ObservableObject {
                Self.isValidDownloadedAudio(at: tempURL, expectedDuration: expectedDuration)
             {
                 do {
-                    try FileManager.default.createDirectory(
-                        at: songFiles.directory,
-                        withIntermediateDirectories: true
-                    )
-                    try? FileManager.default.removeItem(at: songFiles.audio)
-                    try FileManager.default.moveItem(at: tempURL, to: songFiles.audio)
-                    try? FileManager.default.removeItem(at: songFiles.source)
-                    FileManager.default.createFile(
-                        atPath: songFiles.source.path,
-                        contents: remote.absoluteString.data(using: .utf8)
-                    )
-                    moved = true
+                    moved = try taskRegistry.performIfActive(songID: songID, token: token) {
+                        try FileManager.default.createDirectory(
+                            at: songFiles.directory,
+                            withIntermediateDirectories: true
+                        )
+                        try? FileManager.default.removeItem(at: songFiles.audio)
+                        try FileManager.default.moveItem(at: tempURL, to: songFiles.audio)
+                        try? FileManager.default.removeItem(at: songFiles.source)
+                        FileManager.default.createFile(
+                            atPath: songFiles.source.path,
+                            contents: remote.absoluteString.data(using: .utf8)
+                        )
+                        return true
+                    } ?? false
+                    if !moved {
+                        try? FileManager.default.removeItem(at: tempURL)
+                    }
                 } catch {
                     DebugLogger.log("Download move failed for \(songID): \(error)", category: .network)
                 }
@@ -152,37 +240,70 @@ final class DownloadManager: ObservableObject {
                     )
                 }
             }
-            Task { @MainActor [weak self, moved, song, songID] in
-                self?.finishDownload(songID: songID, song: song, moved: moved)
+            Task { @MainActor [weak self, moved, song, songID, token] in
+                self?.finishDownload(songID: songID, song: song, moved: moved, token: token)
             }
         }
         tasks[song.id] = task
         task.resume()
     }
 
-    private func finishDownload(songID: String, song: Song, moved: Bool) {
+    private func finishDownload(songID: String, song: Song, moved: Bool, token: UUID? = nil) {
+        if let token {
+            let isCurrentTask = taskRegistry.performIfActive(songID: songID, token: token) { true } ?? false
+            guard isCurrentTask else {
+                if moved {
+                    let songFiles = files(for: songID)
+                    try? FileManager.default.removeItem(at: songFiles.audio)
+                    try? FileManager.default.removeItem(at: songFiles.source)
+                }
+                startQueuedDownloadsIfPossible()
+                logDownloadQueueCompletionIfNeeded()
+                return
+            }
+            taskRegistry.cancel(songID: songID)
+        }
         tasks.removeValue(forKey: songID)
-        inProgress.remove(songID)
+        let wasInProgress = inProgress.remove(songID) != nil
         progress.removeValue(forKey: songID)
+        guard wasInProgress else {
+            startQueuedDownloadsIfPossible()
+            logDownloadQueueCompletionIfNeeded()
+            return
+        }
         if moved {
             writeMetadata(for: song)
             downloadedIDs.insert(songID)
-            DebugLogger.log("Download completed: \(songID)", category: .network)
+            validDownloadCache[songID] = ValidDownloadCacheEntry(
+                source: song.audioURL?.absoluteString,
+                expectedDuration: song.duration > 0 ? TimeInterval(song.duration) : nil,
+                modifiedAt: Self.modificationDate(at: files(for: songID).audio)
+            )
+            completedInCurrentQueue += 1
         } else {
+            failedInCurrentQueue += 1
             DebugLogger.log("Download failed: \(songID)", category: .network)
         }
+        startQueuedDownloadsIfPossible()
+        logDownloadQueueCompletionIfNeeded()
     }
 
     func cancel(songID: String) {
+        taskRegistry.cancel(songID: songID)
         tasks[songID]?.cancel()
         tasks.removeValue(forKey: songID)
+        queuedDownloads.removeValue(forKey: songID)
+        queuedDownloadOrder.removeAll { $0 == songID }
         inProgress.remove(songID)
         progress.removeValue(forKey: songID)
+        startQueuedDownloadsIfPossible()
+        logDownloadQueueCompletionIfNeeded()
     }
 
     func remove(songID: String) {
         cancel(songID: songID)
         pendingWiFiRepairs.removeValue(forKey: songID)
+        validDownloadCache.removeValue(forKey: songID)
         let songFiles = files(for: songID)
         try? FileManager.default.removeItem(at: songFiles.directory)
         try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(songID).mp3"))
@@ -196,10 +317,17 @@ final class DownloadManager: ObservableObject {
         for task in tasks.values {
             task.cancel()
         }
+        taskRegistry.clear()
         tasks.removeAll()
+        queuedDownloads.removeAll()
+        queuedDownloadOrder.removeAll()
+        isLoggingDownloadQueue = false
+        completedInCurrentQueue = 0
+        failedInCurrentQueue = 0
         inProgress.removeAll()
         progress.removeAll()
         pendingWiFiRepairs.removeAll()
+        validDownloadCache.removeAll()
 
         let fm = FileManager.default
         if let files = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
@@ -209,6 +337,17 @@ final class DownloadManager: ObservableObject {
         }
         downloadedIDs = []
         DebugLogger.log("All downloads removed", category: .network)
+    }
+
+    private func logDownloadQueueCompletionIfNeeded() {
+        guard isLoggingDownloadQueue, tasks.isEmpty, queuedDownloadOrder.isEmpty else { return }
+        DebugLogger.log(
+            "Download queue complete: completed=\(completedInCurrentQueue), failed=\(failedInCurrentQueue)",
+            category: .network
+        )
+        isLoggingDownloadQueue = false
+        completedInCurrentQueue = 0
+        failedInCurrentQueue = 0
     }
 
     private func refreshExistingDownloads() {
@@ -248,15 +387,30 @@ final class DownloadManager: ObservableObject {
         let songFiles = files(for: song.id)
         guard FileManager.default.fileExists(atPath: songFiles.audio.path) else {
             downloadedIDs.remove(song.id)
+            validDownloadCache.removeValue(forKey: song.id)
             return nil
         }
         let expectedDuration = song.duration > 0 ? TimeInterval(song.duration) : nil
-        guard Self.isValidDownloadedAudio(at: songFiles.audio, expectedDuration: expectedDuration) else {
-            DebugLogger.log("Discarding invalid downloaded audio for \(song.id)", category: .cache)
-            discardBrokenDownloadAndScheduleRepair(for: song, reason: "file validation failed")
+        let expectedSource = song.audioURL?.absoluteString
+        let cachedSource = readSourceURL(for: song.id)
+        if let cachedSource, let expectedSource, cachedSource != expectedSource {
+            DebugLogger.log(
+                "Discarding downloaded audio for \(song.id) due to source mismatch",
+                category: .cache
+            )
+            discardBrokenDownloadAndScheduleRepair(for: song, reason: "source URL changed")
             return nil
         }
-        guard let cached = readSourceURL(for: song.id) else {
+        let resolvedSource = cachedSource ?? expectedSource
+        if hasCachedValidation(
+            for: song.id,
+            audioURL: songFiles.audio,
+            source: resolvedSource,
+            expectedDuration: expectedDuration
+        ) {
+            return songFiles.audio
+        }
+        guard let cachedSource else {
             if let expected = song.audioURL {
                 writeSourceURL(expected, for: song.id)
                 writeMetadata(for: song)
@@ -266,20 +420,56 @@ final class DownloadManager: ObservableObject {
                     category: .cache
                 )
             }
-            return songFiles.audio
-        }
-        guard let expected = song.audioURL?.absoluteString else {
-            return songFiles.audio
-        }
-        guard cached == expected else {
-            DebugLogger.log(
-                "Discarding downloaded audio for \(song.id) due to source mismatch",
-                category: .cache
+            guard Self.isValidDownloadedAudio(at: songFiles.audio, expectedDuration: expectedDuration) else {
+                DebugLogger.log("Discarding invalid downloaded audio for \(song.id)", category: .cache)
+                discardBrokenDownloadAndScheduleRepair(for: song, reason: "file validation failed")
+                return nil
+            }
+            cacheValidDownload(
+                songID: song.id,
+                audioURL: songFiles.audio,
+                source: expectedSource,
+                expectedDuration: expectedDuration
             )
-            discardBrokenDownloadAndScheduleRepair(for: song, reason: "source URL changed")
+            return songFiles.audio
+        }
+        guard Self.isValidDownloadedAudio(at: songFiles.audio, expectedDuration: expectedDuration) else {
+            DebugLogger.log("Discarding invalid downloaded audio for \(song.id)", category: .cache)
+            discardBrokenDownloadAndScheduleRepair(for: song, reason: "file validation failed")
             return nil
         }
+        cacheValidDownload(
+            songID: song.id,
+            audioURL: songFiles.audio,
+            source: cachedSource,
+            expectedDuration: expectedDuration
+        )
         return songFiles.audio
+    }
+
+    private func hasCachedValidation(
+        for songID: String,
+        audioURL: URL,
+        source: String?,
+        expectedDuration: TimeInterval?
+    ) -> Bool {
+        guard let cached = validDownloadCache[songID] else { return false }
+        return cached.source == source
+            && cached.expectedDuration == expectedDuration
+            && cached.modifiedAt == Self.modificationDate(at: audioURL)
+    }
+
+    private func cacheValidDownload(
+        songID: String,
+        audioURL: URL,
+        source: String?,
+        expectedDuration: TimeInterval?
+    ) {
+        validDownloadCache[songID] = ValidDownloadCacheEntry(
+            source: source,
+            expectedDuration: expectedDuration,
+            modifiedAt: Self.modificationDate(at: audioURL)
+        )
     }
 
     /// Returns true only when the on-disk download is conclusively invalid and was removed.
@@ -380,6 +570,7 @@ final class DownloadManager: ObservableObject {
             "Removing confirmed broken download for \(song.id): \(reason)",
             category: .cache
         )
+        validDownloadCache.removeValue(forKey: song.id)
         removeBrokenAudioFiles(for: song)
         guard let repairSong else { return }
         pendingWiFiRepairs[song.id] = repairSong
@@ -389,6 +580,7 @@ final class DownloadManager: ObservableObject {
     private func removeBrokenAudioFiles(for song: Song) {
         cancel(songID: song.id)
         let songFiles = files(for: song.id)
+        validDownloadCache.removeValue(forKey: song.id)
         try? FileManager.default.removeItem(at: songFiles.audio)
         try? FileManager.default.removeItem(at: songFiles.source)
         try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(song.id).mp3"))
