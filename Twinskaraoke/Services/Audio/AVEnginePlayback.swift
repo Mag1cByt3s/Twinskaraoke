@@ -209,6 +209,7 @@ final class AVEnginePlayback {
     private(set) var isCrossfading = false
 
     private var crossfadeTimer: Timer?
+    private var handoffBlendTimer: Timer?
     private var singleLoadTask: Task<LoadedMedia, Error>?
     private var stemsLoadTask: Task<LoadedStemTriple, Error>?
     private var switchToStemsLoadTask: Task<LoadedStemPair, Error>?
@@ -605,6 +606,14 @@ final class AVEnginePlayback {
     }
 
     private func safePlay(_ player: SimpleAudioPlayer, from position: TimeInterval) {
+        safePlay(player, from: position, at: nil)
+    }
+
+    private func safePlay(
+        _ player: SimpleAudioPlayer,
+        from position: TimeInterval,
+        at startTime: AVAudioTime?
+    ) {
         player.stop()
         player.playerNode.reset()
         let dur = player.duration
@@ -618,9 +627,13 @@ final class AVEnginePlayback {
         }
         let clamped = min(position, max(0, dur - 0.25))
         if clamped < 0.05 {
-            player.play()
+            if let startTime {
+                player.play(from: 0, at: startTime)
+            } else {
+                player.play()
+            }
         } else {
-            player.play(from: clamped)
+            player.play(from: clamped, at: startTime)
         }
     }
 
@@ -649,6 +662,8 @@ final class AVEnginePlayback {
         cancelCrossfadeLoadTasks()
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
+        handoffBlendTimer?.invalidate()
+        handoffBlendTimer = nil
         pendingCrossfadeURL = nil
         preloadedCrossfadeURL = nil
         isCrossfading = false
@@ -1188,6 +1203,8 @@ final class AVEnginePlayback {
         cancelCrossfadeLoadTasks()
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
+        handoffBlendTimer?.invalidate()
+        handoffBlendTimer = nil
         preloadedCrossfadeURL = nil
         pendingCrossfadeURL = nil
         guard isCrossfading else {
@@ -1210,6 +1227,8 @@ final class AVEnginePlayback {
     private func finalizeCrossfade() {
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
+        handoffBlendTimer?.invalidate()
+        handoffBlendTimer = nil
         isCrossfading = false
 
         suppressionToken &+= 1
@@ -1402,7 +1421,7 @@ final class AVEnginePlayback {
         mode = .single
         aiStartOffset = 0
         stopAllStems(releasingMedia: true)
-        mainPlayer.volume = 1.0
+        mainPlayer.volume = 0
         resetInstrumentalEQ()
         startEngineIfNeeded()
         let loadedDuration = mainPlayer.duration
@@ -1416,18 +1435,55 @@ final class AVEnginePlayback {
                 ]
             )
         }
+        let handoffLeadTime: TimeInterval = 0.08
+        let handoffStartTime = synchronizedStartTime(leadTime: handoffLeadTime)
         let freshTime = crossfadePlayer.currentTime
         let actualResume = crossfadePlayer.isPlaying && freshTime > resumeTime
             ? freshTime : resumeTime
-        safePlay(mainPlayer, from: actualResume)
+        let scheduledResume = actualResume + handoffLeadTime
+        safePlay(mainPlayer, from: scheduledResume, at: handoffStartTime)
         currentURL = url
         DebugLogger.log(
-            "Crossfade handoff complete url=\(url.lastPathComponent), media=\(Self.describeMedia(media)), resumeTime=\(actualResume), mainTime=\(mainPlayer.currentTime), mainDuration=\(mainPlayer.duration)",
+            "Crossfade handoff complete url=\(url.lastPathComponent), media=\(Self.describeMedia(media)), resumeTime=\(scheduledResume), mainTime=\(mainPlayer.currentTime), mainDuration=\(mainPlayer.duration)",
             category: .playback
         )
-        releasePlayerMedia(crossfadePlayer)
+        beginCrossfadeHandoffBlend(after: handoffLeadTime) { [weak self] in
+            self?.onCrossfadeCompleted?()
+        }
         pendingCrossfadeURL = nil
-        onCrossfadeCompleted?()
+    }
+
+    private func beginCrossfadeHandoffBlend(after delay: TimeInterval, completion: @escaping () -> Void) {
+        handoffBlendTimer?.invalidate()
+        let duration: TimeInterval = 0.35
+        let startTime = Date()
+        let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] timer in
+            guard self != nil else {
+                timer.invalidate()
+                return
+            }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let elapsed = Date().timeIntervalSince(startTime) - delay
+                guard elapsed >= 0 else {
+                    self.mainPlayer.volume = 0
+                    self.crossfadePlayer.volume = 1.0
+                    return
+                }
+                let t = Float(min(1.0, max(0.0, elapsed / duration)))
+                self.mainPlayer.volume = t
+                self.crossfadePlayer.volume = 1.0 - t
+                if t >= 1.0 {
+                    timer.invalidate()
+                    self.handoffBlendTimer = nil
+                    self.mainPlayer.volume = 1.0
+                    self.releasePlayerMedia(self.crossfadePlayer)
+                    completion()
+                }
+            }
+        }
+        handoffBlendTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private static func handoffMedia(
