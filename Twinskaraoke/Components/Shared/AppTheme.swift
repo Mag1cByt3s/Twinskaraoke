@@ -24,7 +24,7 @@ enum AppearanceMode: String, CaseIterable {
     }
 }
 
-extension Color {
+nonisolated extension Color {
     #if canImport(UIKit)
         private static func adaptive(light: UIColor, dark: UIColor) -> Color {
             Color(

@@ -339,6 +339,7 @@ class AudioPlayerManager: ObservableObject {
     private var radioPlaybackRequested = false
     private var streamPlaybackRequested = false
     private var remotePlaybackCacheTask: Task<Void, Never>?
+    private var remotePlaybackCacheToken: UUID?
     private var lastKnownPlaybackTime: TimeInterval = 0
     private var pollTimer: Timer?
     private var streamFadeTimer: Timer?
@@ -620,6 +621,22 @@ class AudioPlayerManager: ObservableObject {
         return AudioCacheStore.playableMainURL(for: song.id, expectedRemoteURL: song.audioURL, expectedDuration: expectedDuration)
     }
 
+    /// Local file lookup for the tap-to-play path: never decompresses on the
+    /// main thread. Compressed-only cache entries return nil here and are
+    /// recovered off-main by the remote playback cache task (which hits the
+    /// same cache and decompresses before playing, without re-downloading).
+    private func immediateLocalPlaybackFileURL(for song: Song) -> URL? {
+        if let downloaded = DownloadManager.shared.playableURL(for: song) {
+            return downloaded
+        }
+        let expectedDuration = song.duration > 0 ? TimeInterval(song.duration) : nil
+        return AudioCacheStore.immediatelyPlayableMainURL(
+            for: song.id,
+            expectedRemoteURL: song.audioURL,
+            expectedDuration: expectedDuration
+        )
+    }
+
     private func cachedStems(for song: Song, sourceURL: URL? = nil) -> CachedStems? {
         let expectedDuration: TimeInterval?
         if song.duration > 0 {
@@ -699,6 +716,13 @@ class AudioPlayerManager: ObservableObject {
                 return progress * fallbackDuration
             }
             return 0
+        }
+        if isRemotePlaybackCaching, let preferredResume = preferredStreamResumeTime(for: song) {
+            let fallbackDuration = Double(song?.duration ?? currentSong?.duration ?? 0)
+            if fallbackDuration > 0 {
+                return min(max(0, preferredResume), fallbackDuration)
+            }
+            return max(0, preferredResume)
         }
         let currentTime = avEngine.currentTime
         if currentTime.isFinite, currentTime >= 0 {
@@ -1192,7 +1216,12 @@ class AudioPlayerManager: ObservableObject {
                 originalQueue = []
             }
         }
-        let fileURL = localPlaybackFileURL(for: song)
+        // Songs with a remote source use the non-decompressing lookup; a
+        // compressed-only cache falls through to startStreamPlayback, whose
+        // cache-hit path decompresses off the main thread.
+        let fileURL = song.audioURL != nil
+            ? immediateLocalPlaybackFileURL(for: song)
+            : localPlaybackFileURL(for: song)
         if let fileURL, let stems = stemsForCachedAIMode(song: song) {
             instrumentalTask?.cancel()
             instrumentalTask = nil
@@ -1405,6 +1434,9 @@ class AudioPlayerManager: ObservableObject {
         if isRemotePlaybackCaching {
             let wasActive = streamPlaybackRequested || isBuffering
             streamPlaybackRequested = false
+            if let preferredResume = preferredStreamResumeTime(for: currentSong) {
+                lastKnownPlaybackTime = preferredResume
+            }
             setPlaybackState(
                 playing: false,
                 buffering: false,
@@ -1535,7 +1567,9 @@ class AudioPlayerManager: ObservableObject {
         if !isPlaying, avEngine.currentURL == nil, let song = currentSong,
            let fileURL = localPlaybackFileURL(for: song)
         {
-            startPlayingFile(fileURL, startAt: lastKnownPlaybackTime)
+            let resumeAt = preferredStreamResumeTime(for: song) ?? lastKnownPlaybackTime
+            clearPreferredStreamResumeTime()
+            startPlayingFile(fileURL, startAt: resumeAt)
             return true
         }
         guard !isPlaying else {
@@ -1584,6 +1618,14 @@ class AudioPlayerManager: ObservableObject {
             if anyAIEffectActive {
                 applyMLSeparationIfNeeded()
             }
+            updateNowPlayingInfo(reloadArtwork: false)
+            return
+        }
+        if isRemotePlaybackCaching, let song = currentSong, song.duration > 0 {
+            let totalDur = Double(song.duration)
+            let targetSeconds = min(totalDur * fraction, totalDur - 1.5)
+            guard targetSeconds >= 0 else { return }
+            setPreferredStreamResumeTime(targetSeconds, for: song.id)
             updateNowPlayingInfo(reloadArtwork: false)
             return
         }
@@ -1953,6 +1995,10 @@ class AudioPlayerManager: ObservableObject {
         }
 
         remotePlaybackCacheTask?.cancel()
+        // Token guard: replaying the same URL cancels the old task, whose
+        // cancellation handler must not reset state owned by the new request.
+        let requestToken = UUID()
+        remotePlaybackCacheToken = requestToken
         remotePlaybackCacheTask = Task { [weak self] in
             do {
                 let cachedURL = try await Self.cacheRemoteAudio(
@@ -1961,11 +2007,13 @@ class AudioPlayerManager: ObservableObject {
                     expectedDuration: expectedDuration
                 )
                 await MainActor.run { [weak self] in
-                    guard let self else { return }
+                    guard let self, remotePlaybackCacheToken == requestToken else { return }
                     guard currentSong?.id == songID, currentPlaybackURL == url else { return }
                     remotePlaybackCacheTask = nil
                     if streamPlaybackRequested {
-                        startPlayingFile(cachedURL, startAt: startAt)
+                        let resumeAt = preferredStreamResumeTime(for: currentSong) ?? startAt
+                        clearPreferredStreamResumeTime()
+                        startPlayingFile(cachedURL, startAt: resumeAt)
                     } else {
                         currentPlaybackURL = cachedURL
                         setPlaybackState(
@@ -1978,7 +2026,8 @@ class AudioPlayerManager: ObservableObject {
                 }
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
-                    guard let self, currentSong?.id == songID else { return }
+                    guard let self, remotePlaybackCacheToken == requestToken else { return }
+                    guard currentSong?.id == songID else { return }
                     guard currentPlaybackURL == url else { return }
                     remotePlaybackCacheTask = nil
                     streamPlaybackRequested = false
@@ -1991,7 +2040,8 @@ class AudioPlayerManager: ObservableObject {
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    guard let self, currentSong?.id == songID else { return }
+                    guard let self, remotePlaybackCacheToken == requestToken else { return }
+                    guard currentSong?.id == songID else { return }
                     guard currentPlaybackURL == url else { return }
                     remotePlaybackCacheTask = nil
                     streamPlaybackRequested = false
@@ -2010,7 +2060,9 @@ class AudioPlayerManager: ObservableObject {
         }
     }
 
-    private static func cacheRemoteAudio(
+    // nonisolated: cache validation, file moves, and possible decompression
+    // are blocking file I/O that must stay off the main actor.
+    private nonisolated static func cacheRemoteAudio(
         from remoteURL: URL,
         songID: String,
         expectedDuration: TimeInterval?
@@ -2081,6 +2133,7 @@ class AudioPlayerManager: ObservableObject {
     private func stopStreamPlayer() {
         remotePlaybackCacheTask?.cancel()
         remotePlaybackCacheTask = nil
+        remotePlaybackCacheToken = nil
         streamPlayerCancellables.removeAll()
         streamPlaybackRequested = false
         if let observer = streamEndObserver {

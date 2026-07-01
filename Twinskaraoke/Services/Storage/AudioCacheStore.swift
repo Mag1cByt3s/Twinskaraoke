@@ -49,6 +49,22 @@ nonisolated enum AudioCacheStore {
         return playableURL(for: files(for: songID).main)
     }
 
+    /// Like `playableMainURL`, but never decompresses: returns nil when only the
+    /// compressed cache exists, so callers on the main thread can defer that
+    /// work to a background path instead.
+    static func immediatelyPlayableMainURL(
+        for songID: String,
+        expectedRemoteURL: URL? = nil,
+        expectedDuration: TimeInterval? = nil
+    ) -> URL? {
+        guard fm.fileExists(atPath: files(for: songID).main.path) else { return nil }
+        return playableMainURL(
+            for: songID,
+            expectedRemoteURL: expectedRemoteURL,
+            expectedDuration: expectedDuration
+        )
+    }
+
     static func playableStems(
         for songID: String,
         startOffset: TimeInterval,

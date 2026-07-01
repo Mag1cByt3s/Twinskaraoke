@@ -158,9 +158,12 @@ struct PlayerAmbientBackground: View {
                 progress: nil
             ) { image, _, _, _, _, _ in
                 guard let image else { return }
-                let extracted = ArtworkPalette(image: image)
-                DispatchQueue.main.async {
-                    palette = extracted
+                // Pixel sampling is too heavy for the main-queue completion.
+                Task.detached(priority: .utility) {
+                    let extracted = ArtworkPalette(image: image)
+                    await MainActor.run {
+                        palette = extracted
+                    }
                 }
             }
         #endif

@@ -4,7 +4,7 @@ import SwiftUI
     import UIKit
 #endif
 
-struct ArtworkPalette: Equatable {
+nonisolated struct ArtworkPalette: Equatable {
     var primary: Color
     var secondary: Color
     var tertiary: Color
@@ -101,7 +101,7 @@ struct ArtworkPalette: Equatable {
 
 #if canImport(UIKit)
 
-    fileprivate extension UIColor {
+    nonisolated fileprivate extension UIColor {
         func distance(to other: UIColor) -> CGFloat {
             var r1: CGFloat = 0
             var g1: CGFloat = 0

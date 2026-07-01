@@ -6,10 +6,10 @@ import SDWebImageSwiftUI
 final class CacheManager: ObservableObject {
     static let shared = CacheManager()
 
-    static let imageCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
-    static let musicCacheLimit: UInt64 = 4 * 1024 * 1024 * 1024
-    static let lyricsCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
-    static let maxCacheAge: TimeInterval = 6 * 30 * 24 * 3600
+    nonisolated static let imageCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
+    nonisolated static let musicCacheLimit: UInt64 = 4 * 1024 * 1024 * 1024
+    nonisolated static let lyricsCacheLimit: UInt64 = 2 * 1024 * 1024 * 1024
+    nonisolated static let maxCacheAge: TimeInterval = 6 * 30 * 24 * 3600
 
     @Published private(set) var imageCacheSize: UInt64 = 0
     @Published private(set) var musicCacheSize: UInt64 = 0
@@ -17,73 +17,85 @@ final class CacheManager: ObservableObject {
 
     private let fm = FileManager.default
 
+    // Maintenance walks entire cache directories (music cache can hold
+    // gigabytes across hundreds of folders). That file I/O must stay off the
+    // main thread; the serial queue also keeps passes from overlapping.
+    private nonisolated static let maintenanceQueue = DispatchQueue(
+        label: "nk.cacheMaintenance", qos: .utility
+    )
+
     private init() {
-        refreshSizes()
-        pruneExpiredEntries()
-        enforceAllLimits()
-        DebugLogger.log("CacheManager initialized", category: .cache)
+        let directories = Self.directories
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let pruned = pruneExpiredEntriesBlocking(directories: directories)
+            DebugLogger.log("Pruned \(pruned) expired cache entries", category: .cache)
+            _ = enforceImageCacheLimitsBlocking(imageDirectory: directories.image)
+            _ = enforceMusicCacheLimitsBlocking(musicDirectory: directories.music, excluding: [])
+            _ = enforceLyricsCacheLimitsBlocking(lyricsDirectory: directories.lyrics)
+            publishSizes(computeSizesBlocking(directories: directories))
+            DebugLogger.log("CacheManager initialized", category: .cache)
+        }
+    }
+
+    private static var directories: (image: URL, music: URL, lyrics: URL) {
+        (imageCacheDirectory, AudioPlayerManager.audioCacheDir, LyricsCacheStore.cacheDirectory)
     }
 
     func enforceAllLimits() {
-        enforceImageCacheLimits()
-        enforceMusicCacheLimits()
-        enforceLyricsCacheLimits()
+        let directories = Self.directories
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let image = enforceImageCacheLimitsBlocking(imageDirectory: directories.image)
+            let music = enforceMusicCacheLimitsBlocking(musicDirectory: directories.music, excluding: [])
+            let lyrics = enforceLyricsCacheLimitsBlocking(lyricsDirectory: directories.lyrics)
+            publishSizes((image: image, music: music, lyrics: lyrics))
+        }
     }
 
     func refreshSizes() {
-        imageCacheSize = computeImageCacheSize()
-        musicCacheSize = computeMusicCacheSize()
-        lyricsCacheSize = computeLyricsCacheSize()
-        DebugLogger.log(
-            "Cache sizes — images: \(formatBytes(imageCacheSize)), music: \(formatBytes(musicCacheSize)), lyrics: \(formatBytes(lyricsCacheSize))",
-            category: .cache
-        )
+        let directories = Self.directories
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            publishSizes(computeSizesBlocking(directories: directories))
+        }
     }
 
     func enforceImageCacheLimits() {
-        let sdCache = SDImageCache.shared
-        let diskSize = UInt64(sdCache.totalDiskSize())
-
-        if diskSize > Self.imageCacheLimit {
-            DebugLogger.log(
-                "Image cache \(formatBytes(diskSize)) exceeds limit \(formatBytes(Self.imageCacheLimit)), clearing oldest",
-                category: .cache
-            )
-            sdCache.deleteOldFiles(completionBlock: nil)
+        let imageDirectory = Self.imageCacheDirectory
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let size = enforceImageCacheLimitsBlocking(imageDirectory: imageDirectory)
+            publishSizes((image: size, music: nil, lyrics: nil))
         }
-
-        let imageCacheDir = Self.imageCacheDirectory
-        evictOldestFiles(in: imageCacheDir, limit: Self.imageCacheLimit, label: "image")
-
-        imageCacheSize = computeImageCacheSize()
     }
 
     func enforceMusicCacheLimits(excluding songIDs: Set<String> = []) {
-        let musicDir = AudioPlayerManager.audioCacheDir
-        evictOldestSongDirectories(in: musicDir, limit: Self.musicCacheLimit, excluding: songIDs)
-        musicCacheSize = computeMusicCacheSize()
+        let musicDirectory = AudioPlayerManager.audioCacheDir
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let size = enforceMusicCacheLimitsBlocking(musicDirectory: musicDirectory, excluding: songIDs)
+            publishSizes((image: nil, music: size, lyrics: nil))
+        }
     }
 
     func enforceLyricsCacheLimits() {
-        evictOldestFiles(in: LyricsCacheStore.cacheDirectory, limit: Self.lyricsCacheLimit, label: "lyrics")
-        lyricsCacheSize = computeLyricsCacheSize()
+        let lyricsDirectory = LyricsCacheStore.cacheDirectory
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let size = enforceLyricsCacheLimitsBlocking(lyricsDirectory: lyricsDirectory)
+            publishSizes((image: nil, music: nil, lyrics: size))
+        }
     }
 
     func pruneExpiredEntries() {
-        let cutoff = Date().addingTimeInterval(-Self.maxCacheAge)
-        DebugLogger.log("Pruning cache entries older than \(cutoff)", category: .cache)
-
-        var prunedCount = 0
-
-        let musicDir = AudioPlayerManager.audioCacheDir
-        prunedCount += pruneOldSongDirectories(in: musicDir, olderThan: cutoff)
-
-        prunedCount += pruneOldFiles(in: LyricsCacheStore.cacheDirectory, olderThan: cutoff)
-
-        SDImageCache.shared.deleteOldFiles(completionBlock: nil)
-
-        DebugLogger.log("Pruned \(prunedCount) expired cache entries", category: .cache)
-        refreshSizes()
+        let directories = Self.directories
+        Self.maintenanceQueue.async { [weak self] in
+            guard let self else { return }
+            let pruned = pruneExpiredEntriesBlocking(directories: directories)
+            DebugLogger.log("Pruned \(pruned) expired cache entries", category: .cache)
+            publishSizes(computeSizesBlocking(directories: directories))
+        }
     }
 
     func recordAccess(for url: URL) {
@@ -142,19 +154,81 @@ final class CacheManager: ObservableObject {
             .appendingPathComponent("com.hackemist.SDImageCache/default", isDirectory: true)
     }
 
-    private func computeImageCacheSize() -> UInt64 {
-        UInt64(SDImageCache.shared.totalDiskSize())
+    // MARK: - Maintenance cores (run on maintenanceQueue, never the main actor)
+
+    private nonisolated func publishSizes(
+        _ sizes: (image: UInt64?, music: UInt64?, lyrics: UInt64?)
+    ) {
+        if let image = sizes.image, let music = sizes.music, let lyrics = sizes.lyrics {
+            DebugLogger.log(
+                "Cache sizes — images: \(formatBytes(image)), music: \(formatBytes(music)), lyrics: \(formatBytes(lyrics))",
+                category: .cache
+            )
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let image = sizes.image { imageCacheSize = image }
+            if let music = sizes.music { musicCacheSize = music }
+            if let lyrics = sizes.lyrics { lyricsCacheSize = lyrics }
+        }
     }
 
-    private func computeMusicCacheSize() -> UInt64 {
-        directorySize(at: AudioPlayerManager.audioCacheDir)
+    private nonisolated func computeSizesBlocking(
+        directories: (image: URL, music: URL, lyrics: URL)
+    ) -> (image: UInt64?, music: UInt64?, lyrics: UInt64?) {
+        (
+            image: UInt64(SDImageCache.shared.totalDiskSize()),
+            music: directorySize(at: directories.music),
+            lyrics: directorySize(at: directories.lyrics)
+        )
     }
 
-    private func computeLyricsCacheSize() -> UInt64 {
-        directorySize(at: LyricsCacheStore.cacheDirectory)
+    private nonisolated func enforceImageCacheLimitsBlocking(imageDirectory: URL) -> UInt64 {
+        let sdCache = SDImageCache.shared
+        let diskSize = UInt64(sdCache.totalDiskSize())
+
+        if diskSize > Self.imageCacheLimit {
+            DebugLogger.log(
+                "Image cache \(formatBytes(diskSize)) exceeds limit \(formatBytes(Self.imageCacheLimit)), clearing oldest",
+                category: .cache
+            )
+            sdCache.deleteOldFiles(completionBlock: nil)
+        }
+
+        evictOldestFiles(in: imageDirectory, limit: Self.imageCacheLimit, label: "image")
+        return UInt64(sdCache.totalDiskSize())
     }
 
-    private func directorySize(at url: URL) -> UInt64 {
+    private nonisolated func enforceMusicCacheLimitsBlocking(
+        musicDirectory: URL,
+        excluding protectedIDs: Set<String>
+    ) -> UInt64 {
+        evictOldestSongDirectories(in: musicDirectory, limit: Self.musicCacheLimit, excluding: protectedIDs)
+        return directorySize(at: musicDirectory)
+    }
+
+    private nonisolated func enforceLyricsCacheLimitsBlocking(lyricsDirectory: URL) -> UInt64 {
+        evictOldestFiles(in: lyricsDirectory, limit: Self.lyricsCacheLimit, label: "lyrics")
+        return directorySize(at: lyricsDirectory)
+    }
+
+    private nonisolated func pruneExpiredEntriesBlocking(
+        directories: (image: URL, music: URL, lyrics: URL)
+    ) -> Int {
+        let cutoff = Date().addingTimeInterval(-Self.maxCacheAge)
+        DebugLogger.log("Pruning cache entries older than \(cutoff)", category: .cache)
+
+        var prunedCount = 0
+        prunedCount += pruneOldSongDirectories(in: directories.music, olderThan: cutoff)
+        prunedCount += pruneOldFiles(in: directories.lyrics, olderThan: cutoff)
+        SDImageCache.shared.deleteOldFiles(completionBlock: nil)
+        return prunedCount
+    }
+
+    // MARK: - File helpers
+
+    private nonisolated func directorySize(at url: URL) -> UInt64 {
+        let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: url,
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
@@ -173,7 +247,8 @@ final class CacheManager: ObservableObject {
         return total
     }
 
-    private func evictOldestFiles(in directory: URL, limit: UInt64, label: String) {
+    private nonisolated func evictOldestFiles(in directory: URL, limit: UInt64, label: String) {
+        let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return }
 
         var currentSize = directorySize(at: directory)
@@ -202,7 +277,12 @@ final class CacheManager: ObservableObject {
         )
     }
 
-    private func evictOldestSongDirectories(in directory: URL, limit: UInt64, excluding protectedIDs: Set<String> = []) {
+    private nonisolated func evictOldestSongDirectories(
+        in directory: URL,
+        limit: UInt64,
+        excluding protectedIDs: Set<String> = []
+    ) {
+        let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return }
 
         var currentSize = directorySize(at: directory)
@@ -223,7 +303,8 @@ final class CacheManager: ObservableObject {
         }
     }
 
-    private func pruneOldFiles(in directory: URL, olderThan cutoff: Date) -> Int {
+    private nonisolated func pruneOldFiles(in directory: URL, olderThan cutoff: Date) -> Int {
+        let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return 0 }
         guard let enumerator = fm.enumerator(
             at: directory,
@@ -247,7 +328,12 @@ final class CacheManager: ObservableObject {
         return count
     }
 
-    private func pruneOldSongDirectories(in directory: URL, olderThan cutoff: Date, excluding protectedIDs: Set<String> = []) -> Int {
+    private nonisolated func pruneOldSongDirectories(
+        in directory: URL,
+        olderThan cutoff: Date,
+        excluding protectedIDs: Set<String> = []
+    ) -> Int {
+        let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return 0 }
         guard
             let entries = try? fm.contentsOfDirectory(
@@ -275,7 +361,8 @@ final class CacheManager: ObservableObject {
         return count
     }
 
-    private func filesOrderedByDate(in directory: URL) -> [URL] {
+    private nonisolated func filesOrderedByDate(in directory: URL) -> [URL] {
+        let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
@@ -296,14 +383,15 @@ final class CacheManager: ObservableObject {
         return files.sorted { $0.date < $1.date }.map(\.url)
     }
 
-    private func fileSize(at url: URL) -> UInt64 {
+    private nonisolated func fileSize(at url: URL) -> UInt64 {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
               let size = values.fileSize
         else { return 0 }
         return UInt64(size)
     }
 
-    private func songDirectoriesOrderedByDate(in directory: URL) -> [URL] {
+    private nonisolated func songDirectoriesOrderedByDate(in directory: URL) -> [URL] {
+        let fm = FileManager.default
         guard
             let entries = try? fm.contentsOfDirectory(
                 at: directory,
@@ -336,14 +424,10 @@ final class CacheManager: ObservableObject {
         }
     }
 
-    private static let bytesFormatter: ByteCountFormatter = {
+    private nonisolated func formatBytes(_ bytes: UInt64) -> String {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useMB, .useGB]
         formatter.countStyle = .binary
-        return formatter
-    }()
-
-    private func formatBytes(_ bytes: UInt64) -> String {
-        Self.bytesFormatter.string(fromByteCount: Int64(bytes))
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 }
