@@ -6,7 +6,7 @@ import Observation
 #endif
 
 /// Downloads, extracts, caches, and exposes the Shimeji resource pack.
-/// The pack is intentionally hosted remotely rather than bundled, so new
+/// The pack is intentionally fetched at runtime rather than bundled, so new
 /// characters/actions can ship without an app update — see manifest.json's
 /// `formatVersion` for the on-disk contract this expects.
 @MainActor
@@ -14,7 +14,13 @@ import Observation
 final class ShimejiResourceManager: NSObject {
     static let shared = ShimejiResourceManager()
 
-    static let packURL = URL(string: "https://sb.sillyprootsoda.com/shimeji_nwero.zip")!
+    /// Served straight out of this repository, so the pack ships with the
+    /// source and costs nothing to host. Tracking `main` rather than a tag or
+    /// commit is what keeps it updatable without an app release: replace
+    /// `Resources/Shimeji/shimeji_nwero.zip` on main and the change is live.
+    static let packURL = URL(
+        string: "https://raw.githubusercontent.com/Evil-Project/Twinskaraoke/main/Resources/Shimeji/shimeji_nwero.zip"
+    )!
 
     private static let removedByUserKey = "nk.shimeji.packRemovedByUser"
 
