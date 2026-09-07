@@ -35,6 +35,8 @@ struct DeveloperMenuView: View {
         .alert("Disable developer mode?", isPresented: $showDisableConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Disable Developer Mode", role: .destructive) {
+                debugLogging = false
+                easterEggAlwaysTrigger = false
                 DeveloperMode.isEnabled = false
                 dismiss()
             }

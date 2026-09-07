@@ -192,7 +192,7 @@ final class TransitionCoordinator {
                 } else {
                     let result = Self.computeFade(outBPM: outBPM, inBPM: inBPM)
 
-                    fadeDuration = min(result.duration, max(1.0, crossfadeSeconds))
+                    fadeDuration = result.duration
                     rampStyle = result.style
                 }
             } else {

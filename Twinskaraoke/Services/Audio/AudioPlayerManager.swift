@@ -82,7 +82,14 @@ final class AudioPlayerManager {
     var routeName: String = ""
     var repeatMode: RepeatMode = .off
     var isShuffled: Bool { queueState.isShuffled }
-    var autoplayEnabled: Bool = true
+    var autoplayEnabled: Bool = UserDefaults.standard.object(forKey: "nk.autoplayEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(autoplayEnabled, forKey: "nk.autoplayEnabled")
+            if !autoplayEnabled {
+                cancelAutoplayRequest()
+            }
+        }
+    }
     var isRadioMode: Bool = false
     var radioArtworkURL: URL?
     private var isStreamMode: Bool {
@@ -99,6 +106,12 @@ final class AudioPlayerManager {
             UserDefaults.standard.set(aiEnabled, forKey: "nk.aiEnabled")
             DebugLogger.log("AI enabled: \(aiEnabled)", category: .ai)
             if !aiEnabled {
+                cancelBackgroundAnalysisRetry()
+                instrumentalTask?.cancel()
+                instrumentalTask = nil
+                preparedStemTask?.cancel()
+                preparedStemTask = nil
+                separationGeneration &+= 1
                 _suppressModeSwitch = true
                 karaokeMode = false
                 bassEnhanceMode = false
@@ -111,6 +124,9 @@ final class AudioPlayerManager {
                 VocalSeparator.shared.cancelBackgroundAnalysis()
                 VocalSeparator.shared.cleanupRealtimeTemp()
                 if avEngine.mode == .aiStems { avEngine.revertToMain() }
+            } else if aiAutoAnalyze, let song = currentSong, !isRadioMode {
+                triggerBackgroundAnalysis(for: song)
+                prepareBackgroundStemPlaybackIfPossible(for: song)
             }
         }
     }
@@ -128,6 +144,7 @@ final class AudioPlayerManager {
                 prepareBackgroundStemPlaybackIfPossible(for: song)
             }
             if !aiAutoAnalyze {
+                cancelBackgroundAnalysisRetry()
                 preparedStemSongID = nil
                 deferredAIEffect = nil
                 VocalSeparator.shared.cancelBackgroundAnalysis()
@@ -357,7 +374,8 @@ final class AudioPlayerManager {
     private var streamPlaybackRequested = false
     @ObservationIgnored private var remotePlaybackCacheTask: Task<Void, Never>?
     private var remotePlaybackCacheToken: UUID?
-    private var fetchRandomTrendingToken: UUID?
+    private var autoplayRequestToken: UUID?
+    @ObservationIgnored private var autoplayTask: Task<Void, Never>?
     private var cacheRecoverySongID: String?
     // Song IDs already sent through enrichSongMetadataIfNeeded this session;
     // repeat-one loops would otherwise re-issue the search + trending
@@ -1355,6 +1373,7 @@ final class AudioPlayerManager {
         preserveCacheRecoveryState: Bool = false,
         reportsPlayCount: Bool = true
     ) {
+        cancelAutoplayRequest()
         if !preserveCacheRecoveryState {
             cacheRecoverySongID = nil
         }
@@ -1399,6 +1418,9 @@ final class AudioPlayerManager {
         }
         progress = 0
         currentSong = song
+        if UserDefaults.standard.bool(forKey: "nk.downloadOnPlay"), song.audioURL != nil {
+            DownloadManager.shared.download(song: song)
+        }
         warmPlayerArtwork(for: song)
         queueState.replaceContext(context, current: song)
         checkEasterEgg(for: song)
@@ -1608,6 +1630,7 @@ final class AudioPlayerManager {
     /// Returns true when a pause request matched an active or resumable playback path.
     @discardableResult
     private func pauseCurrentPlayback(source: String = #function) -> Bool {
+        cancelAutoplayRequest()
         if !handlingAudioSessionInterruption {
             wasPlayingBeforeInterruption = false
         }
@@ -1911,7 +1934,7 @@ final class AudioPlayerManager {
         case .play(let song):
             play(song: song)
         case .autoplay:
-            fetchRandomTrending()
+            fetchAutoplaySongs()
         case .stop:
             avEngine.pause()
             setPlaybackState(
@@ -2101,6 +2124,7 @@ final class AudioPlayerManager {
     }
 
     func playRadio(streamURL: URL, song: Song, artworkURL: URL?) {
+        cancelAutoplayRequest()
         AppPerformance.event("Radio Playback Request")
         resetEasterEggWork()
         let alreadyOnSameStation = isRadioMode && currentSong?.id == song.id
@@ -2268,6 +2292,14 @@ final class AudioPlayerManager {
                         forceNowPlayingUpdate: true,
                         reason: "startStreamPlayback.cacheFailed"
                     )
+                    // Nothing downstream will release the transition task on
+                    // this path: playback never reaches startPlayingFile, and
+                    // an autoplay handoff has already cleared its token, so
+                    // cancelAutoplayRequest() returns early. Without this the
+                    // task is held until iOS expires it.
+                    #if canImport(UIKit)
+                        endTrackTransitionBackgroundTask()
+                    #endif
                 }
             }
         }
@@ -2440,6 +2472,10 @@ final class AudioPlayerManager {
         warmedPlayerArtworkAt.removeAll()
         cacheCompressionTask?.cancel()
         remotePlaybackCacheTask?.cancel()
+        remotePlaybackCacheToken = UUID()
+        remotePlaybackCacheTask = nil
+        cancelBackgroundAnalysisRetry()
+        separationGeneration &+= 1
         instrumentalTask?.cancel()
         instrumentalTask = nil
         preparedStemTask?.cancel()
@@ -2450,13 +2486,13 @@ final class AudioPlayerManager {
         VocalSeparator.shared.cancel()
         VocalSeparator.shared.cancelBackgroundAnalysis()
         VocalSeparator.shared.cleanupRealtimeTemp()
-        let fm = FileManager.default
-        if let entries = try? fm.contentsOfDirectory(
-            at: AudioPlayerManager.audioCacheDir, includingPropertiesForKeys: nil
-        ) {
-            for url in entries {
-                try? fm.removeItem(at: url)
-            }
+        // CacheManager removes files once, on its serial maintenance queue.
+        // Keep cancellation and engine mutations on the main actor.
+        temporarilyDisableAIEffects()
+        if avEngine.mode == .aiStems { avEngine.revertToMain() }
+        if !isRadioMode, isBuffering {
+            streamPlaybackRequested = false
+            setPlaybackState(playing: false, buffering: false, reason: "clearCache")
         }
         #if canImport(UIKit)
             AudioPlayerManager.artworkCache.removeAllObjects()
@@ -2470,6 +2506,12 @@ final class AudioPlayerManager {
             return nil
         }
         return immediatelyCachedStems(for: song, sourceURL: localPlaybackFileURL(for: song))
+    }
+
+    func autoDownloadCurrentSongIfEnabled() {
+        guard !isRadioMode, UserDefaults.standard.bool(forKey: "nk.downloadOnPlay"),
+              let song = currentSong, song.audioURL != nil else { return }
+        DownloadManager.shared.download(song: song)
     }
 
     private func triggerBackgroundAnalysis(for song: Song) {
@@ -3212,37 +3254,49 @@ final class AudioPlayerManager {
         }
     }
 
-    private func fetchRandomTrending() {
-        // Staleness fence (same idea as remotePlaybackCacheToken): the fetch
-        // is unstructured, so if the user starts other playback while it is
-        // in flight, the completion must not stomp that playback.
+    private func cancelAutoplayRequest() {
+        guard autoplayRequestToken != nil else { return }
+        autoplayRequestToken = nil
+        autoplayTask?.cancel()
+        autoplayTask = nil
+        setPlaybackState(playing: false, buffering: false, reason: "autoplay.cancelled")
+        #if canImport(UIKit)
+            endTrackTransitionBackgroundTask()
+        #endif
+    }
+
+    private func fetchAutoplaySongs() {
+        cancelAutoplayRequest()
+        guard autoplayEnabled else { return }
+        #if canImport(UIKit)
+            beginTrackTransitionBackgroundTask()
+        #endif
         let fenceSongID = currentSong?.id
         let requestToken = UUID()
-        fetchRandomTrendingToken = requestToken
-        Task {
-            guard let songs = try? await KaraokeAPIClient.trendingSongs(days: 7, take: 50),
-                  let random = songs.randomElement()
-            else {
-                // Only touch state/the background task while this request
-                // still owns the playback flow.
-                guard fetchRandomTrendingToken == requestToken, currentSong?.id == fenceSongID else { return }
-                setPlaybackState(
-                    playing: false,
-                    buffering: false,
-                    reason: "fetchRandomTrending.failed"
-                )
+        autoplayRequestToken = requestToken
+        autoplayTask = Task { [weak self] in
+            var candidates: [Song] = []
+            if CredentialStore.isAuthenticated {
+                candidates = (try? await KaraokeAPIClient.songSuggestions(take: 50)) ?? []
+            }
+            guard !Task.isCancelled else { return }
+            var songs = AutoplaySelection.playableSongs(candidates, excluding: fenceSongID)
+            if songs.isEmpty {
+                candidates = (try? await KaraokeAPIClient.trendingSongs(days: 7, take: 50)) ?? []
+                songs = AutoplaySelection.playableSongs(candidates, excluding: fenceSongID).shuffled()
+            }
+            guard !Task.isCancelled, let self, autoplayEnabled, !isRadioMode,
+                  autoplayRequestToken == requestToken, currentSong?.id == fenceSongID else { return }
+            autoplayRequestToken = nil
+            autoplayTask = nil
+            guard let next = songs.first else {
+                setPlaybackState(playing: false, buffering: false, reason: "autoplay.noSongs")
                 #if canImport(UIKit)
                     endTrackTransitionBackgroundTask()
                 #endif
                 return
             }
-            let rotatedQueue: [Song] = if let index = songs.firstIndex(of: random) {
-                Array(songs[index...]) + Array(songs[..<index])
-            } else {
-                songs
-            }
-            guard fetchRandomTrendingToken == requestToken, currentSong?.id == fenceSongID else { return }
-            play(song: random, context: rotatedQueue)
+            play(song: next, context: songs)
         }
     }
 
@@ -3441,6 +3495,7 @@ final class AudioPlayerManager {
         }
         upcomingSong = nil
         checkEasterEgg(for: song)
+        autoDownloadCurrentSongIfEnabled()
         setPlaybackState(
             playing: true,
             buffering: false,

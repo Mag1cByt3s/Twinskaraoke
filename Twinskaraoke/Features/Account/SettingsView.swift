@@ -4,10 +4,6 @@ struct SettingsView: View {
     @Bindable private var audioManager = AudioPlayerManager.shared
     private let cacheManager = CacheManager.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @AppStorage("nk.addPlaylistSongsToLibrary") private var addPlaylistSongsToLibrary: Bool = false
-    @AppStorage("nk.addFavoriteSongsToLibrary") private var addFavoriteSongsToLibrary: Bool = true
-    @AppStorage("nk.syncLibrary") private var syncLibrary: Bool = true
-    @AppStorage("nk.streamingQuality") private var streamingQuality: String = "high"
     @AppStorage("nk.downloadOnPlay") private var downloadOnPlay: Bool = false
     @AppStorage("nk.appearance") private var appearanceMode: String = AppearanceMode.dark.rawValue
     @AppStorage(AppLanguage.storageKey) private var languageMode: String = AppLanguage.system.rawValue
@@ -17,7 +13,10 @@ struct SettingsView: View {
     @AppStorage("nk.experimentsEnabled") private var experimentsEnabled: Bool = false
     @AppStorage("nk.experimentalThemesEnabled") private var experimentalThemesEnabled: Bool = false
     @AppStorage("nk.experimentalShimejiEnabled") private var shimejiEnabled: Bool = false
+    @AppStorage("nk.developerMode") private var developerModeEnabled = false
     @State private var pendingAction: SettingsDestructiveAction?
+    @State private var isClearingStorage = false
+    @State private var showStorageError = false
     @State private var showAutoAnalyzeAlert = false
     @State private var showExperimentsAlert = false
     private var visibleEQPresets: [EQPreset] {
@@ -34,8 +33,13 @@ struct SettingsView: View {
         settingsContent
             .navigationTitle("Music")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("Could Not Clear Storage", isPresented: $showStorageError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Some files could not be removed. Please try again.")
+            }
             .alert(
-                pendingAction?.title ?? "",
+                Text(LocalizedStringKey(pendingAction?.title ?? "")),
                 isPresented: Binding(
                     get: { pendingAction != nil },
                     set: { if !$0 { pendingAction = nil } }
@@ -44,11 +48,11 @@ struct SettingsView: View {
             ) { action in
                 Button("Cancel", role: .cancel) {}
                     .tint(Color(uiColor: .systemBlue))
-                Button(action.actionLabel, role: .destructive) {
+                Button(LocalizedStringKey(action.actionLabel), role: .destructive) {
                     perform(action)
                 }
             } message: { action in
-                Text(action.message)
+                Text(LocalizedStringKey(action.message))
             }
             .alert(
                 "Turn on auto-analyze during playback?",
@@ -101,7 +105,6 @@ struct SettingsView: View {
 
     private var settingsList: some View {
         List {
-            librarySection
             audioSection
             downloadsSection
             if DeviceCapability.supportsKaraoke {
@@ -123,38 +126,6 @@ struct SettingsView: View {
         .groupedScreenBackground()
     }
 
-    private var librarySection: some View {
-        Section {
-            Toggle("Add Playlist Songs", isOn: $addPlaylistSongsToLibrary)
-            .toggleHaptic(addPlaylistSongsToLibrary)
-                .tint(.appAccent)
-            Toggle("Add Favorite Songs", isOn: $addFavoriteSongsToLibrary)
-            .toggleHaptic(addFavoriteSongsToLibrary)
-                .tint(.appAccent)
-            Toggle("Sync Library", isOn: $syncLibrary)
-            .toggleHaptic(syncLibrary)
-                .tint(.appAccent)
-        } header: {
-            Text("Library")
-        } footer: {
-            Text("Add songs to your library when you add them to playlists or favorite them. Sync keeps library changes available across this app on your devices.")
-        }
-    }
-
-    private var overviewSection: some View {
-        Section {
-            SettingsOverviewCard(
-                title: audioManager.currentSong?.title ?? "Ready to Play",
-                subtitle: audioManager.currentSong?.displayArtist ?? "Tune playback for Twinskaraoke",
-                isPlaying: audioManager.isPlaying,
-                badges: settingsBadges
-            )
-            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
-            .listRowBackground(Color.clear)
-        }
-        .listSectionSpacing(8)
-    }
-
     private var audioSection: some View {
         Section {
             Toggle("Auto Mix", isOn: $audioManager.autoMixEnabled)
@@ -172,24 +143,18 @@ struct SettingsView: View {
                 )
             }
             Toggle(
-                "Autoplay Similar Songs",
+                "Autoplay",
                 isOn: Binding(
                     get: { audioManager.autoplayEnabled },
-                    set: { _ in audioManager.toggleAutoplay() }
+                    set: { audioManager.autoplayEnabled = $0 }
                 )
             )
             .toggleHaptic(audioManager.autoplayEnabled)
             .tint(.appAccent)
-            Picker("Audio Quality", selection: $streamingQuality) {
-                Text("High Efficiency").tag("low")
-                Text("High Quality").tag("medium")
-                Text("Lossless").tag("high")
-            }
-            .selectionHaptic(streamingQuality)
         } header: {
             Text("Audio")
         } footer: {
-            Text("Auto Mix blends compatible songs automatically. Crossfade uses the fixed duration you choose.")
+            Text("Auto Mix blends compatible songs automatically. Crossfade uses the fixed duration you choose. Autoplay continues with account recommendations, or trending songs when recommendations are unavailable. These features do not apply to radio.")
         }
     }
 
@@ -197,11 +162,14 @@ struct SettingsView: View {
         Section {
             Toggle("Auto-Download Played Songs", isOn: $downloadOnPlay)
             .toggleHaptic(downloadOnPlay)
+                .onChange(of: downloadOnPlay) { _, enabled in
+                    if enabled { audioManager.autoDownloadCurrentSongIfEnabled() }
+                }
                 .tint(.appAccent)
         } header: {
             Text("Downloads")
         } footer: {
-            Text("When enabled, songs you play are saved for offline listening.")
+            Text("When enabled, the current song and songs you play next are saved for offline listening. This may use cellular data. Turning this off leaves existing downloads and downloads already in progress intact.")
         }
     }
 
@@ -224,16 +192,17 @@ struct SettingsView: View {
             if hapticsEnabled {
                 Picker("Strength", selection: hapticStrengthBinding) {
                     ForEach(AppHapticStrength.allCases) { strength in
-                        Text(strength.label).tag(strength)
+                        Text(LocalizedStringKey(strength.label)).tag(strength)
                     }
                 }
+                .accessibilityIdentifier("Settings.HapticStrength")
             }
         } header: {
             Text("Haptics")
         } footer: {
-            Text(hapticsEnabled
+            Text(LocalizedStringKey(hapticsEnabled
                 ? "Taps, swipes and controls answer back with a vibration. Strength sets how hard they land — each control keeps its own character at every level."
-                : "Taps, swipes and controls answer back with a vibration.")
+                : "Taps, swipes and controls answer back with a vibration."))
         }
     }
 
@@ -277,13 +246,18 @@ struct SettingsView: View {
         Section("Appearance") {
             Picker("Theme", selection: $appearanceMode) {
                 ForEach(visibleAppearanceModes, id: \.rawValue) { mode in
-                    Text(mode.label).tag(mode.rawValue)
+                    Text(LocalizedStringKey("Theme." + mode.rawValue)).tag(mode.rawValue)
                 }
             }
+            .accessibilityIdentifier("Settings.Theme")
             .selectionHaptic(appearanceMode)
             Picker("Language", selection: $languageMode) {
                 ForEach(AppLanguage.allCases) { language in
-                    Text(language.displayName).tag(language.rawValue)
+                    if language == .system {
+                        Text("System").tag(language.rawValue)
+                    } else {
+                        Text(language.displayName).tag(language.rawValue)
+                    }
                 }
             }
             .selectionHaptic(languageMode)
@@ -373,7 +347,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var developerSection: some View {
-        if DeveloperMode.isEnabled {
+        if developerModeEnabled {
             Section {
                 NavigationLink {
                     DeveloperMenuView()
@@ -384,29 +358,6 @@ struct SettingsView: View {
         }
     }
 
-    private var settingsBadges: [SettingsOverviewBadge] {
-        var badges: [SettingsOverviewBadge] = []
-        if audioManager.crossfadeEnabled {
-            badges.append(SettingsOverviewBadge(title: "\(Int(audioManager.crossfadeSeconds.rounded()))s Crossfade", symbol: "arrow.left.arrow.right"))
-        }
-        if audioManager.eqEnabled {
-            badges.append(SettingsOverviewBadge(title: "EQ", symbol: "slider.vertical.3"))
-        }
-        if audioManager.karaokeMode {
-            badges.append(SettingsOverviewBadge(title: "Vocal Removal", symbol: "music.mic"))
-        } else if audioManager.bassEnhanceMode {
-            badges.append(SettingsOverviewBadge(title: "Bass Enhance", symbol: "speaker.wave.3"))
-        } else if audioManager.vocalEnhanceMode {
-            badges.append(SettingsOverviewBadge(title: "Vocal Enhance", symbol: "music.mic.circle"))
-        } else if audioManager.instrumentalEnhanceMode {
-            badges.append(SettingsOverviewBadge(title: "Instrumental", symbol: "music.note"))
-        }
-        if downloadOnPlay {
-            badges.append(SettingsOverviewBadge(title: "Auto Download", symbol: "arrow.down.circle"))
-        }
-        return badges.isEmpty ? [SettingsOverviewBadge(title: "Default", symbol: "checkmark.circle")] : badges
-    }
-
     private var equalizerSection: some View {
         Section {
             Toggle("Equalizer", isOn: $audioManager.eqEnabled)
@@ -415,7 +366,7 @@ struct SettingsView: View {
             if audioManager.eqEnabled {
                 Picker("Preset", selection: $audioManager.eqPreset) {
                     ForEach(visibleEQPresets) { preset in
-                        Text(preset.rawValue).tag(preset)
+                        Text(LocalizedStringKey(preset.rawValue)).tag(preset)
                     }
                 }
                 .selectionHaptic(audioManager.eqPreset)
@@ -429,7 +380,7 @@ struct SettingsView: View {
         } header: {
             Text("Equalizer")
         } footer: {
-            Text("10-band parametric EQ. Drag each band between -12 dB and +12 dB.")
+            Text("10-band parametric EQ. Drag each band between -12 dB and +12 dB. Equalizer and AI audio effects apply to songs, not radio.")
         }
     }
 
@@ -487,7 +438,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Removal Level")
                     Spacer()
-                    Text(aiStrengthLabel)
+                    Text(LocalizedStringKey(aiStrengthLabel))
                         .foregroundStyle(.secondary)
                 }
                 StrengthSlider(
@@ -504,7 +455,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Strength")
                     Spacer()
-                    Text(bassStrengthLabel)
+                    Text(LocalizedStringKey(bassStrengthLabel))
                         .foregroundStyle(.secondary)
                 }
                 StrengthSlider(
@@ -521,7 +472,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Strength")
                     Spacer()
-                    Text(vocalEnhanceStrengthLabel)
+                    Text(LocalizedStringKey(vocalEnhanceStrengthLabel))
                         .foregroundStyle(.secondary)
                 }
                 StrengthSlider(
@@ -538,7 +489,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Strength")
                     Spacer()
-                    Text(instrumentalEnhanceStrengthLabel)
+                    Text(LocalizedStringKey(instrumentalEnhanceStrengthLabel))
                         .foregroundStyle(.secondary)
                 }
                 StrengthSlider(
@@ -589,7 +540,7 @@ struct SettingsView: View {
                 SettingsStorageActionRow(
                     symbol: "text.quote",
                     title: "Lyrics Cache",
-                    detail: "\(cacheManager.formattedLyricsCacheSize()) / 2 GB"
+                    detail: "\(cacheManager.formattedLyricsCacheSize()) / 64 MB"
                 )
             }
             .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
@@ -616,12 +567,16 @@ struct SettingsView: View {
             }
             .buttonStyle(PressableButtonStyle(scale: 0.98, dim: 0.82))
         } header: {
-            Text("Storage")
+            HStack {
+                Text("Storage")
+                if isClearingStorage { ProgressView() }
+            }
         } footer: {
             Text(
-                "Tap an indicator to clear that cache. Image cache is limited to 2 GB, music cache (including AI stems) to 4 GB, and lyrics cache to 2 GB. Items older than 6 months are automatically cleaned. Downloads are exempt from these limits."
+                "Tap an indicator to clear that cache. Image cache is limited to 2 GB, music cache (including AI stems) to 4 GB, and lyrics cache to 64 MB. Items older than 6 months are automatically cleaned. Downloads are exempt from these limits."
             )
         }
+        .disabled(isClearingStorage)
     }
 
     private func request(_ action: SettingsDestructiveAction) {
@@ -630,20 +585,32 @@ struct SettingsView: View {
     }
 
     private func perform(_ action: SettingsDestructiveAction) {
+        guard !isClearingStorage else { return }
+        pendingAction = nil
+        isClearingStorage = true
         switch action {
         case .removeDownloads:
-            DownloadManager.shared.removeAll()
+            DownloadManager.shared.removeAll { success in finishStorageAction(success) }
         case .clearImageCache:
-            cacheManager.clearImageCache()
+            cacheManager.clearImageCache { success in finishStorageAction(success) }
         case .clearMusicCache:
             audioManager.clearCache()
-            cacheManager.clearMusicCache()
+            cacheManager.clearMusicCache { success in finishStorageAction(success) }
         case .clearLyricsCache:
-            cacheManager.clearLyricsCache()
+            cacheManager.clearLyricsCache { success in finishStorageAction(success) }
         case .clearRecentlyPlayed:
             RecentlyPlayedStore.shared.reset()
+            finishStorageAction(true)
         }
-        AppHaptic.success.play()
+    }
+
+    private func finishStorageAction(_ success: Bool) {
+        isClearingStorage = false
+        if success {
+            AppHaptic.success.play()
+        } else {
+            showStorageError = true
+        }
     }
 
     private var aiStrengthLabel: String {
@@ -676,97 +643,10 @@ struct SettingsView: View {
     }
 }
 
-private struct SettingsOverviewBadge: Hashable, Identifiable {
-    let title: String
-    let symbol: String
-
-    var id: String {
-        "\(symbol)-\(title)"
-    }
-}
-
-private struct SettingsOverviewCard: View {
-    let title: String
-    let subtitle: String
-    let isPlaying: Bool
-    let badges: [SettingsOverviewBadge]
-    @Environment(\.appReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.appControlActiveFill)
-                    Image(systemName: isPlaying ? "waveform" : "music.note")
-                        .font(.title2.bold())
-                        .foregroundStyle(Color.appControlActiveForeground)
-                        .scaleEffect(reduceMotion ? 1 : (isPlaying ? 1.06 : 1))
-                        .opacity(isPlaying ? 1 : 0.88)
-                        .animation(overviewAnimation, value: isPlaying)
-                }
-                .frame(width: 62, height: 62)
-                .shadow(color: Color.appShadow, radius: 10, y: 5)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isPlaying ? "Now Playing" : "Playback")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(badges) { badge in
-                        SettingsOverviewPill(badge: badge)
-                    }
-                }
-                .padding(.vertical, 1)
-            }
-        }
-        .padding(16)
-        .background(Color.appControlInactiveFill, in: RoundedRectangle(cornerRadius: AM.Radius.sheet, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isPlaying ? "Now playing" : "Playback settings"), \(title), \(subtitle)")
-    }
-
-    private var overviewAnimation: Animation? {
-        reduceMotion ? nil : AppMotion.playful
-    }
-}
-
-private struct SettingsOverviewPill: View {
-    let badge: SettingsOverviewBadge
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: badge.symbol)
-                .font(.caption.bold())
-            Text(badge.title)
-                .font(.caption.bold())
-                .lineLimit(1)
-        }
-        .foregroundStyle(Color.appAccent)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color.appAccent.opacity(0.12), in: Capsule())
-    }
-}
-
 private struct SettingsStorageActionRow: View {
     let symbol: String
-    let title: String
-    let detail: String
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
     var isDestructive = false
 
     var body: some View {
@@ -792,7 +672,7 @@ private struct SettingsStorageActionRow: View {
 
 private struct StrengthSlider: View {
     @Binding var value: Float
-    var title: String = "Strength"
+    var title: LocalizedStringKey = "Strength"
     var valueDescription: String?
     var step: Float = 0.05
 
@@ -812,11 +692,11 @@ private struct StrengthSlider: View {
         Int((clampedValue * 100).rounded())
     }
 
-    private var accessibilityValueText: String {
+    private var accessibilityValueText: Text {
         if let valueDescription {
-            return "\(valueDescription), \(percent) percent"
+            return Text("\(Text(LocalizedStringKey(valueDescription))), \(percent) percent")
         }
-        return "\(percent) percent"
+        return Text("\(percent) percent")
     }
 
     var body: some View {
@@ -919,7 +799,7 @@ private struct EqualizerBands: View {
                     EqualizerBand(
                         value: bandBinding(i),
                         range: range,
-                        title: "\(frequencyAccessibilityLabel(Double(AVEnginePlayback.bandFrequencies[i]))) Equalizer"
+                        title: "\(Int(AVEnginePlayback.bandFrequencies[i])) Hz Equalizer"
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 140)
@@ -959,23 +839,12 @@ private struct EqualizerBands: View {
         }
         return "\(Int(hz))"
     }
-
-    private func frequencyAccessibilityLabel(_ hz: Double) -> String {
-        if hz >= 1000 {
-            let k = hz / 1000
-            if k.truncatingRemainder(dividingBy: 1) == 0 {
-                return "\(Int(k)) kilohertz"
-            }
-            return String(format: "%.1f kilohertz", k)
-        }
-        return "\(Int(hz)) hertz"
-    }
 }
 
 private struct EqualizerBand: View {
     @Binding var value: Float
     let range: ClosedRange<Float>
-    var title: String
+    var title: LocalizedStringKey
 
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var lastFeedbackStep: Int?
@@ -1053,7 +922,7 @@ private struct EqualizerBand: View {
         }
         .accessibilityElement()
         .accessibilityLabel(title)
-        .accessibilityValue(valueText)
+        .accessibilityValue(Text("\(Int(clampedValue.rounded())) decibels"))
         .accessibilityHint("Swipe up or down to adjust this band by one decibel.")
         .accessibilityAdjustableAction { direction in
             switch direction {
@@ -1139,17 +1008,13 @@ private enum SettingsDestructiveAction {
 private struct CrossfadeDurationRow: View {
     @Binding var seconds: Double
     private let range: ClosedRange<Double> = 1 ... 15
-    private var displayLabel: String {
-        let s = Int(seconds.rounded())
-        return "\(s) Second\(s == 1 ? "" : "s")"
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Duration")
                 Spacer()
-                Text(displayLabel)
+                Text("\(Int(seconds.rounded())) s")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -1178,11 +1043,9 @@ private struct CrossfadeDurationRow: View {
 }
 
 struct NotificationsView: View {
+    @Bindable private var notifications = DownloadNotifications.shared
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @AppStorage("nk.notifications.newSongs") private var notificationsNewSongs = true
-    @AppStorage("nk.notifications.radio") private var notificationsRadio = true
-    @AppStorage("nk.notifications.downloads") private var notificationsDownloads = true
-    @AppStorage("nk.notifications.account") private var notificationsAccount = true
 
     var body: some View {
         Group {
@@ -1200,52 +1063,42 @@ struct NotificationsView: View {
         }
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await notifications.refreshAuthorization() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await notifications.refreshAuthorization() } }
+        }
+        .alert("Could Not Enable Notifications", isPresented: $notifications.hasError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Please try again.")
+        }
     }
 
     private var notificationsList: some View {
         List {
             Section {
-                NotificationPreferenceToggle(
-                    title: "New Songs",
-                    isOn: $notificationsNewSongs
-                )
-                NotificationPreferenceToggle(
-                    title: "Radio",
-                    isOn: $notificationsRadio
-                )
-                NotificationPreferenceToggle(
-                    title: "Downloads",
-                    isOn: $notificationsDownloads
-                )
-                NotificationPreferenceToggle(
-                    title: "Account",
-                    isOn: $notificationsAccount
-                )
+                Toggle("Download Notifications", isOn: Binding(
+                    get: { notifications.isEnabled },
+                    set: { enabled in
+                        Task { await notifications.setEnabled(enabled) }
+                    }
+                ))
+                .disabled(notifications.isUpdating)
+                .tint(.appAccent)
+                if notifications.permissionDenied {
+                    Button("Open Notification Settings") {
+                        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
+                    }
+                }
             } footer: {
-                Text("Preferences are saved on this device and use the same account settings style as Music.")
+                Text(LocalizedStringKey(notifications.permissionDenied
+                    ? "Notifications are disabled in system settings. Allow notifications there to receive download updates."
+                    : "Notify when downloads finish while the app is in the background."))
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .groupedScreenBackground()
-    }
-}
-
-private struct NotificationPreferenceToggle: View {
-    let title: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        Toggle(isOn: $isOn) {
-            Text(title)
-                .font(.body)
-                .foregroundStyle(.primary)
-        }
-        .tint(.appAccent)
-        .accessibilityLabel(title)
-        .accessibilityValue(isOn ? "On" : "Off")
-        .onChange(of: isOn) { _, enabled in
-            enabled ? AppHaptic.selection.play() : AppHaptic.dismiss.play()
-        }
     }
 }
