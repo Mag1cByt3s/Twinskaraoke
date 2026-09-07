@@ -2292,6 +2292,14 @@ final class AudioPlayerManager {
                         forceNowPlayingUpdate: true,
                         reason: "startStreamPlayback.cacheFailed"
                     )
+                    // Nothing downstream will release the transition task on
+                    // this path: playback never reaches startPlayingFile, and
+                    // an autoplay handoff has already cleared its token, so
+                    // cancelAutoplayRequest() returns early. Without this the
+                    // task is held until iOS expires it.
+                    #if canImport(UIKit)
+                        endTrackTransitionBackgroundTask()
+                    #endif
                 }
             }
         }

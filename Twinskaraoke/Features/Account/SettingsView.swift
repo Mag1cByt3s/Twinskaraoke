@@ -839,17 +839,6 @@ private struct EqualizerBands: View {
         }
         return "\(Int(hz))"
     }
-
-    private func frequencyAccessibilityLabel(_ hz: Double) -> String {
-        if hz >= 1000 {
-            let k = hz / 1000
-            if k.truncatingRemainder(dividingBy: 1) == 0 {
-                return "\(Int(k)) kilohertz"
-            }
-            return String(format: "%.1f kilohertz", k)
-        }
-        return "\(Int(hz)) hertz"
-    }
 }
 
 private struct EqualizerBand: View {
