@@ -918,7 +918,7 @@ final class DownloadManager {
         try? fm.removeItem(at: cacheDir.appendingPathComponent("\(storageKey).json"))
     }
 
-    func removeAll() {
+    func removeAll(completion: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }) {
         let fm = FileManager.default
         let deletionDirectory = cacheDir.deletingLastPathComponent().appendingPathComponent(
             "\(Self.pendingDeletionPrefix)\(UUID().uuidString)",
@@ -939,6 +939,7 @@ final class DownloadManager {
                         "Could not remove downloads: staging failed (\(stagingError)); deletion failed (\(deletionError))",
                         category: .network
                     )
+                    completion(false)
                     return
                 }
             }
@@ -973,7 +974,14 @@ final class DownloadManager {
 
         if let stagedDirectory {
             Self.deletionQueue.async {
-                try? FileManager.default.removeItem(at: stagedDirectory)
+                let success: Bool
+                do {
+                    try FileManager.default.removeItem(at: stagedDirectory)
+                    success = true
+                } catch {
+                    success = !FileManager.default.fileExists(atPath: stagedDirectory.path)
+                }
+                Task { @MainActor in completion(success) }
             }
         } else if !fm.fileExists(atPath: cacheDir.path) {
             try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
@@ -983,6 +991,7 @@ final class DownloadManager {
             state.inProgress.removeAll()
         }
         DebugLogger.log("All downloads removed", category: .network)
+        if stagedDirectory == nil { completion(true) }
     }
 
     nonisolated static func isPendingDeletionDirectoryName(_ name: String) -> Bool {
@@ -1020,6 +1029,9 @@ final class DownloadManager {
         if completedInCurrentQueue > 1, failedInCurrentQueue == 0, cancelledInCurrentQueue == 0 {
             AppHaptic.celebrate.play()
         }
+        DownloadNotifications.shared.downloadsFinished(
+            completed: completedInCurrentQueue, failed: failedInCurrentQueue
+        )
         isLoggingDownloadQueue = false
         completedInCurrentQueue = 0
         failedInCurrentQueue = 0

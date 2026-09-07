@@ -161,19 +161,21 @@ final class CacheManager {
         lyricsCacheSize
     }
 
-    func clearImageCache() {
+    func clearImageCache(completion: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }) {
         SDImageCache.shared.clearMemory()
         SDImageCache.shared.clearDisk { [weak self] in
+            let remainingSize = UInt64(SDImageCache.shared.totalDiskSize())
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 FallbackArtProvider.shared.resetBindings()
-                imageCacheSize = 0
+                imageCacheSize = remainingSize
+                completion(remainingSize == 0)
                 DebugLogger.log("Image cache cleared", category: .cache)
             }
         }
     }
 
-    func clearMusicCache() {
+    func clearMusicCache(completion: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }) {
         let dir = AudioPlayerManager.audioCacheDir
         Self.maintenanceQueue.async { [weak self] in
             guard let self else { return }
@@ -188,10 +190,12 @@ final class CacheManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard let remainingSize else {
+                    completion(false)
                     DebugLogger.log("Could not verify music cache deletion", category: .cache)
                     return
                 }
                 musicCacheSize = remainingSize
+                completion(remainingSize == 0)
                 DebugLogger.log(
                     remainingSize == 0
                         ? "Music cache cleared"
@@ -202,7 +206,7 @@ final class CacheManager {
         }
     }
 
-    func clearLyricsCache() {
+    func clearLyricsCache(completion: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }) {
         Self.maintenanceQueue.async { [weak self] in
             guard let self else { return }
             LyricsCacheStore.clear()
@@ -214,10 +218,12 @@ final class CacheManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard let remainingSize else {
+                    completion(false)
                     DebugLogger.log("Could not verify lyrics cache deletion", category: .cache)
                     return
                 }
                 lyricsCacheSize = remainingSize
+                completion(remainingSize == 0)
                 DebugLogger.log(
                     remainingSize == 0
                         ? "Lyrics cache cleared"
@@ -585,14 +591,12 @@ final class CacheManager {
         }
     }
 
-    // Deliberately per-call: ByteCountFormatter is not Sendable and not
-    // thread-safe, and this is called from both the maintenance queue and the
-    // main actor. Caching one instance would be a data race, and this is a
-    // cold path (one maintenance pass, eviction logs, Settings size labels).
     private nonisolated func formatBytes(_ bytes: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .binary
-        return formatter.string(fromByteCount: Int64(bytes))
+        let language = UserDefaults.standard.string(forKey: "nk.language") ?? "system"
+        let locale = language == "system" ? Locale.current : Locale(identifier: language)
+        return Int64(clamping: bytes).formatted(
+            .byteCount(style: .binary, allowedUnits: [.mb, .gb], spellsOutZero: false)
+                .locale(locale)
+        )
     }
 }

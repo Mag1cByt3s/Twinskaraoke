@@ -1035,6 +1035,65 @@ final class TwinskaraokeUITests: XCTestCase {
     }
   }
 
+  func testSettingsPersistAutoplayAndEnforceTransitionChoice() throws {
+    let app = launchApp()
+    openAccountToolbar(in: app)
+    openVisibleItem("Settings", in: app)
+    let autoplay = app.switches["Autoplay"].firstMatch
+    let autoMix = app.switches["Auto Mix"].firstMatch
+    let crossfade = app.switches["Crossfade"].firstMatch
+    XCTAssertTrue(autoplay.waitForExistence(timeout: 8))
+    let originalAutoplay = autoplay.value as? String
+    let originalAutoMix = autoMix.value as? String
+    let originalCrossfade = crossfade.value as? String
+    defer {
+      if autoplay.exists, autoplay.value as? String != originalAutoplay { autoplay.tap() }
+      if autoMix.exists, autoMix.value as? String != originalAutoMix { autoMix.tap() }
+      if crossfade.exists, crossfade.value as? String != originalCrossfade { crossfade.tap() }
+    }
+
+    if autoMix.value as? String != "1" {
+      autoMix.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    }
+    XCTAssertEqual(crossfade.value as? String, "0")
+    crossfade.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    XCTAssertEqual(crossfade.value as? String, "1")
+    XCTAssertEqual(autoMix.value as? String, "0")
+    XCTAssertTrue(app.sliders["Crossfade Duration"].waitForExistence(timeout: 3))
+
+    autoplay.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    let selectedAutoplay = autoplay.value as? String
+    XCTAssertNotEqual(selectedAutoplay, originalAutoplay)
+    app.terminate()
+    app.launch()
+    openAccountToolbar(in: app)
+    openVisibleItem("Settings", in: app)
+    XCTAssertTrue(autoplay.waitForExistence(timeout: 8))
+    XCTAssertEqual(autoplay.value as? String, selectedAutoplay)
+  }
+
+  func testSettingsUseSelectedLanguageForThemeAndStrength() throws {
+    let app = XCUIApplication()
+    app.launchArguments = ["-UITestMode", "1", "-nk.language", "de", "-nk.appearance", "light",
+                           "-nk.hapticsEnabled", "YES", "-nk.hapticStrength", "medium"]
+    app.launch()
+    defer { app.terminate() }
+    openAccountToolbar(in: app)
+    openVisibleItem("Einstellungen", in: app)
+    XCTAssertTrue(app.switches["Automatische Wiedergabe"].waitForExistence(timeout: 8))
+    let theme = app.descendants(matching: .any).matching(identifier: "Settings.Theme").firstMatch
+    for _ in 0..<7 {
+      if theme.isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(theme.isHittable)
+    // The theme and strength labels come from runtime values rather than
+    // literal Text calls; verify they use the chosen locale too.
+    XCTAssertTrue(theme.label.contains("Hell"), theme.debugDescription)
+    let strength = app.descendants(matching: .any).matching(identifier: "Settings.HapticStrength").firstMatch
+    XCTAssertTrue(strength.label.contains("Mittel"), strength.debugDescription)
+  }
+
   func testAccountInformationDestinationsUseAdaptiveLayouts() throws {
     let app = launchApp()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))

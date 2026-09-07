@@ -174,7 +174,7 @@ final class ShimejiEngine: NSObject {
             instances = []
             return
         }
-        let count = min(settings.maxCount, 12)
+        let count = settings.clampedCount
         instances = (0 ..< count).map { _ in
             let character = pool.randomElement()!
             let x = CGFloat.random(in: bounds.minX + spriteHalfWidth ... max(bounds.minX + spriteHalfWidth, bounds.maxX - spriteHalfWidth))
@@ -445,8 +445,10 @@ final class ShimejiEngine: NSObject {
 /// ShimejiSettingsView, persisted to UserDefaults directly (rather than
 /// @AppStorage) since it's an array/struct, not a primitive.
 struct ShimejiSpawnSettings: Codable {
+    static let countRange = 0 ... 8
     var enabledCharacterIDs: Set<String>
     var maxCount: Int
+    var clampedCount: Int { min(Self.countRange.upperBound, max(Self.countRange.lowerBound, maxCount)) }
     /// nil means "never touched the character list" (old data, or first
     /// run) — falls back to every character. Once set, the person's exact
     /// choice is honored, including choosing zero characters via "Use None".
@@ -461,7 +463,9 @@ struct ShimejiSpawnSettings: Codable {
         else {
             return ShimejiSpawnSettings(enabledCharacterIDs: [], maxCount: 3, hasCustomizedCharacters: nil)
         }
-        return decoded
+        var settings = decoded
+        settings.maxCount = settings.clampedCount
+        return settings
     }
 
     func save() {
@@ -478,5 +482,12 @@ struct ShimejiSpawnSettings: Codable {
             return enabledCharacterIDs
         }
         return Set(manifest.characters.map(\.id))
+    }
+
+    mutating func setCharacter(_ id: String, enabled: Bool, manifest: ShimejiManifest) {
+        enabledCharacterIDs = enabledIDs(for: manifest)
+        if enabled { enabledCharacterIDs.insert(id) }
+        else { enabledCharacterIDs.remove(id) }
+        hasCustomizedCharacters = true
     }
 }

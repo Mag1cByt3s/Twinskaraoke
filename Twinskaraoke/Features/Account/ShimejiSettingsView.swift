@@ -102,7 +102,7 @@ struct ShimejiSettingsView: View {
 
     private var spawnCountSection: some View {
         Section {
-            Stepper(value: $spawnSettings.maxCount, in: 0 ... 8) {
+            Stepper(value: $spawnSettings.maxCount, in: ShimejiSpawnSettings.countRange) {
                 HStack {
                     Text("On Screen At Once")
                     Spacer()
@@ -161,14 +161,13 @@ struct ShimejiSettingsView: View {
 
     private func bindingFor(_ character: ShimejiCharacterDefinition) -> Binding<Bool> {
         Binding(
-            get: { spawnSettings.enabledCharacterIDs.contains(character.id) },
+            get: {
+                guard let manifest = resources.manifest else { return false }
+                return spawnSettings.enabledIDs(for: manifest).contains(character.id)
+            },
             set: { isOn in
-                if isOn {
-                    spawnSettings.enabledCharacterIDs.insert(character.id)
-                } else {
-                    spawnSettings.enabledCharacterIDs.remove(character.id)
-                }
-                spawnSettings.hasCustomizedCharacters = true
+                guard let manifest = resources.manifest else { return }
+                spawnSettings.setCharacter(character.id, enabled: isOn, manifest: manifest)
                 AppHaptic.selection.play()
                 persistAndRespawn()
             }

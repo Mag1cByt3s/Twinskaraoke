@@ -39,11 +39,7 @@ nonisolated enum DebugLogger {
     }()
 
     private static var isEnabled: Bool {
-        #if DEBUG
-            return true
-        #else
-            return UserDefaults.standard.bool(forKey: "nk.debugLogging")
-        #endif
+        UserDefaults.standard.bool(forKey: "nk.debugLogging")
     }
 
     private static let logQueue = DispatchQueue(label: "nk.debugLogger", qos: .utility)
