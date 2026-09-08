@@ -3,45 +3,49 @@ import SwiftUI
 struct EqualizerBars: View {
     let isAnimating: Bool
     @Environment(\.appReduceEffects) private var reduceEffects
+    @Environment(\.scenePhase) private var scenePhase
     private let scrollState = ScrollPerformanceState.shared
-    @State private var startDate = Date()
+    @State private var animationClock = EqualizerAnimationClock()
     @State private var isVisible: Bool = false
 
     var body: some View {
-        GeometryReader { geo in
-            let barWidth = geo.size.width / 5
-            TimelineView(
-                .animation(
-                    minimumInterval: DisplayRefreshRate.decorativeAnimationInterval,
-                    paused: !shouldAnimateBars
-                )
-            ) { context in
-                let elapsed = max(0, context.date.timeIntervalSince(startDate))
-                HStack(alignment: .bottom, spacing: barWidth / 2) {
-                    ForEach(0 ..< 3) { i in
-                        Capsule()
-                            .fill(Color.appAccent)
-                            .frame(
-                                width: barWidth,
-                                height: barHeight(for: i, total: geo.size.height, elapsed: elapsed)
-                            )
-                    }
+        TimelineView(
+            .animation(
+                minimumInterval: DisplayRefreshRate.decorativeAnimationInterval,
+                paused: !shouldAnimateBars
+            )
+        ) { context in
+            let elapsed = animationClock.elapsed(at: context.date)
+            // Draw into a fixed surface so each tick does not relayout song rows.
+            Canvas { context, size in
+                let barWidth = size.width / 5
+                for index in 0..<3 {
+                    let height = barHeight(for: index, total: size.height, elapsed: elapsed)
+                    let rect = CGRect(
+                        x: barWidth / 2 + CGFloat(index) * barWidth * 1.5,
+                        y: size.height - height,
+                        width: barWidth,
+                        height: height
+                    )
+                    context.fill(Capsule().path(in: rect), with: .color(.appAccent))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
+        .accessibilityHidden(true)
         .onAppear {
             isVisible = true
-            startDate = Date()
         }
-        .onDisappear { isVisible = false }
-        .onChange(of: isAnimating) { _, new in
-            if new { startDate = Date() }
+        .onDisappear {
+            isVisible = false
+            animationClock.setRunning(false, at: .now)
+        }
+        .onChange(of: shouldAnimateBars, initial: true) { _, running in
+            animationClock.setRunning(running, at: .now)
         }
     }
 
     private func barHeight(for index: Int, total: CGFloat, elapsed: TimeInterval) -> CGFloat {
-        guard shouldAnimateBars else { return total * 0.3 }
+        guard isAnimating && !reduceEffects else { return total * 0.3 }
         let speeds: [Double] = [3.4, 2.7, 4.1]
         let offsets: [Double] = [0.0, 0.45, 0.9]
         let v = (sin(elapsed * speeds[index] + offsets[index] * .pi * 2) + 1) / 2
@@ -49,6 +53,25 @@ struct EqualizerBars: View {
     }
 
     private var shouldAnimateBars: Bool {
-        isAnimating && isVisible && !reduceEffects && !scrollState.isScrolling
+        isAnimating && isVisible && !reduceEffects && scenePhase == .active && !scrollState.isScrolling
+    }
+}
+
+/// Counts only active animation time, preserving phase across scrolling and scene pauses.
+nonisolated struct EqualizerAnimationClock {
+    private var accumulated: TimeInterval = 0
+    private var activeSince: Date?
+
+    func elapsed(at date: Date) -> TimeInterval {
+        accumulated + (activeSince.map { max(0, date.timeIntervalSince($0)) } ?? 0)
+    }
+
+    mutating func setRunning(_ running: Bool, at date: Date) {
+        if running {
+            if activeSince == nil { activeSince = date }
+        } else {
+            accumulated = elapsed(at: date)
+            activeSince = nil
+        }
     }
 }

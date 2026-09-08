@@ -98,6 +98,9 @@ struct SearchView: View {
                 text: $viewModel.searchText,
                 prompt: "Songs, Artists, Lyrics, and More"
             )
+            .onSubmit(of: .search) {
+                viewModel.search(viewModel.searchText)
+            }
             .onChange(of: playback.currentSongID) { _, currentSongID in
                 guard currentSongID == pendingSongID else { return }
                 pendingSongID = nil
