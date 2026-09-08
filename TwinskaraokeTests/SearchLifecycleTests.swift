@@ -14,7 +14,7 @@ struct SearchLifecycleTests {
         model.searchText = "new query"
         #expect(model.results.isEmpty)
         #expect(model.searchErrorMessage == nil)
-        #expect(!model.isSearching)
+        #expect(model.isSearching)
         model.searchText = ""
     }
 
@@ -46,5 +46,40 @@ struct SearchLifecycleTests {
         #expect(model.results.isEmpty)
         #expect(!model.isSearching)
         #expect(model.searchErrorMessage == nil)
+    }
+
+    @Test("Submitting immediately cancels the delayed duplicate request")
+    func submittingPendingQuery() async throws {
+        var queries: [String] = []
+        let model = SearchViewModel(loadSongs: { query in
+            queries.append(query)
+            return []
+        })
+        model.searchText = "Neuro"
+        #expect(model.isSearching)
+        model.search(model.searchText)
+        for _ in 0..<10 { await Task.yield() }
+        #expect(queries == ["Neuro"])
+        #expect(!model.isSearching)
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(queries == ["Neuro"])
+        model.searchText = "Neuro "
+        #expect(!model.isSearching)
+    }
+
+    @Test("Typing coalesces into the latest query and then leaves loading")
+    func typingDispatchesLatestQuery() async throws {
+        var queries: [String] = []
+        let model = SearchViewModel(loadSongs: { query in
+            queries.append(query)
+            return [UITestFixtures.song(id: "result", title: "Result", artist: "Artist")]
+        })
+        model.searchText = "Neu"
+        model.searchText = "Neuro"
+        #expect(model.isSearching)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(queries == ["Neuro"])
+        #expect(model.results.count == 1)
+        #expect(!model.isSearching)
     }
 }

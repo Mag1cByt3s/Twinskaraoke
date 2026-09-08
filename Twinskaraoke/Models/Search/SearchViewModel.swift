@@ -637,12 +637,18 @@ final class SearchViewModel {
     private func scheduleSearch() {
         searchDebounceTask?.cancel()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            lastDispatchedQuery = ""
+            clearSearch()
+            return
+        }
         guard query != lastDispatchedQuery else { return }
         // Invalidate immediately: the previous response must not appear under
         // the new query while its debounce is pending.
         clearSearch()
         lastDispatchedQuery = ""
-        guard !query.isEmpty else { return }
+        // Waiting for typing to settle is part of searching, not an empty result.
+        isSearching = true
         searchDebounceTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self else { return }
@@ -658,7 +664,10 @@ final class SearchViewModel {
     }
 
     func search(_ query: String) {
+        searchDebounceTask?.cancel()
+        searchDebounceTask = nil
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastDispatchedQuery = trimmedQuery
         guard !trimmedQuery.isEmpty else {
             clearSearch()
             return

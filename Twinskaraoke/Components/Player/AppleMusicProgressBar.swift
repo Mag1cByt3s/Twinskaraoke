@@ -60,8 +60,8 @@ struct AppleMusicProgressBar: View {
 
     private var controlHeight: CGFloat {
         scrubValueText == nil
-            ? max(24, scaledActiveThumbDiameter + 10)
-            : max(42, scaledBubbleHeight + 20)
+            ? max(44, scaledActiveThumbDiameter + 10)
+            : max(44, scaledBubbleHeight + 20)
     }
 
     var body: some View {
