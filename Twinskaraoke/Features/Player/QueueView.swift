@@ -6,6 +6,7 @@ struct QueueView: View {
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var showCurrentAddToPlaylist = false
     @State private var upNextEntries: [UpNextEntry] = []
+    @State private var isReordering = false
 
     private var queueToggleAnimation: Animation? {
         reduceMotion ? nil : AppMotion.quick
@@ -138,7 +139,9 @@ struct QueueView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    .environment(\.editMode, .constant(.active))
+                    .smoothScrolling()
+                    .accessibilityIdentifier("Queue.List")
+                    .environment(\.editMode, .constant(isReordering ? .active : .inactive))
                 }
             }
         }
@@ -152,27 +155,73 @@ struct QueueView: View {
         .onAppear { refreshUpNextSongs() }
         .onChange(of: audioManager.queue) { _, _ in refreshUpNextSongs() }
         .onChange(of: audioManager.currentSong?.id) { _, _ in refreshUpNextSongs() }
+        .onChange(of: upNextEntries.isEmpty) { _, isEmpty in
+            if isEmpty { isReordering = false }
+        }
         .onDisappear {
             ArtworkPrefetcher.shared.cancel(reason: "queue up next")
         }
     }
 
     private func header(upNextCount: Int) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
                 Text("Playing Next")
                     .font(AM.Font.groupHeader)
                     .foregroundStyle(.primary)
-                Text(upNextCount == 1 ? "1 song queued" : "\(upNextCount) songs queued")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                GlassXButton(action: {
+                    AppHaptic.dismiss.play()
+                    dismiss()
+                })
+                .accessibilityHint("Dismisses Playing Next.")
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Playing Next")
-            .accessibilityValue(upNextCount == 1 ? "1 song queued" : "\(upNextCount) songs queued")
-            Spacer()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    queueCount(upNextCount).fixedSize()
+                    Spacer(minLength: 8)
+                    queueActions(upNextCount).fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    queueCount(upNextCount)
+                    queueActions(upNextCount)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 26)
+        .padding(.bottom, 14)
+        .animation(headerAnimation, value: upNextCount)
+    }
+
+    private func queueCount(_ count: Int) -> some View {
+        Text(count == 1 ? "1 song queued" : "\(count) songs queued")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .contentTransition(.numericText())
+    }
+
+    private func queueActions(_ upNextCount: Int) -> some View {
+        HStack(spacing: 8) {
+            if upNextCount > 1 || isReordering {
+                Button {
+                    AppHaptic.selection.play()
+                    withOptionalAnimation(queueMutationAnimation) {
+                        isReordering.toggle()
+                    }
+                } label: {
+                    Text(isReordering ? "Done" : "Reorder")
+                        .font(AM.Font.rowCompactTitle.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Color.appControlInactiveFill, in: Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityIdentifier("Queue.Reorder")
+                .accessibilityHint(isReordering ? "Finishes rearranging the queue." : "Shows handles to rearrange upcoming songs.")
+            }
             if upNextCount > 0 {
                 Button(role: .destructive) {
                     AppHaptic.dismiss.play()
@@ -193,16 +242,7 @@ struct QueueView: View {
                 .accessibilityHint("Removes all songs from Playing Next.")
                 .transition(clearButtonTransition)
             }
-            GlassXButton(action: {
-                AppHaptic.dismiss.play()
-                dismiss()
-            })
-            .accessibilityHint("Dismisses Playing Next.")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 26)
-        .padding(.bottom, 14)
-        .animation(headerAnimation, value: upNextCount)
     }
 
     private func currentSongRow(_ current: Song) -> some View {
@@ -234,7 +274,7 @@ struct QueueView: View {
                 }
                 Spacer()
 
-                EqualizerBars(isAnimating: audioManager.isPlaying)
+                EqualizerBars(isAnimating: audioManager.isPlaying, pausesWhileScrolling: false)
                     .frame(width: 16, height: 16)
                     .foregroundStyle(Color.appAccent)
             }

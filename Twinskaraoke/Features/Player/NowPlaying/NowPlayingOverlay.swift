@@ -139,12 +139,6 @@ struct NowPlayingOverlay: View {
             }
             guard presentation.isAnimatingTransition else { return }
             let token = presentation.animationToken
-            // Release diagnostics: gesture acceptance alone cannot establish
-            // whether the artwork settlement was selected. Record every gate
-            // once per close, without logging URLs or doing per-frame work.
-            if presentation.isClosingTransition {
-                PlayerGestureTrace.record("landing request token=\(token) reduceMotion=\(reduceMotion) image=\(snapshot.artwork != nil) canvas=\(canvasSize) pill=\(String(describing: presentation.barFrame)) thumbnail=\(String(describing: presentation.barArtworkFrame)) artwork=\(String(describing: presentation.playerArtworkFrame)) releaseProgress=\(presentation.progress)")
-            }
             if !reduceMotion, presentation.isClosingTransition,
                snapshot.artwork != nil, canvasSize.width > 0, canvasSize.height > 0,
                let pill = presentation.barFrame,
@@ -159,17 +153,6 @@ struct NowPlayingOverlay: View {
                 )
                 presentation.prepareClosingSettlement()
             }
-            if presentation.isClosingTransition {
-                let missing = [
-                    reduceMotion ? "reduceMotion" : nil,
-                    snapshot.artwork == nil ? "image" : nil,
-                    canvasSize.width <= 0 || canvasSize.height <= 0 ? "canvas" : nil,
-                    presentation.barFrame == nil ? "pill" : nil,
-                    presentation.barArtworkFrame == nil ? "thumbnail" : nil,
-                    presentation.playerArtworkFrame == nil ? "artworkFrame" : nil
-                ].compactMap { $0 }.joined(separator: ",")
-                PlayerGestureTrace.record("landing selected token=\(token) mode=\(closingTransition == nil ? "slide" : "cover-curve") settling=\(presentation.isSettlingArtwork) skipped=\(missing.isEmpty ? "none" : missing)")
-            }
             let animation: Animation? = reduceMotion ? nil : closingTransition != nil
                 ? .linear(duration: PlayerClosingGeometry.duration)
                 : .spring(response: 0.38, dampingFraction: 0.9)
@@ -178,9 +161,6 @@ struct NowPlayingOverlay: View {
                 closingPhase = 1
             } completion: {
                 guard token == presentation.animationToken else { return }
-                if closingTransition != nil {
-                    PlayerGestureTrace.record("landing complete token=\(token) phase=\(closingPhase) image=\(snapshot.artwork != nil) settling=\(presentation.isSettlingArtwork)")
-                }
                 withTransaction(Transaction(animation: nil)) {
                     closingTransition = nil
                     closingPhase = 0
