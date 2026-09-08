@@ -895,6 +895,65 @@ final class TwinskaraokeUITests: XCTestCase {
     )
   }
 
+  func testQueueBrowsingAndReordering() throws {
+    try verifyQueueEditing()
+  }
+
+  func testQueueEditingWithAccessibilityText() throws {
+    try verifyQueueEditing(contentSizeCategory: "UICTContentSizeCategoryAccessibilityXL")
+  }
+
+  private func verifyQueueEditing(contentSizeCategory: String? = nil) throws {
+    let app = launchApp(initialSection: "home", preferredContentSizeCategory: contentSizeCategory)
+    openVisibleItem(
+      "Wake Me Up Before You Go-Go",
+      identifier: "HomeSongSection.Made for You.ui-home-song-1",
+      in: app
+    )
+    let mini = element(identifier: "MiniPlayerBar", in: app)
+    XCTAssertTrue(mini.waitForExistence(timeout: 8))
+    let start = mini.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+    let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.25))
+    start.press(forDuration: 0.05, thenDragTo: end, withVelocity: 400, thenHoldForDuration: 0.1)
+    let queueButton = app.buttons["PlayerToolbar.PlayingNext"].firstMatch
+    let queueButtonReady = waitUntil(timeout: 8) { queueButton.isHittable }
+    if !queueButtonReady {
+      let screenshot = XCTAttachment(screenshot: app.screenshot())
+      screenshot.name = "Queue opening failure"
+      screenshot.lifetime = .keepAlways
+      add(screenshot)
+      let hierarchy = XCTAttachment(string: app.debugDescription)
+      hierarchy.name = "Queue opening hierarchy"
+      hierarchy.lifetime = .keepAlways
+      add(hierarchy)
+    }
+    XCTAssertTrue(queueButtonReady, "The player queue button never became tappable")
+    queueButton.tap()
+
+    let reorder = app.buttons["Queue.Reorder"]
+    XCTAssertTrue(reorder.waitForExistence(timeout: 8))
+    XCTAssertEqual(reorder.label, "Reorder")
+    XCTAssertTrue(reorder.isHittable)
+    if contentSizeCategory != nil {
+      let list = element(identifier: "Queue.List", in: app)
+      XCTAssertTrue(waitUntil(timeout: 5) { list.frame.height > 160 })
+    }
+    let browseShot = XCTAttachment(screenshot: app.screenshot())
+    browseShot.name = contentSizeCategory == nil ? "Queue browsing" : "Queue accessibility text"
+    browseShot.lifetime = .keepAlways
+    add(browseShot)
+
+    reorder.tap()
+    XCTAssertTrue(waitUntil(timeout: 5) { reorder.label == "Done" })
+    reorder.tap()
+    XCTAssertTrue(waitUntil(timeout: 5) { reorder.label == "Reorder" })
+    reorder.tap()
+    app.buttons["Clear queue"].tap()
+    XCTAssertTrue(app.staticTexts["No songs queued"].waitForExistence(timeout: 5))
+    XCTAssertFalse(reorder.exists)
+    XCTAssertFalse(app.buttons["Clear queue"].exists)
+  }
+
   func testHomeSongOpensFullScreenPlayerControls() throws {
     let app = launchApp(initialSection: "home")
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))

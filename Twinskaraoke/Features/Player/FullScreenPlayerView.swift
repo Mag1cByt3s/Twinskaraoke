@@ -423,7 +423,7 @@ struct FullScreenPlayerView: View {
                         .environment(audioManager)
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAddToPlaylist) {
