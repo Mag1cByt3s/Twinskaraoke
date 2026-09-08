@@ -17,7 +17,7 @@ struct NewView: View {
                 ScrollView {
                     Group {
                         if viewModel.isLoading {
-                            NewSkeletonView()
+                            NewSkeletonView(availableWidth: proxy.size.width)
                                 .transition(.opacity)
                         } else {
                             newOverview(availableWidth: proxy.size.width)

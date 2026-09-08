@@ -46,8 +46,9 @@ struct NewFeaturedRail: View {
                         )
                     }
                 }
-                .padding(.horizontal, AM.Spacing.screenMargin)
+                .scrollTargetLayout()
             }
+            .musicShelfScrolling()
         }
         .trackingWidth(into: $availableWidth)
         .frame(height: cardArtworkHeight + AM.Spacing.s + cardTextAllowance)
@@ -149,8 +150,9 @@ struct NewSongRail: View {
                             )
                         }
                     }
-                    .padding(.horizontal, AM.Spacing.screenMargin)
+                    .scrollTargetLayout()
                 }
+                .musicShelfScrolling()
             }
         }
         .trackingWidth(into: $availableWidth)
@@ -224,8 +226,9 @@ struct NewPlaylistRail: View {
                             }
                         }
                     }
-                    .padding(.horizontal, AM.Spacing.screenMargin)
+                    .scrollTargetLayout()
                 }
+                .musicShelfScrolling()
             }
         }
         .trackingWidth(into: $availableWidth)
