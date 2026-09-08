@@ -5,7 +5,7 @@ struct EqualizerBars: View {
     @Environment(\.appReduceEffects) private var reduceEffects
     @Environment(\.scenePhase) private var scenePhase
     private let scrollState = ScrollPerformanceState.shared
-    @State private var startDate = Date()
+    @State private var animationClock = EqualizerAnimationClock()
     @State private var isVisible: Bool = false
 
     var body: some View {
@@ -15,7 +15,7 @@ struct EqualizerBars: View {
                 paused: !shouldAnimateBars
             )
         ) { context in
-            let elapsed = max(0, context.date.timeIntervalSince(startDate))
+            let elapsed = animationClock.elapsed(at: context.date)
             // Draw into a fixed surface so each tick does not relayout song rows.
             Canvas { context, size in
                 let barWidth = size.width / 5
@@ -34,11 +34,13 @@ struct EqualizerBars: View {
         .accessibilityHidden(true)
         .onAppear {
             isVisible = true
-            startDate = Date()
         }
-        .onDisappear { isVisible = false }
-        .onChange(of: isAnimating) { _, new in
-            if new { startDate = Date() }
+        .onDisappear {
+            isVisible = false
+            animationClock.setRunning(false, at: .now)
+        }
+        .onChange(of: shouldAnimateBars, initial: true) { _, running in
+            animationClock.setRunning(running, at: .now)
         }
     }
 
@@ -52,5 +54,24 @@ struct EqualizerBars: View {
 
     private var shouldAnimateBars: Bool {
         isAnimating && isVisible && !reduceEffects && scenePhase == .active && !scrollState.isScrolling
+    }
+}
+
+/// Counts only active animation time, preserving phase across scrolling and scene pauses.
+nonisolated struct EqualizerAnimationClock {
+    private var accumulated: TimeInterval = 0
+    private var activeSince: Date?
+
+    func elapsed(at date: Date) -> TimeInterval {
+        accumulated + (activeSince.map { max(0, date.timeIntervalSince($0)) } ?? 0)
+    }
+
+    mutating func setRunning(_ running: Bool, at date: Date) {
+        if running {
+            if activeSince == nil { activeSince = date }
+        } else {
+            accumulated = elapsed(at: date)
+            activeSince = nil
+        }
     }
 }
