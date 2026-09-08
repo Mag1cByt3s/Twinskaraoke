@@ -18,7 +18,7 @@ struct HomeView: View {
                 ScrollView {
                     Group {
                         if viewModel.isLoading {
-                            HomeSkeletonView()
+                            HomeSkeletonView(availableWidth: proxy.size.width)
                                 .transition(.opacity)
                         } else {
                             homeOverview(availableWidth: proxy.size.width)

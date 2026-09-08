@@ -1,6 +1,14 @@
 import SwiftUI
 
 extension View {
+    /// Aligns a horizontal shelf to its cards while retaining an inset at both ends.
+    /// The shelf's stack must declare `scrollTargetLayout()`.
+    func musicShelfScrolling(horizontalMargin: CGFloat = AM.Spacing.screenMargin) -> some View {
+        contentMargins(.horizontal, horizontalMargin, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .smoothScrolling()
+    }
+
     func smoothScrolling(bounceBehavior: ScrollBounceBehavior = .basedOnSize) -> some View {
         modifier(SmoothScrollingModifier(bounceBehavior: bounceBehavior))
     }

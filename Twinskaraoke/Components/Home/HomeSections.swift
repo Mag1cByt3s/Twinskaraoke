@@ -51,8 +51,9 @@ struct PlaylistCarousel: View {
                                 .frame(width: 60, height: tileWidth)
                         }
                     }
-                    .padding(.horizontal, horizontalPadding)
+                    .scrollTargetLayout()
                 }
+                .musicShelfScrolling(horizontalMargin: horizontalPadding)
             }
         }
         .trackingWidth(into: $availableWidth)
@@ -103,8 +104,9 @@ struct HomeSongSection: View {
                             )
                         }
                     }
-                    .padding(.horizontal, horizontalPadding)
+                    .scrollTargetLayout()
                 }
+                .musicShelfScrolling(horizontalMargin: horizontalPadding)
             }
         }
         .trackingWidth(into: $availableWidth)
