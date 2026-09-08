@@ -45,7 +45,6 @@ final class NowPlayingPresentation {
     }
 
     func animationDidComplete(token: Int) {
-        PlayerGestureTrace.record("animation completion token=\(token) current=\(animationToken) progress=\(progress)")
         guard token == animationToken else { return }
         isAnimatingTransition = false
         artworkTransitionSource = nil
@@ -235,7 +234,6 @@ final class NowPlayingPresentation {
 
     /// Applied by `NowPlayingOverlay` inside its own animation.
     func applyAnimationTarget() {
-        PlayerGestureTrace.record("animation apply token=\(animationToken) target=\(animationTarget)")
         progress = animationTarget
     }
 

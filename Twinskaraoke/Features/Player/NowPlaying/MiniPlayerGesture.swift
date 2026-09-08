@@ -1,15 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Temporary device tracing in Debug and Release for the affected device build.
-/// No song, account, or other content is recorded.
-/// Keep a version stamp so a device report identifies the installed code path.
-enum PlayerGestureTrace {
-    static func record(_ message: @autoclosure () -> String) {
-        print("[PlayerGesture D2] \(message())")
-    }
-}
-
 /// A single recognizer owns the complete contact. A pan can never fall through
 /// to a second tap recognizer when the system accessory changes its layout.
 struct MiniPlayerGesture: UIViewRepresentable {
@@ -22,7 +13,6 @@ struct MiniPlayerGesture: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            PlayerGestureTrace.record("host=\(ObjectIdentifier(self)) window=\(String(describing: window.map(ObjectIdentifier.init))) OS=\(UIDevice.current.systemVersion)")
             recognizer.view?.removeGestureRecognizer(recognizer)
             guard let window else {
                 presentation.cancelDrag(from: .miniPlayer)
@@ -39,7 +29,6 @@ struct MiniPlayerGesture: UIViewRepresentable {
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard let window else {
-                PlayerGestureTrace.record("host=\(ObjectIdentifier(self)) reject: no window")
                 return false
             }
             let point = touch.location(in: window)
@@ -51,8 +40,6 @@ struct MiniPlayerGesture: UIViewRepresentable {
             let eligible = recognizer.canBegin()
             if eligible && !modal { recognizer.acceptsTap = acceptsTap }
             let accepted = eligible && !modal && inBar
-            PlayerGestureTrace.record("host=\(ObjectIdentifier(self)) receive=\(accepted) point=\(point) eligible=\(eligible) modal=\(modal) inBar=\(inBar) control=\(!acceptsTap) expanded=\(presentation.isExpanded) owner=\(String(describing: presentation.dragSource)) animating=\(presentation.isAnimatingTransition) progress=\(presentation.progress)")
-            PlayerGestureTrace.record("regions=\(allRegions.map { "\($0.isTransport ? "controls" : "bar") visible=\($0.isVisible) frame=\($0.convert($0.bounds, to: window))" }.joined(separator: "; "))")
             return accepted
         }
 
@@ -69,21 +56,15 @@ struct MiniPlayerGesture: UIViewRepresentable {
                     presentation.drag(to: PlayerDismissMetrics.openingProgress(
                         translation: contact.translation, height: contact.height), from: .miniPlayer)
                 }
-                if recognizer.state == .began {
-                    PlayerGestureTrace.record("tracking began translation=\(contact.translation) progress=\(presentation.progress) owner=\(String(describing: presentation.dragSource))")
-                }
             case .ended:
                 if contact.isDragging {
                     let opens = PlayerDismissMetrics.shouldOpen(translation: contact.translation,
                         predictedTranslation: contact.projectedTranslation, height: contact.height)
                     presentation.endDrag(dismissing: !opens, from: .miniPlayer)
-                    PlayerGestureTrace.record("release open=\(opens) translation=\(contact.translation) projected=\(contact.projectedTranslation) expanded=\(presentation.isExpanded) animating=\(presentation.isAnimatingTransition) token=\(presentation.animationToken)")
                 } else {
-                    PlayerGestureTrace.record("tap expand")
                     presentation.expand()
                 }
             case .cancelled, .failed:
-                PlayerGestureTrace.record("action cancelled/failed state=\(recognizer.state.rawValue) translation=\(contact.translation)")
                 presentation.cancelDrag(from: .miniPlayer)
             default:
                 break
@@ -97,7 +78,6 @@ struct MiniPlayerGesture: UIViewRepresentable {
         private(set) var contact = MiniPlayerContact()
         private weak var contactWindow: UIWindow?
         private var trackedTouch: UITouch?
-        private var moveEvents = 0
 
         // The delegate admits only mini-player contacts, excluding modal
         // presentations. Native accessory gestures must not prevent
@@ -114,30 +94,23 @@ struct MiniPlayerGesture: UIViewRepresentable {
             super.touchesBegan(touches, with: event)
             guard canBegin(), trackedTouch == nil, touches.count == 1,
                   let touch = touches.first, let window = (view as? UIWindow) ?? view?.window else {
-                PlayerGestureTrace.record("raw begin rejected eligible=\(canBegin()) alreadyTracking=\(trackedTouch != nil) touchCount=\(touches.count)")
                 state = state == .possible ? .failed : .cancelled
                 return
             }
             trackedTouch = touch
             contactWindow = window
             contact.begin(at: touch.location(in: window), time: touch.timestamp, height: window.bounds.height)
-            PlayerGestureTrace.record("raw begin height=\(window.bounds.height) acceptsTap=\(acceptsTap)")
         }
 
         override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
             super.touchesMoved(touches, with: event)
             guard let touch = trackedTouch, touches.contains(touch), let window = contactWindow else { return }
             let wasDragging = contact.isDragging
-            moveEvents += 1
             switch contact.move(to: touch.location(in: window), time: touch.timestamp) {
             case .waiting: break
             case .dragging: state = wasDragging ? .changed : .began
             case .rejected:
-                PlayerGestureTrace.record("raw direction rejected translation=\(contact.translation) moves=\(moveEvents)")
                 state = .failed
-            }
-            if moveEvents == 1 || moveEvents.isMultiple(of: 10) {
-                PlayerGestureTrace.record("raw move count=\(moveEvents) state=\(state.rawValue) translation=\(contact.translation) modelProgress=\(NowPlayingPresentation.shared.progress)")
             }
         }
 
@@ -149,23 +122,19 @@ struct MiniPlayerGesture: UIViewRepresentable {
             }
             // A long stationary hold contributes zero release velocity.
             let recognized = contact.finish(at: touch.location(in: window), time: touch.timestamp)
-            PlayerGestureTrace.record("raw end recognized=\(recognized) drag=\(contact.isDragging) moves=\(moveEvents) translation=\(contact.translation) projected=\(contact.projectedTranslation)")
             state = recognized && (contact.isDragging || acceptsTap) ? .ended : .failed
         }
 
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
             super.touchesCancelled(touches, with: event)
-            PlayerGestureTrace.record("raw cancelled moves=\(moveEvents) translation=\(contact.translation)")
             state = .cancelled
         }
 
         override func reset() {
-            PlayerGestureTrace.record("reset state=\(state.rawValue) tracked=\(trackedTouch != nil) moves=\(moveEvents)")
             super.reset()
             trackedTouch = nil
             contactWindow = nil
             contact = MiniPlayerContact()
-            moveEvents = 0
         }
     }
 }

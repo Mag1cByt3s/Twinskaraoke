@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EqualizerBars: View {
     let isAnimating: Bool
+    var pausesWhileScrolling = true
     @Environment(\.appReduceEffects) private var reduceEffects
     @Environment(\.scenePhase) private var scenePhase
     private let scrollState = ScrollPerformanceState.shared
@@ -53,7 +54,8 @@ struct EqualizerBars: View {
     }
 
     private var shouldAnimateBars: Bool {
-        isAnimating && isVisible && !reduceEffects && scenePhase == .active && !scrollState.isScrolling
+        isAnimating && isVisible && !reduceEffects && scenePhase == .active
+            && (!pausesWhileScrolling || !scrollState.isScrolling)
     }
 }
 

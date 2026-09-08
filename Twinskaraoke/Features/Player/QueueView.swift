@@ -274,7 +274,7 @@ struct QueueView: View {
                 }
                 Spacer()
 
-                EqualizerBars(isAnimating: audioManager.isPlaying)
+                EqualizerBars(isAnimating: audioManager.isPlaying, pausesWhileScrolling: false)
                     .frame(width: 16, height: 16)
                     .foregroundStyle(Color.appAccent)
             }
