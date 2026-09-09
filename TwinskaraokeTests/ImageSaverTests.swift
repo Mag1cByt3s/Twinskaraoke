@@ -5,6 +5,20 @@ import UIKit
 
 @MainActor
 struct ImageSaverTests {
+    @Test func photoCreationChangeRunsOnBackgroundQueue() async {
+        let image = UIImage()
+        let result = await withCheckedContinuation { continuation in
+            // Exercise the production change block on a Photos-like queue,
+            // replacing only the asset mutation so this needs no permission.
+            let change = ImageSaver.photoCreationChange(for: image) { @Sendable receivedImage in
+                continuation.resume(returning: (!Thread.isMainThread, receivedImage === image))
+            }
+            DispatchQueue(label: "ImageSaverTests.photos-changes").async(execute: change)
+        }
+        #expect(result.0)
+        #expect(result.1)
+    }
+
     @Test(arguments: [PHAuthorizationStatus.denied, .restricted, .notDetermined])
     func deniedAuthorizationNeverWrites(status: PHAuthorizationStatus) async {
         var writes = 0

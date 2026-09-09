@@ -21,13 +21,22 @@
                 await PHPhotoLibrary.requestAuthorization(for: .addOnly)
             },
             writeImage: @escaping @MainActor (UIImage) async throws -> Void = { image in
-                try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.creationRequestForAsset(from: image)
-                }
+                try await PHPhotoLibrary.shared().performChanges(photoCreationChange(for: image))
             }
         ) {
             self.requestAuthorization = requestAuthorization
             self.writeImage = writeImage
+        }
+
+        // Photos executes this block on its own queue. Both closures must be
+        // Sendable so neither inherits this type's MainActor isolation.
+        static func photoCreationChange(
+            for image: UIImage,
+            createAsset: @escaping @Sendable (UIImage) -> Void = { @Sendable image in
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+        ) -> @Sendable () -> Void {
+            { @Sendable in createAsset(image) }
         }
 
         func save(image: UIImage, completion: @escaping @MainActor (Result<Void, Error>) -> Void) {
