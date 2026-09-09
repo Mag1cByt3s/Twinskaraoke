@@ -1,9 +1,55 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import Twinskaraoke
 
 @Suite("Vocal separator regressions", .serialized)
 struct VocalSeparatorRegressionTests {
+    @Test("Concurrent trimming produces a playable WAV with the requested remaining duration")
+    func trimsAudio() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.wav")
+        let output = directory.appendingPathComponent("trimmed.wav")
+        try Self.writeFixture(to: source)
+        try await VocalSeparator.trimForTesting(source: source, from: 1, to: output)
+        let result = try AVAudioFile(forReading: output)
+        let duration = Double(result.length) / result.processingFormat.sampleRate
+        #expect(abs(duration - 1) < 0.05)
+        #expect(result.processingFormat.channelCount == 1)
+    }
+
+    @Test("An already-cancelled trim cannot remove an existing output")
+    func cancelledTrimPreservesOutput() async throws {
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let existing = Data("existing output".utf8)
+        try existing.write(to: output)
+        defer { try? FileManager.default.removeItem(at: output) }
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await VocalSeparator.trimForTesting(source: output, from: 0, to: output)
+        }
+        do {
+            try await task.value
+            Issue.record("Expected cancellation before touching the output")
+        } catch is CancellationError {
+        }
+        #expect(try Data(contentsOf: output) == existing)
+    }
+
+    private static func writeFixture(to url: URL) throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 88_200))
+        buffer.frameLength = buffer.frameCapacity
+        let samples = try #require(buffer.floatChannelData?[0])
+        for frame in 0..<Int(buffer.frameLength) {
+            samples[frame] = Float(sin(Double(frame) * 2 * .pi * 440 / 44_100) * 0.1)
+        }
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+    }
+
     @Test("A stale job cannot finish or clear its replacement")
     func staleJobCannotFinishReplacement() {
         var ownership = SeparationJobOwnership()
