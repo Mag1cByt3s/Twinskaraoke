@@ -75,3 +75,20 @@ Second-pass validation:
 - `git diff --check` passed. The first-pass UI checks were not repeated for these service/model changes.
 
 The new lifecycle tests use controlled responses and do not perform live authentication. Mac/TV browser and account behavior still need device/service verification; these platforms do not currently have dedicated authentication unit-test targets. This pass does not change the iOS 27 SDK/runtime limitation above.
+
+## Third pass — installed Xcode retained
+
+This pass keeps iOS 26.5 as the minimum and uses the installed Xcode without adding SDK 27-only source dependencies.
+
+- Artwork saving now uses async PhotoKit authorization and change requests instead of `UIImageWriteToSavedPhotosAlbum` and Objective-C selectors. It requests add-only permission, rechecks authorization for each save, and preserves FIFO ordering through failures and reentrant completion callbacks. Accepted writes remain alive when the originating view disappears. See Apple's [PhotoKit authorization documentation](https://developer.apple.com/documentation/photos/phphotolibrary) and [async change requests](https://developer.apple.com/documentation/photos/phphotolibrary/performchanges(_:completionhandler:)).
+- The gallery waits for the final SDWebImage completion before saving, rejects stale generations, and removes its unreachable non-UIKit download fallback. Save completions are explicitly main-actor isolated.
+- The full-screen player's save-result reset uses a generation rather than status equality, so an older timer cannot clear a newer identical success/failure result.
+- New injected PhotoKit regression tests cover denied/restricted/undetermined permission, failure recovery, FIFO/reentrant requests, and authorization changes. They do not access the real photo library.
+
+Validation: 243 iOS unit tests passed, 260 executions including parameterized cases, zero failures or skips (`/private/tmp/modernization-pass3-verified.xcresult`). An initial compile attempt caught an incorrectly positioned SDWebImage completion parameter; the corrected signature is included in the passing run. Real Photos permission prompts and saved-image results still need a device check.
+
+The remaining availability scan found only the intentional iOS 27 tab API guard. Apple's [iOS 27 notes](https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-27-release-notes) also describe restricted background Neural Engine access. Vocal separation currently delegates model configuration to swift-spleeter, which loads Core ML with default configuration. Foreground-to-background inference therefore remains a specific iOS 27 hardware verification item; this audit does not establish its behavior or add an unverified entitlement.
+
+An iOS 26.5 SDK build can be tested on an iOS 27 device through a supported installation/distribution route without changing this machine's Xcode. Such runtime testing is distinct from building against the iOS 27 SDK; neither has been performed here. Existing source/SDK checks are not a guarantee of final iOS 27 compatibility.
+
+Final third-pass Release build and static analysis passed without diagnostics (`/private/tmp/modernization-pass3-release.log`). `git diff --check` passed. Cross-platform and UI suites were not repeated for these iOS-only artwork changes.

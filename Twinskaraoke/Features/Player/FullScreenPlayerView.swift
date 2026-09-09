@@ -331,6 +331,7 @@ struct FullScreenPlayerView: View {
     @State private var showCoverArt = false
     @State private var showAddToPlaylist = false
     @State private var coverArtSaveStatus: ArtworkSaveStatus = .idle
+    @State private var coverArtSaveGeneration = 0
     @State private var easterEggImageURL: URL?
     @State private var easterEggArtistName: String?
     @State private var easterEggArtistLink: String?
@@ -1242,6 +1243,7 @@ struct FullScreenPlayerView: View {
         guard !coverArtSaveStatus.isSaving else { return }
         guard let url else { return }
         coverArtSaveStatus = .saving
+        coverArtSaveGeneration &+= 1
         Task {
             #if canImport(UIKit)
                 if let image = await CoverArtService.fetchImage(from: url) {
@@ -1265,11 +1267,11 @@ struct FullScreenPlayerView: View {
     }
 
     private func resetCoverArtSaveStatusLater() {
-        // A second save may start within the window; only reset if the status
-        // hasn't moved on since this timer was scheduled.
-        let status = coverArtSaveStatus
+        // A newer save can finish with the same status before this timer fires.
+        // Only reset the save cycle that scheduled this timer.
+        let generation = coverArtSaveGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if coverArtSaveStatus == status {
+            if coverArtSaveGeneration == generation {
                 coverArtSaveStatus = .idle
             }
         }
