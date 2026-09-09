@@ -62,7 +62,7 @@ nonisolated enum TimeSpanParser {
             .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
             .replacingOccurrences(of: ",", with: ".")
         guard !normalized.isEmpty else { return nil }
-        if let seconds = Double(normalized), seconds >= 0 {
+        if let seconds = Double(normalized), seconds.isFinite, seconds >= 0 {
             return seconds
         }
 
@@ -70,14 +70,15 @@ nonisolated enum TimeSpanParser {
         let parsed: TimeInterval?
         switch parts.count {
         case 2:
-            guard let minutes = Double(parts[0]), let seconds = Double(parts[1]) else {
+            guard let minutes = Double(parts[0]), minutes.isFinite, minutes >= 0,
+                  let seconds = Double(parts[1]), seconds.isFinite, seconds >= 0 else {
                 return nil
             }
             parsed = minutes * 60 + seconds
         case 3:
-            guard let hours = Double(parts[0]),
-                  let minutes = Double(parts[1]),
-                  let seconds = Double(parts[2])
+            guard let hours = Double(parts[0]), hours.isFinite, hours >= 0,
+                  let minutes = Double(parts[1]), minutes.isFinite, minutes >= 0,
+                  let seconds = Double(parts[2]), seconds.isFinite, seconds >= 0
             else {
                 return nil
             }
@@ -86,7 +87,7 @@ nonisolated enum TimeSpanParser {
             parsed = nil
         }
 
-        guard let parsed, parsed >= 0 else { return nil }
+        guard let parsed, parsed.isFinite, parsed >= 0 else { return nil }
         return parsed
     }
 }

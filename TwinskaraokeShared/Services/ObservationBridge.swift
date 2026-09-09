@@ -1,24 +1,13 @@
 import Foundation
 import Observation
 
-/// Re-arming bridge from `@Observable` back to imperative change callbacks.
+/// Observes `@Observable` state for imperative clients such as CarPlay and
+/// playback projections. Registration is synchronous; delivery happens on the
+/// next main-actor turn so the observer reads committed values.
 ///
-/// `@Observable` has no publisher projection, so the `$property.sink` pipelines
-/// this app used for cross-module wiring (CarPlay, the popup bar, the Shimeji
-/// overlay) have no direct equivalent. `withObservationTracking` is the
-/// replacement primitive, but it differs from `sink` in two ways that matter:
-///
-///   * it fires `onChange` **once** and then stops tracking, and
-///   * it fires *before* the write lands, so reading inside `onChange` still
-///     yields the old value.
-///
-/// This wrapper restores `sink` semantics — a callback after every change, for
-/// as long as the token is held — by hopping to the next main-actor turn (so
-/// the new value is visible) and then re-arming.
-///
-/// Cancel by releasing the token or calling `cancel()`; a cancelled token stops
-/// re-arming, which is what keeps view models from observing past their own
-/// lifetime.
+/// Changes in one turn coalesce. Re-arm before invoking the callback so
+/// mutations made by the callback are observed too. Release or cancel the
+/// token to stop delivery.
 @MainActor
 final class ObservationToken {
     private var isCancelled = false
@@ -30,16 +19,9 @@ final class ObservationToken {
     }
 
     fileprivate var isActive: Bool { !isCancelled }
-
-    deinit {
-        // `isCancelled` is plain stored state on a MainActor type; the isolated
-        // deinit lets us touch it without hopping. See the house pattern note
-        // in AVEnginePlayback/AudioPlayerManager.
-        isCancelled = true
-    }
 }
 
-/// Calls `onChange` after every change to any `@Observable` property read
+/// Calls `onChange` after coalesced changes to any `@Observable` property read
 /// inside `track`, until the returned token is cancelled or released.
 ///
 /// `track` must actually *read* the properties to observe — that read is what
@@ -69,8 +51,8 @@ private func armObservation(
         // and is not main-actor isolated. Hop so observers see the new value.
         Task { @MainActor [weak token] in
             guard let token, token.isActive else { return }
-            onChange()
             armObservation(token: token, track: track, onChange: onChange)
+            onChange()
         }
     }
 }

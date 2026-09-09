@@ -286,11 +286,11 @@ final class TransitionCoordinator {
         [b, b * 2, b / 2].map { abs(a - $0) }.min()!
     }
 
-    // nonisolated: AudioCacheStore.playableMainURL may synchronously run
+    // @concurrent: AudioCacheStore.playableMainURL may synchronously run
     // decompressFileIfNeeded for .wav caches — blocking file I/O that must
     // stay off the main actor (callers on the main actor use the
     // non-decompressing immediatelyPlayableMainURL variant instead).
-    private nonisolated static func audioFileURL(for song: Song) async -> URL? {
+    @concurrent private static func audioFileURL(for song: Song) async -> URL? {
         if let downloaded = await DownloadManager.shared.playableURL(for: song) {
             return downloaded
         }

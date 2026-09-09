@@ -87,7 +87,7 @@
 
 /* Begin PBXFileReference section */
 		33CB3DD4ECD8C15D69EDD6DE /* Twinskaraoke Mac App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Twinskaraoke Mac App.app"; path = Twinskaraoke.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6B789992B5FC6B90FC2528F9 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		6B789992B5FC6B90FC2528F9 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		D0AA0000000000000000E00A /* Twinskaraoke TV App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Twinskaraoke TV App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0BB0000000000000000E00A /* TwinskaraokeWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TwinskaraokeWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0F981B52F94C10900FD69AB /* Twinskaraoke.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Twinskaraoke.app; sourceTree = BUILT_PRODUCTS_DIR; };

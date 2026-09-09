@@ -10,6 +10,13 @@ final class PlaylistCoverLoader {
     private var fallbackSongs: [Song] = []
     private var loadedPlaylist: Playlist?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private let fetchData: @MainActor (String) async throws -> Data
+
+    init(fetchData: @escaping @MainActor (String) async throws -> Data = {
+        try await KaraokeAPIClient.playlistDetailData(id: $0)
+    }) {
+        self.fetchData = fetchData
+    }
 
     func load(playlistID: String, fallback: [Song]? = nil) {
         if loadedID == playlistID {
@@ -23,13 +30,19 @@ final class PlaylistCoverLoader {
         artworkURLs = Self.extractArtworkURLs(fromSongs: fallbackSongs)
         loadTask?.cancel()
 
+        let fetchData = self.fetchData
         loadTask = Task { [weak self] in
-            guard let data = try? await KaraokeAPIClient.playlistDetailData(id: playlistID) else {
+            guard let data = try? await fetchData(playlistID) else {
+                guard !Task.isCancelled else { return }
                 self?.handleLoadFailure(playlistID: playlistID)
                 return
             }
             let decoded = await Self.decodeArtworkPayload(data)
             guard !Task.isCancelled else { return }
+            guard decoded.playlist != nil || decoded.songs != nil else {
+                self?.handleLoadFailure(playlistID: playlistID)
+                return
+            }
             self?.applyDecodedArtwork(decoded, playlistID: playlistID)
         }
     }
@@ -49,7 +62,7 @@ final class PlaylistCoverLoader {
     }
 
     /// Decodes off the main actor; callers hop back to main only to assign results.
-    nonisolated private static func decodeArtworkPayload(_ data: Data) async -> DecodedArtworkPayload {
+    @concurrent private static func decodeArtworkPayload(_ data: Data) async -> DecodedArtworkPayload {
         let playlist = try? JSONDecoder().decode(Playlist.self, from: data)
         let songs = playlist?.songListDTOs ?? SongPayloadDecoder.decodeSongs(from: data)
         return DecodedArtworkPayload(playlist: playlist, songs: songs)

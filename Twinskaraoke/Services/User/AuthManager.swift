@@ -33,6 +33,9 @@ final class AuthManager: NSObject {
     private var webAuthenticationSession: ASWebAuthenticationSession?
     private var webAuthenticationContextProvider: WebAuthenticationPresentationContextProvider?
     private var sessionExpiredObserver: NSObjectProtocol?
+    private var loginGeneration = UUID()
+    @ObservationIgnored private var webAuthenticationContinuation: CheckedContinuation<URL, Error>?
+    @ObservationIgnored private let requestData: @MainActor (URLRequest) async throws -> (Data, URLResponse)
 
     private enum K {
         nonisolated static let userId = "nk.userId"
@@ -57,7 +60,12 @@ final class AuthManager: NSObject {
         static let redirectUri = "neurokaraoke://auth"
     }
 
-    override init() {
+    override convenience init() {
+        self.init(requestData: { try await URLSession.shared.data(for: $0) })
+    }
+
+    init(requestData: @escaping @MainActor (URLRequest) async throws -> (Data, URLResponse)) {
+        self.requestData = requestData
         super.init()
         loadPersisted()
         sessionExpiredObserver = NotificationCenter.default.addObserver(
@@ -147,11 +155,14 @@ final class AuthManager: NSObject {
     }
 
     func login(username: String, password: String) async {
+        guard !isLoading else { return }
         guard !username.isEmpty, !password.isEmpty else {
             errorMessage = "Please fill in all fields"
             return
         }
         isLoading = true
+        let generation = UUID()
+        loginGeneration = generation
         errorMessage = nil
         do {
             let (data, resp) = try await postJSON(
@@ -161,6 +172,8 @@ final class AuthManager: NSObject {
                     "password": password,
                 ]
             )
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 throw AuthError.http((resp as? HTTPURLResponse)?.statusCode ?? 0, body)
@@ -177,14 +190,18 @@ final class AuthManager: NSObject {
                 avatar: parsed?.avatar
             )
         } catch {
+            guard loginGeneration == generation else { return }
             isLoading = false
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             errorMessage = friendlyError(error)
         }
     }
 
     func loginWithDiscord() async {
-        guard webAuthenticationSession == nil else { return }
+        guard !isLoading, webAuthenticationSession == nil else { return }
         isLoading = true
+        let generation = UUID()
+        loginGeneration = generation
         errorMessage = nil
         do {
             guard let presentationAnchor = activePresentationAnchor() else {
@@ -203,48 +220,56 @@ final class AuthManager: NSObject {
                 .init(name: "code_challenge_method", value: "S256"),
                 .init(name: "state", value: state),
             ]
-            let callbackURL = try await withCheckedThrowingContinuation {
-                (cont: CheckedContinuation<URL, Error>) in
-                let session = ASWebAuthenticationSession(
-                    url: comps.url!,
-                    callbackURLScheme: "neurokaraoke"
-                ) { [weak self] url, error in
-                    Task { @MainActor [weak self] in
-                        self?.webAuthenticationSession = nil
-                        self?.webAuthenticationContextProvider = nil
+            let callbackURL = try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                return try await withCheckedThrowingContinuation { continuation in
+                    webAuthenticationContinuation = continuation
+                    let session = ASWebAuthenticationSession(
+                        url: comps.url!,
+                        callback: .customScheme("neurokaraoke")
+                    ) { [weak self] url, error in
+                        Task { @MainActor [weak self] in
+                            guard let self, loginGeneration == generation else { return }
+                            if let error {
+                                finishWebAuthentication(.failure(Self.mappedWebAuthenticationError(error)))
+                            } else if let url {
+                                finishWebAuthentication(.success(url))
+                            } else {
+                                finishWebAuthentication(.failure(AuthError.cancelled))
+                            }
+                        }
                     }
-                    if let error {
-                        cont.resume(throwing: Self.mappedWebAuthenticationError(error))
-                        return
+                    let contextProvider = WebAuthenticationPresentationContextProvider(anchor: presentationAnchor)
+                    session.presentationContextProvider = contextProvider
+                    session.prefersEphemeralWebBrowserSession = true
+                    webAuthenticationContextProvider = contextProvider
+                    webAuthenticationSession = session
+                    if !session.start() {
+                        finishWebAuthentication(.failure(AuthError.invalidCallback))
                     }
-                    guard let url else {
-                        cont.resume(throwing: AuthError.cancelled)
-                        return
-                    }
-                    cont.resume(returning: url)
                 }
-                let contextProvider = WebAuthenticationPresentationContextProvider(
-                    anchor: presentationAnchor
-                )
-                session.presentationContextProvider = contextProvider
-                session.prefersEphemeralWebBrowserSession = true
-                webAuthenticationContextProvider = contextProvider
-                webAuthenticationSession = session
-                guard session.start() else {
-                    webAuthenticationSession = nil
-                    webAuthenticationContextProvider = nil
-                    cont.resume(throwing: AuthError.invalidCallback)
-                    return
+            } onCancel: {
+                Task { @MainActor [weak self] in
+                    guard let self, loginGeneration == generation else { return }
+                    cancelWebAuthentication()
                 }
             }
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             guard
                 let cbComps = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
                 cbComps.queryItems?.first(where: { $0.name == "state" })?.value == state,
                 let code = cbComps.queryItems?.first(where: { $0.name == "code" })?.value
             else { throw AuthError.invalidCallback }
             let discordToken = try await exchangeDiscordCode(code, verifier: verifier)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             let nkToken = try await exchangeForNKToken(discordToken)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             let profile = try await fetchDiscordProfile(discordToken)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             try commit(
                 token: nkToken,
                 userId: profile.id,
@@ -252,12 +277,29 @@ final class AuthManager: NSObject {
                 avatar: profile.avatar
             )
         } catch {
+            guard loginGeneration == generation else { return }
             webAuthenticationSession = nil
             webAuthenticationContextProvider = nil
             isLoading = false
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             if case AuthError.cancelled = error { return }
             errorMessage = friendlyError(error)
         }
+    }
+
+    /// Complete exactly once, including programmatic cancellation where the
+    /// browser is not required to invoke its user-completion callback.
+    private func finishWebAuthentication(_ result: Result<URL, Error>) {
+        let continuation = webAuthenticationContinuation
+        webAuthenticationContinuation = nil
+        webAuthenticationSession = nil
+        webAuthenticationContextProvider = nil
+        continuation?.resume(with: result)
+    }
+
+    private func cancelWebAuthentication() {
+        webAuthenticationSession?.cancel()
+        finishWebAuthentication(.failure(CancellationError()))
     }
 
     private static let requestTimeout: TimeInterval = 15
@@ -277,7 +319,7 @@ final class AuthManager: NSObject {
             req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return try await URLSession.shared.data(for: req)
+        return try await requestData(req)
     }
 
     private func exchangeDiscordCode(_ code: String, verifier: String) async throws -> String {
@@ -291,7 +333,7 @@ final class AuthManager: NSObject {
         req.httpBody =
             "client_id=\(Endpoint.discordClientId)&grant_type=authorization_code&code=\(code)&redirect_uri=\(encoded)&code_verifier=\(verifier)"
                 .data(using: .utf8)
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await requestData(req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw AuthError.http(
                 (resp as? HTTPURLResponse)?.statusCode ?? 0,
@@ -372,7 +414,7 @@ final class AuthManager: NSObject {
         var req = URLRequest(url: URL(string: Endpoint.discordUser)!)
         req.timeoutInterval = Self.requestTimeout
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await requestData(req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw AuthError.http((resp as? HTTPURLResponse)?.statusCode ?? 0, "")
         }
@@ -422,6 +464,10 @@ final class AuthManager: NSObject {
     }
 
     func logout() {
+        loginGeneration = UUID()
+        cancelWebAuthentication()
+        isLoading = false
+        errorMessage = nil
         clearPersistedSession()
         clearAccountScopedState()
         authToken = nil

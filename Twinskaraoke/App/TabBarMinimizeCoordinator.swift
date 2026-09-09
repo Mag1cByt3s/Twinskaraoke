@@ -53,8 +53,6 @@ import SwiftUI
     @MainActor
     @Observable
     final class TabBarMinimizeCoordinator {
-        static let shared = TabBarMinimizeCoordinator()
-
         /// How far the content must travel back up, in points, to bring the bar
         /// back. Measured on the scroll view rather than the finger, so a short
         /// flick counts for everything its deceleration carries — measuring the
@@ -156,6 +154,7 @@ import SwiftUI
 
         @ObservationIgnored private weak var tabBarController: UITabBarController?
         @ObservationIgnored private var gestureTarget: GestureTarget?
+        @ObservationIgnored private var panRecognizer: UIPanGestureRecognizer?
         @ObservationIgnored private weak var trackedScrollView: UIScrollView?
         @ObservationIgnored private var offsetObservation: NSKeyValueObservation?
         @ObservationIgnored private var rearmTask: Task<Void, Never>?
@@ -167,7 +166,15 @@ import SwiftUI
         /// user scrolls back down past `rearmDistance`.
         @ObservationIgnored private var isRevealArmed = true
 
-        private init() {}
+        init() {}
+
+        isolated deinit {
+            rearmTask?.cancel()
+            offsetObservation?.invalidate()
+            if let panRecognizer {
+                panRecognizer.view?.removeGestureRecognizer(panRecognizer)
+            }
+        }
 
         /// Installs the recognizer on the tab bar controller hosting `window`.
         /// Retries on later runloop turns: the SwiftUI view that calls this can
@@ -212,6 +219,7 @@ import SwiftUI
             recognizer.delaysTouchesEnded = false
             recognizer.delegate = target
             controller.view.addGestureRecognizer(recognizer)
+            panRecognizer = recognizer
         }
 
         /// iOS 27 separates tab prominence from search behavior. Use the public
@@ -396,23 +404,25 @@ import SwiftUI
 
     /// Reaches the window so the coordinator can find the tab bar controller.
     struct TabBarMinimizeInstaller: UIViewRepresentable {
-        func makeUIView(context _: Context) -> UIView {
+        func makeUIView(context _: Context) -> InstallerView {
             InstallerView()
         }
 
-        func updateUIView(_ view: UIView, context _: Context) {
+        func updateUIView(_ view: InstallerView, context _: Context) {
             guard let window = view.window else { return }
             Task { @MainActor in
-                TabBarMinimizeCoordinator.shared.attach(to: window)
+                view.coordinator.attach(to: window)
             }
         }
     }
 
-    private final class InstallerView: UIView {
+    final class InstallerView: UIView {
+        let coordinator = TabBarMinimizeCoordinator()
+
         override func didMoveToWindow() {
             super.didMoveToWindow()
             guard let window else { return }
-            TabBarMinimizeCoordinator.shared.attach(to: window)
+            coordinator.attach(to: window)
         }
     }
 #endif
