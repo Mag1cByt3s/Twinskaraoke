@@ -185,6 +185,36 @@ struct ModernizationRegressionTests {
         #expect(recognizerCount(in: newController) == 1)
     }
 
+    @Test("An overlapping coordinator leaves the installed recognizer and its reveal alone")
+    func tabCoordinatorOverlappingInstallers() throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UITabBarController()
+        window.rootViewController = controller
+        // An iPad resizing between the sidebar and tab shells overlaps two
+        // installers on one controller. Only the first gets the recognizer.
+        let owner = TabBarMinimizeCoordinator()
+        let overlapping = TabBarMinimizeCoordinator()
+        owner.attach(to: window)
+        overlapping.attach(to: window)
+        #expect(recognizerCount(in: controller) == 1)
+
+        // Stands in for a reveal the owner is holding. The overlapping
+        // coordinator used to fail its fast path on every update, which cleared
+        // its state and reassigned the behaviour out from under the owner.
+        controller.tabBarMinimizeBehavior = .never
+        overlapping.attach(to: window)
+        overlapping.attach(to: window)
+        #expect(controller.tabBarMinimizeBehavior == .never)
+        #expect(recognizerCount(in: controller) == 1)
+
+        // Teardown removes only what a coordinator installed itself.
+        overlapping.detach()
+        #expect(recognizerCount(in: controller) == 1)
+        owner.detach()
+        #expect(recognizerCount(in: controller) == 0)
+    }
+
     @Test("Removing an installer detaches even while the installer remains alive")
     func tabInstallerRemoval() throws {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -210,6 +240,8 @@ struct ModernizationRegressionTests {
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(1))
         }
-        #expect(condition())
+        // Stops the test here rather than letting the assertions that follow
+        // fail a second time against state that never settled.
+        try #require(condition())
     }
 }

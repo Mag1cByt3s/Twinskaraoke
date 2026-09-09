@@ -9,6 +9,9 @@ on:
         default: latest
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   ios-tests:
     name: iOS Tests
@@ -17,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Force Latest Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -76,6 +81,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Force Latest Xcode
         uses: maxim-lobanov/setup-xcode@v1

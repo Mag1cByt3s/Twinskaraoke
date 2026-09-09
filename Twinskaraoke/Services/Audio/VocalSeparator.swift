@@ -638,7 +638,6 @@ final class VocalSeparator {
         async throws
     {
         try Task.checkCancellation()
-        try? FileManager.default.removeItem(at: output)
         let asset = AVURLAsset(url: source)
         let duration = try await asset.load(.duration)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
@@ -678,6 +677,11 @@ final class VocalSeparator {
         let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
         guard reader.canAdd(readerOutput) else { throw VocalSeparatorError.trimFailed }
         reader.add(readerOutput)
+        // Deferred to here, the last point before the writer needs the path
+        // free: everything above suspends on asset loading, and removing the
+        // file first meant a cancellation during those loads destroyed a
+        // perfectly good previous output without writing a replacement.
+        try? FileManager.default.removeItem(at: output)
         guard let writer = try? AVAssetWriter(outputURL: output, fileType: .wav) else {
             throw VocalSeparatorError.trimFailed
         }

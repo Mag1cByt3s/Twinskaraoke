@@ -218,7 +218,7 @@ import SwiftUI
         private func resolveAttachment(to window: UIWindow, generation: Int, remainingAttempts: Int) {
             guard generation == attachmentGeneration else { return }
             let controller = Self.tabBarController(in: window.rootViewController)
-            if let controller, controller === tabBarController, panRecognizer != nil {
+            if let controller, controller === tabBarController, Self.isInstalled(on: controller) {
                 Self.keepSearchProminent(in: controller)
                 return
             }
@@ -226,7 +226,11 @@ import SwiftUI
             guard let controller else {
                 guard remainingAttempts > 0 else { return }
                 attachmentTask = Task { @MainActor [weak self, weak window] in
-                    await Task.yield()
+                    // A frame, not `Task.yield()`: yielding only reschedules
+                    // this task on the main actor and can run again before
+                    // UIKit has installed `TabView`'s controller, which burned
+                    // all ten attempts inside one run-loop turn.
+                    try? await Task.sleep(for: .milliseconds(16))
                     guard !Task.isCancelled, let window else { return }
                     self?.resolveAttachment(
                         to: window, generation: generation, remainingAttempts: remainingAttempts - 1
@@ -242,10 +246,7 @@ import SwiftUI
             // The installer view can be re-added to the same controller — an iPad
             // resizing between the sidebar and tab shells does exactly that — and
             // a second recognizer on one view would double every measurement.
-            let alreadyInstalled = controller.view.gestureRecognizers?.contains {
-                $0.name == Self.recognizerName
-            } ?? false
-            guard !alreadyInstalled else { return }
+            guard !Self.isInstalled(on: controller) else { return }
 
             let target = GestureTarget { [weak self] recognizer in
                 self?.handlePan(recognizer)
@@ -263,6 +264,23 @@ import SwiftUI
             recognizer.delegate = target
             controller.view.addGestureRecognizer(recognizer)
             panRecognizer = recognizer
+        }
+
+        /// Whether a recognizer of ours already watches this controller.
+        ///
+        /// Deliberately asks the view rather than `panRecognizer`, because the
+        /// recognizer may belong to a different coordinator: two
+        /// `InstallerView`s overlap on one controller while an iPad swaps
+        /// between the sidebar and tab shells, and only the first installs.
+        /// Checking ownership instead made the loser fail its fast path on
+        /// every `updateUIView`, so it called `clearController()` each time and
+        /// reset `mode` and the reveal state — including the winner's live
+        /// `.never` window, since it reassigns `tabBarMinimizeBehavior`.
+        ///
+        /// Ownership stays in `panRecognizer` and is still what teardown uses,
+        /// so a coordinator only ever removes the recognizer it added.
+        private static func isInstalled(on controller: UITabBarController) -> Bool {
+            controller.view.gestureRecognizers?.contains { $0.name == recognizerName } ?? false
         }
 
         /// iOS 27 separates tab prominence from search behavior. Use the public

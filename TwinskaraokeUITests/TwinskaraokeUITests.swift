@@ -561,8 +561,19 @@ final class TwinskaraokeUITests: XCTestCase {
     start.press(forDuration: 0.05, thenDragTo: end, withVelocity: 400, thenHoldForDuration: 0.1)
     let handle = app.buttons["PlayerDismissHandle"]
     XCTAssertTrue(waitUntil(timeout: 8) { handle.isHittable })
-    // Status-bar geometry varies across devices and OS releases. Assert the
-    // handle clears the actual bar instead of an iPhone-specific 60pt cutoff.
+    // Status-bar geometry varies across devices and OS releases, so this is
+    // measured against the actual bar rather than an iPhone-specific 60pt
+    // cutoff.
+    //
+    // `midY`, not `minY`: the accessibility frame is the 60x44 tap target, not
+    // the 50x5 capsule drawn inside it, and the target legitimately starts
+    // above the bar. Measured on iPhone 17 Pro / iOS 26.5 the handle reports
+    // (171, 33.7, 60, 44) against a status bar of (0, 0, 402, 54): the capsule,
+    // centred in that target, spans y 53.2-58.2 and so sits at the bar's
+    // bottom edge, while the target itself reaches 20pt into the bar.
+    // `minY >= maxY` therefore fails on a handle that looks correct, so this
+    // asserts the weaker property it can actually hold — that most of the tap
+    // target is below the bar rather than buried under it.
     let statusBar = XCUIApplication(bundleIdentifier: "com.apple.springboard").statusBars.firstMatch
     XCTAssertTrue(statusBar.exists)
     XCTAssertTrue(waitUntil(timeout: 8) { handle.frame.midY > statusBar.frame.maxY },
