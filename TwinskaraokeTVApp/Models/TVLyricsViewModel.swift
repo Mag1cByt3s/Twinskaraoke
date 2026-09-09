@@ -118,9 +118,9 @@ final class TVLyricsViewModel {
                 .sorted { $0.time < $1.time }
 
             finish(songID: songID, outcome: parsed.isEmpty ? .empty : .success(parsed))
-        } catch is CancellationError {
-            return
         } catch {
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled else { return }
             finish(songID: songID, outcome: .failure)
         }
     }

@@ -33,6 +33,8 @@ final class TVAuthManager {
     @ObservationIgnored private var qrTask: Task<Void, Never>?
     @ObservationIgnored private var sessionExpiredObserver: NSObjectProtocol?
 
+    @ObservationIgnored private var loginGeneration = UUID()
+
     private let defaults = UserDefaults.standard
 
     private enum Key {
@@ -89,15 +91,19 @@ final class TVAuthManager {
     }
 
     func login(username: String, password: String) async {
+        guard !isAuthenticating else { return }
         let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedUsername.isEmpty, !password.isEmpty else {
             authError = "Enter your username and password."
             return
         }
 
+        cancelQRSignIn()
+        let generation = UUID()
+        loginGeneration = generation
         isAuthenticating = true
         authError = nil
-        defer { isAuthenticating = false }
+        defer { if loginGeneration == generation { isAuthenticating = false } }
 
         do {
             guard let url = URL(string: "\(StorageHost.api)/api/auth/login") else {
@@ -115,6 +121,8 @@ final class TVAuthManager {
             )
 
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw AuthError.invalidResponse
             }
@@ -134,8 +142,11 @@ final class TVAuthManager {
             if previousUserId != nil, previousUserId != currentUserId {
                 await KaraokeAPIClient.invalidateAccountScopedCaches()
             }
+            guard !Task.isCancelled, loginGeneration == generation else { return }
             await refreshAccount()
         } catch {
+            guard !Task.isCancelled, loginGeneration == generation,
+                  !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
             authError = friendlyMessage(for: error)
         }
     }
@@ -145,6 +156,7 @@ final class TVAuthManager {
     /// Requests a pairing code and polls until a signed-in phone approves it.
     /// Safe to call repeatedly; any in-flight attempt is replaced.
     func startQRSignIn() {
+        guard !isAuthenticating else { return }
         qrTask?.cancel()
         qrError = nil
         qrSession = nil
@@ -245,6 +257,7 @@ final class TVAuthManager {
             await KaraokeAPIClient.invalidateAccountScopedCaches()
         }
 
+        guard !Task.isCancelled else { return }
         qrSession = nil
         qrPhase = .idle
         qrError = nil
@@ -374,9 +387,12 @@ final class TVAuthManager {
     }
 
     private func clearAccountState() {
+        loginGeneration = UUID()
+        isAuthenticating = false
         // A pairing code outlives sign-out otherwise, and would sign the TV
         // straight back in the moment someone scanned it.
         cancelQRSignIn()
+        TVUserPlaylistsManager.shared.clear()
         currentUserId = nil
         currentUsername = nil
         currentAvatar = nil

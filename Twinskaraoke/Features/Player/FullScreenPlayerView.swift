@@ -357,6 +357,7 @@ struct FullScreenPlayerView: View {
     @State private var showCoverArt = false
     @State private var showAddToPlaylist = false
     @State private var coverArtSaveStatus: ArtworkSaveStatus = .idle
+    @State private var coverArtSaveGeneration = 0
     @State private var easterEggImageURL: URL?
     @State private var easterEggArtistName: String?
     @State private var easterEggArtistLink: String?
@@ -440,6 +441,10 @@ struct FullScreenPlayerView: View {
                     easterEggArtistName = nil
                     easterEggArtistLink = nil
                     coverArtSaveStatus = .idle
+                    // Retires the in-flight save with the status it would have
+                    // reported, so closing the viewer mid-save cannot leave
+                    // `.success` waiting for the next time it opens.
+                    coverArtSaveGeneration &+= 1
                 }
             }
         }
@@ -1272,34 +1277,41 @@ struct FullScreenPlayerView: View {
         guard !coverArtSaveStatus.isSaving else { return }
         guard let url else { return }
         coverArtSaveStatus = .saving
+        coverArtSaveGeneration &+= 1
+        let generation = coverArtSaveGeneration
         Task {
             #if canImport(UIKit)
                 if let image = await CoverArtService.fetchImage(from: url) {
                     ImageSaver.shared.save(image: image) { result in
                         Task { @MainActor in
+                            // The viewer's `onDisappear` clears the status and
+                            // bumps the generation, so a save the user has
+                            // already dismissed — or one a second save
+                            // superseded — must not report itself.
+                            guard coverArtSaveGeneration == generation else { return }
                             switch result {
                             case .success:
                                 coverArtSaveStatus = .success
                             case let .failure(err):
                                 coverArtSaveStatus = .failed(err.localizedDescription)
                             }
-                            resetCoverArtSaveStatusLater()
+                            resetCoverArtSaveStatusLater(generation: generation)
                         }
                     }
                     return
                 }
             #endif
+            guard coverArtSaveGeneration == generation else { return }
             coverArtSaveStatus = .failed("Couldn't save")
-            resetCoverArtSaveStatusLater()
+            resetCoverArtSaveStatusLater(generation: generation)
         }
     }
 
-    private func resetCoverArtSaveStatusLater() {
-        // A second save may start within the window; only reset if the status
-        // hasn't moved on since this timer was scheduled.
-        let status = coverArtSaveStatus
+    private func resetCoverArtSaveStatusLater(generation: Int) {
+        // A newer save can finish with the same status before this timer fires.
+        // Only reset the save cycle that scheduled this timer.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if coverArtSaveStatus == status {
+            if coverArtSaveGeneration == generation {
                 coverArtSaveStatus = .idle
             }
         }

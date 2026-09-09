@@ -75,16 +75,19 @@ final class TVUserPlaylistsManager {
             defer {
                 if self.generation == generation {
                     self.isLoading = false
+                    self.loadTask = nil
                 }
             }
             do {
                 let request = try KaraokeAPIClient.request(path: "/api/user/playlists")
                 let data = try await KaraokeAPIClient.data(for: request)
-                guard self.generation == generation else { return }
+                try Task.checkCancellation()
+                guard self.generation == generation, CredentialStore.token == token else { return }
                 self.playlists = try JSONDecoder().decode([UserPlaylist].self, from: data)
                 self.loadedToken = token
             } catch {
-                guard self.generation == generation else { return }
+                guard !Task.isCancelled, self.generation == generation,
+                      CredentialStore.token == token else { return }
                 DebugLogger.log(
                     "User playlists load failed: \(String(describing: error))",
                     category: .network

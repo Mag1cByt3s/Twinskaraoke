@@ -365,6 +365,8 @@ final class VocalSeparator {
     ) async throws -> CachedStems {
         guard isAvailable, let modelURL else { throw VocalSeparatorError.unavailable }
 
+        // A cancelled caller must not cancel a newer job that already owns the player.
+        try Task.checkCancellation()
         if let old = activeTask {
             old.cancel()
             activeTask = nil
@@ -374,8 +376,6 @@ final class VocalSeparator {
             lastPublishedProgressFraction = -1
             jobOwnership.cancelCurrent()
         }
-
-        try Task.checkCancellation()
 
         let normalizedStart = max(0, fromTime)
         DebugLogger.log(
@@ -633,16 +633,17 @@ final class VocalSeparator {
         qos: .utility
     )
 
+    @concurrent
     private static func trim(source: URL, from startSeconds: TimeInterval, to output: URL)
         async throws
     {
         try Task.checkCancellation()
-        try? FileManager.default.removeItem(at: output)
         let asset = AVURLAsset(url: source)
         let duration = try await asset.load(.duration)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             throw VocalSeparatorError.trimFailed
         }
+        try Task.checkCancellation()
         let start = CMTime(seconds: startSeconds, preferredTimescale: 600)
         let safeStartSeconds = min(startSeconds, max(0, duration.seconds - 0.5))
         let safeStart = safeStartSeconds < startSeconds
@@ -668,6 +669,7 @@ final class VocalSeparator {
             AVLinearPCMIsBigEndianKey: false,
             AVLinearPCMIsNonInterleaved: false,
         ]
+        try Task.checkCancellation()
         guard let reader = try? AVAssetReader(asset: asset) else {
             throw VocalSeparatorError.trimFailed
         }
@@ -675,6 +677,11 @@ final class VocalSeparator {
         let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
         guard reader.canAdd(readerOutput) else { throw VocalSeparatorError.trimFailed }
         reader.add(readerOutput)
+        // Deferred to here, the last point before the writer needs the path
+        // free: everything above suspends on asset loading, and removing the
+        // file first meant a cancellation during those loads destroyed a
+        // perfectly good previous output without writing a replacement.
+        try? FileManager.default.removeItem(at: output)
         guard let writer = try? AVAssetWriter(outputURL: output, fileType: .wav) else {
             throw VocalSeparatorError.trimFailed
         }
@@ -770,6 +777,7 @@ final class VocalSeparator {
         }
     }
 
+    @concurrent
     private static func runSeparation2(
         modelURL: URL,
         jobID: UUID,
@@ -778,7 +786,9 @@ final class VocalSeparator {
         instrumentsOutputURL: URL,
         onProgress: @Sendable @escaping (Float) async -> Void
     ) async throws {
+        try Task.checkCancellation()
         let separator = try AudioSeparator2(modelURL: modelURL)
+        try Task.checkCancellation()
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("SeparationJobs", isDirectory: true)
             .appendingPathComponent(jobID.uuidString, isDirectory: true)
@@ -883,6 +893,11 @@ final class VocalSeparator {
     }
 
     #if DEBUG
+        @concurrent
+        static func trimForTesting(source: URL, from startSeconds: TimeInterval, to output: URL) async throws {
+            try await trim(source: source, from: startSeconds, to: output)
+        }
+
         nonisolated static func publishStemFilesForTesting(
             vocalsSource: URL,
             instrumentsSource: URL,

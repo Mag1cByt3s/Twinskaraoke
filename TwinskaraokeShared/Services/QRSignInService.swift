@@ -39,10 +39,12 @@ nonisolated enum QRSignIn {
     enum Route {
         static var createSession: String { "\(StorageHost.api)/api/auth/qr-session" }
 
-        static func status(_ sessionId: String) -> String {
-            let escaped = sessionId.addingPercentEncoding(
-                withAllowedCharacters: .urlPathAllowed
-            ) ?? sessionId
+        static func status(_ sessionId: String) throws -> String {
+            guard !sessionId.isEmpty, sessionId != ".", sessionId != "..",
+                  let escaped = sessionId.addingPercentEncoding(
+                    withAllowedCharacters: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+                  )
+            else { throw ServiceError.invalidResponse }
             return "\(StorageHost.api)/api/auth/qr-session/\(escaped)"
         }
     }
@@ -137,7 +139,7 @@ nonisolated enum QRSignIn {
     }
 
     static func status(of sessionId: String) async throws -> Poll {
-        guard let url = URL(string: Route.status(sessionId)) else {
+        guard let url = URL(string: try Route.status(sessionId)) else {
             throw ServiceError.invalidResponse
         }
         var request = URLRequest(url: url)

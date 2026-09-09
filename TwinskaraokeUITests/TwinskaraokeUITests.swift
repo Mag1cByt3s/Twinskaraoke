@@ -561,8 +561,17 @@ final class TwinskaraokeUITests: XCTestCase {
     start.press(forDuration: 0.05, thenDragTo: end, withVelocity: 400, thenHoldForDuration: 0.1)
     let handle = app.buttons["PlayerDismissHandle"]
     XCTAssertTrue(waitUntil(timeout: 8) { handle.isHittable })
-    XCTAssertGreaterThan(handle.frame.midY, isRunningOnPad ? 0 : 60)
-    XCTAssertGreaterThanOrEqual(handle.frame.height, 44)
+    // Status-bar geometry varies across devices and OS releases, so this is
+    // measured against the actual bar rather than an iPhone-specific 60pt
+    // cutoff. The whole tap target has to clear it, not just its centre: the
+    // handle is padded down by the top safe inset, which is never smaller than
+    // the bar, so anything less means the player has drifted upward.
+    let statusBar = XCUIApplication(bundleIdentifier: "com.apple.springboard").statusBars.firstMatch
+    XCTAssertTrue(statusBar.exists)
+    XCTAssertTrue(waitUntil(timeout: 8) { handle.frame.minY >= statusBar.frame.maxY },
+                  "Dismiss handle \(handle.frame) must clear status bar \(statusBar.frame).")
+    // Accessibility conversion can report 43.99999999999999 for a 44pt frame.
+    XCTAssertGreaterThanOrEqual(handle.frame.height + 0.001, 44)
     let playerShot = XCTAttachment(screenshot: app.screenshot())
     playerShot.name = "Full player safe area"
     playerShot.lifetime = .keepAlways

@@ -2,22 +2,23 @@ import Foundation
 
 nonisolated struct LossyArray<Element: Decodable>: Decodable, Sendable where Element: Sendable {
   let elements: [Element]
+  /// Includes malformed entries, for pagination in the server's index space.
+  let sourceCount: Int
 
   init(from decoder: Decoder) throws {
     var container = try decoder.unkeyedContainer()
     var items: [Element] = []
     while !container.isAtEnd {
-      if let value = try? container.decode(Element.self) {
+      // Advancing first guarantees progress even when an element fails to decode.
+      let elementDecoder = try container.superDecoder()
+      if let value = try? Element(from: elementDecoder) {
         items.append(value)
-      } else {
-        _ = try? container.decode(DiscardedDecodable.self)
       }
     }
     elements = items
+    sourceCount = container.currentIndex
   }
 }
-
-nonisolated private struct DiscardedDecodable: Decodable, Sendable {}
 
 nonisolated private struct FlexibleArtist: Decodable, Sendable {
   let name: String

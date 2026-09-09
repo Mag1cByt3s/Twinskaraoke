@@ -2305,9 +2305,9 @@ final class AudioPlayerManager {
         }
     }
 
-    // nonisolated: cache validation, file moves, and possible decompression
+    // @concurrent: cache validation, file moves, and possible decompression
     // are blocking file I/O that must stay off the main actor.
-    private nonisolated static func cacheRemoteAudio(
+    @concurrent private static func cacheRemoteAudio(
         from remoteURL: URL,
         songID: String,
         expectedDuration: TimeInterval?

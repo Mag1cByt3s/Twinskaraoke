@@ -113,8 +113,10 @@ struct ArtDetailView: View {
                 options: [],
                 context: ImageCacheConfig.memoryAndDiskCacheContext,
                 progress: nil
-            ) { image, _, error, _, _, _ in
-                DispatchQueue.main.async {
+            ) { image, _, error, _, finished, _ in
+                guard finished else { return }
+                Task { @MainActor in
+                    guard saveGeneration == generation else { return }
                     if let image {
                         saveLoadedImage(image, generation: generation)
                         return
@@ -123,28 +125,20 @@ struct ArtDetailView: View {
                     resetSaveStatusLater(generation: generation)
                 }
             }
-        #else
-            URLSession.shared.dataTask(with: url) { data, _, error in
-                DispatchQueue.main.async {
-                    saveStatus = .failed(error?.localizedDescription ?? "Couldn't save")
-                    resetSaveStatusLater(generation: generation)
-                }
-            }.resume()
         #endif
     }
 
     #if canImport(UIKit)
         private func saveLoadedImage(_ image: UIImage, generation: Int) {
             ImageSaver.shared.save(image: image) { result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success:
-                        saveStatus = .success
-                    case let .failure(err):
-                        saveStatus = .failed(err.localizedDescription)
-                    }
-                    resetSaveStatusLater(generation: generation)
+                guard saveGeneration == generation else { return }
+                switch result {
+                case .success:
+                    saveStatus = .success
+                case let .failure(err):
+                    saveStatus = .failed(err.localizedDescription)
                 }
+                resetSaveStatusLater(generation: generation)
             }
         }
     #endif

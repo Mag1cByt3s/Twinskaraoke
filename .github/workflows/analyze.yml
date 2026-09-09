@@ -1,30 +1,63 @@
 name: Analyze
 
 on:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      xcode-version:
+        description: Xcode version to audit (use a specific installed version for SDK previews)
+        default: latest
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: Build and analyse default scheme using xcodebuild command
+  analyze:
+    name: Analyze ${{ matrix.scheme }}
     runs-on: macos-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: Twinskaraoke
+            destination: generic/platform=iOS Simulator
+          - scheme: Twinskaraoke Mac App
+            destination: platform=macOS
+          - scheme: Twinskaraoke TV App
+            destination: generic/platform=tvOS Simulator
+          - scheme: TwinskaraokeWatchApp
+            destination: generic/platform=watchOS Simulator
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Set Default Scheme
+        with:
+          persist-credentials: false
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ inputs.xcode-version || 'latest' }}
+      - name: Record SDKs
         run: |
-          scheme_list=$(xcodebuild -list -json | tr -d "\n")
-          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
-          echo $default | cat >default
-          echo Using default scheme: $default
-      - name: Build
+          xcodebuild -version
+          xcodebuild -showsdks
+      - name: Build and analyze
         env:
-          scheme: ${{ 'default' }}
+          SCHEME: ${{ matrix.scheme }}
+          DESTINATION: ${{ matrix.destination }}
         run: |
-          if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
-          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          # -skipPackagePluginValidation: Pillarbox ships a build tool plugin,
-          # and Xcode refuses to run an untrusted one. Trust is normally granted
-          # by a prompt, which no runner can answer. See tests.yml.
-          xcodebuild clean build analyze -skipPackagePluginValidation -scheme "$scheme" -"$filetype_parameter" "$file_to_build"
+          xcodebuild build analyze \
+            -project Twinskaraoke.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "$DESTINATION" \
+            -configuration Release \
+            -skipPackagePluginValidation \
+            -resultBundlePath "$RUNNER_TEMP/analysis.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: analysis-${{ matrix.scheme }}
+          path: ${{ runner.temp }}/analysis.xcresult
+          if-no-files-found: warn

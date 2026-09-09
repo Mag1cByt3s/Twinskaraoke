@@ -43,6 +43,8 @@ final class MacAuthManager {
     private(set) var isLoading = false
     var errorMessage: String?
 
+    @ObservationIgnored private var loginGeneration = UUID()
+    @ObservationIgnored private var webAuthContinuation: CheckedContinuation<URL, Error>?
     private var webAuthSession: ASWebAuthenticationSession?
     private var webAuthContextProvider: WebAuthPresentationContextProvider?
 
@@ -188,15 +190,19 @@ final class MacAuthManager {
     }
 
     func login(username rawUsername: String, password: String) async {
+        guard !isLoading else { return }
         let trimmed = rawUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !password.isEmpty else {
             errorMessage = "Please fill in all fields."
             return
         }
 
+        cancelQRSignIn()
+        let generation = UUID()
+        loginGeneration = generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if loginGeneration == generation { isLoading = false } }
 
         do {
             guard let url = URL(string: Endpoint.login) else { throw AuthError.parse }
@@ -212,6 +218,8 @@ final class MacAuthManager {
             )
 
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 throw AuthError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -230,6 +238,8 @@ final class MacAuthManager {
 
             FavoritesManager.shared.reload()
         } catch {
+            guard loginGeneration == generation else { return }
+            if Task.isCancelled || Self.isCancellation(error) { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
@@ -237,10 +247,13 @@ final class MacAuthManager {
     // MARK: - Discord OAuth
 
     func loginWithDiscord() async {
-        guard webAuthSession == nil else { return }
+        guard !isLoading, webAuthSession == nil else { return }
+        cancelQRSignIn()
+        let generation = UUID()
+        loginGeneration = generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if loginGeneration == generation { isLoading = false } }
 
         do {
             guard let anchor = Self.activePresentationAnchor() else {
@@ -262,6 +275,8 @@ final class MacAuthManager {
             guard let authURL = components.url else { throw AuthError.invalidCallback }
 
             let callbackURL = try await presentWebAuth(url: authURL, anchor: anchor)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
 
             // Reject a callback whose state doesn't match the one we generated:
             // that is the CSRF guard PKCE relies on.
@@ -272,8 +287,14 @@ final class MacAuthManager {
             else { throw AuthError.invalidCallback }
 
             let discordToken = try await exchangeDiscordCode(code, verifier: verifier)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             let nkToken = try await exchangeForNKToken(discordToken)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
             let profile = try await fetchDiscordProfile(discordToken)
+            try Task.checkCancellation()
+            guard loginGeneration == generation else { return }
 
             try CredentialStore.saveToken(nkToken)
             isLoggedIn = true
@@ -282,58 +303,65 @@ final class MacAuthManager {
             avatar = profile.avatar
             FavoritesManager.shared.reload()
         } catch {
+            guard loginGeneration == generation else { return }
+            if Task.isCancelled || Self.isCancellation(error) { return }
             webAuthSession = nil
             webAuthContextProvider = nil
             // A user-cancelled sheet isn't an error worth showing.
             if case AuthError.cancelled = error { return }
-            if Self.isCancellation(error) { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
     private func presentWebAuth(url: URL, anchor: ASPresentationAnchor) async throws -> URL {
-        // Clearing the session here rather than inside the completion handler:
-        // control is back on the main actor once the continuation resumes, so
-        // the handler itself never has to touch isolated state.
-        defer {
-            webAuthSession = nil
-            webAuthContextProvider = nil
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url,
-                callbackURLScheme: Endpoint.callbackScheme
-            ) { @Sendable callbackURL, error in
-                // macOS calls this on an XPC queue, not the main thread — iOS
-                // calls it on the main thread, which is why the iOS AuthManager
-                // gets away with the same shape. @Sendable forces the closure
-                // nonisolated, so Swift 6 doesn't insert a main-actor check
-                // that would trap here (EXC_BREAKPOINT).
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        let generation = loginGeneration
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                webAuthContinuation = continuation
+                let session = ASWebAuthenticationSession(
+                    url: url, callback: .customScheme(Endpoint.callbackScheme)
+                ) { @Sendable [weak self] callbackURL, error in
+                    // The system callback may run on an XPC queue.
+                    Task { @MainActor [weak self] in
+                        guard let self, loginGeneration == generation else { return }
+                        if let error {
+                            finishWebAuth(.failure(error))
+                        } else if let callbackURL {
+                            finishWebAuth(.success(callbackURL))
+                        } else {
+                            finishWebAuth(.failure(AuthError.cancelled))
+                        }
+                    }
                 }
-                guard let callbackURL else {
-                    continuation.resume(throwing: AuthError.cancelled)
-                    return
+                let provider = WebAuthPresentationContextProvider(anchor: anchor)
+                session.presentationContextProvider = provider
+                session.prefersEphemeralWebBrowserSession = true
+                webAuthContextProvider = provider
+                webAuthSession = session
+                if !session.start() {
+                    finishWebAuth(.failure(AuthError.invalidCallback))
                 }
-                continuation.resume(returning: callbackURL)
             }
-
-            let provider = WebAuthPresentationContextProvider(anchor: anchor)
-            session.presentationContextProvider = provider
-            session.prefersEphemeralWebBrowserSession = true
-            webAuthContextProvider = provider
-            webAuthSession = session
-
-            guard session.start() else {
-                webAuthSession = nil
-                webAuthContextProvider = nil
-                continuation.resume(throwing: AuthError.invalidCallback)
-                return
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, loginGeneration == generation else { return }
+                cancelWebAuth()
             }
         }
+    }
+
+    private func finishWebAuth(_ result: Result<URL, Error>) {
+        let continuation = webAuthContinuation
+        webAuthContinuation = nil
+        webAuthSession = nil
+        webAuthContextProvider = nil
+        continuation?.resume(with: result)
+    }
+
+    private func cancelWebAuth() {
+        webAuthSession?.cancel()
+        finishWebAuth(.failure(CancellationError()))
     }
 
     private func exchangeDiscordCode(_ code: String, verifier: String) async throws -> String {
@@ -404,6 +432,9 @@ final class MacAuthManager {
     }
 
     func logout() {
+        loginGeneration = UUID()
+        cancelWebAuth()
+        isLoading = false
         // A live pairing code outliving sign-out could complete behind the
         // user and silently sign them back in.
         cancelQRSignIn()
@@ -427,6 +458,7 @@ final class MacAuthManager {
     /// `TVAuthManager` — the Mac has a keyboard, but pairing from a phone that
     /// is already signed in is still the fastest way in.
     func startQRSignIn() {
+        guard !isLoading else { return }
         qrTask?.cancel()
         qrError = nil
         qrSession = nil
@@ -562,6 +594,7 @@ final class MacAuthManager {
     }
 
     private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return true }
         let nsError = error as NSError
         return nsError.domain == ASWebAuthenticationSessionErrorDomain
             && nsError.code == ASWebAuthenticationSessionError.Code.canceledLogin.rawValue
