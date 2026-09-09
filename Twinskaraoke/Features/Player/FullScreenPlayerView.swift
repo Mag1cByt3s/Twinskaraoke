@@ -10,8 +10,34 @@ private struct PlayerLayoutMetrics {
     let safeBottom: CGFloat
     let usesAccessibilityText: Bool
 
+    /// Room the dismiss handle occupies at the top of the player. The content
+    /// is padded past it, so it is not height the layout can spend.
+    static let dismissBarHeight: CGFloat = 44
+
+    /// Lifts the content clear of the home indicator without paying the whole
+    /// bottom inset, which reads as a gap under the toolbar.
+    private static let bottomInsetRelief: CGFloat = 8
+
+    var contentTopPadding: CGFloat {
+        safeTop + Self.dismissBarHeight
+    }
+
+    var contentBottomPadding: CGFloat {
+        max(0, safeBottom - Self.bottomInsetRelief)
+    }
+
+    /// The height the content actually gets, which is what every size below is
+    /// derived from.
+    ///
+    /// This used to be the full distance between the safe areas, ignoring the
+    /// padding the content is laid out with. On an iPhone 17 Pro that claimed
+    /// 778pt against the 742pt the content really has, which put `contentHeight`
+    /// 18pt above the `isCompactHeight` breakpoint: the layout sized itself for
+    /// the roomy variant, came out 57pt taller than the container, and the
+    /// `frame(height:)` below centred the overflow — floating the whole player
+    /// up by 28pt so the dismiss handle sat level with the status-bar clock.
     private var contentHeight: CGFloat {
-        max(1, containerSize.height - safeTop - safeBottom)
+        max(1, containerSize.height - contentTopPadding - contentBottomPadding)
     }
 
     private var isCompactHeight: Bool {
@@ -371,8 +397,8 @@ struct FullScreenPlayerView: View {
                                 musicLayout(song: song, metrics: metrics)
                             }
                         }
-                        .padding(.top, safeTop + 44)
-                        .padding(.bottom, max(0, safeBottom - 8))
+                        .padding(.top, metrics.contentTopPadding)
+                        .padding(.bottom, metrics.contentBottomPadding)
                         dismissBar
                             .padding(.top, safeTop)
                         SleepTimerStatus()
@@ -380,7 +406,11 @@ struct FullScreenPlayerView: View {
                             .padding(.trailing, 20)
                             .padding(.top, safeTop + 4)
                     }
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    // Top-aligned, so content that still outgrows the canvas —
+                    // an accessibility text size, say — spills off the bottom
+                    // rather than being centred, which used to push the dismiss
+                    // handle up under the status bar where it is hard to hit.
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 }
                 .opacity(closingContentOpacity)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: closingContentOpacity)
