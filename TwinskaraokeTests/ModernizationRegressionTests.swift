@@ -138,6 +138,73 @@ struct ModernizationRegressionTests {
         #expect(secondController.view.gestureRecognizers?.contains { $0.name == name } == true)
     }
 
+    @Test("Tab coordinator follows window moves and root-controller replacements")
+    func tabCoordinatorReattachment() throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let firstWindow = UIWindow(windowScene: scene)
+        let secondWindow = UIWindow(windowScene: scene)
+        let first = UITabBarController()
+        let second = UITabBarController()
+        let replacement = UITabBarController()
+        firstWindow.rootViewController = first
+        secondWindow.rootViewController = second
+        let coordinator = TabBarMinimizeCoordinator()
+        coordinator.attach(to: firstWindow)
+        coordinator.attach(to: secondWindow)
+        #expect(recognizerCount(in: first) == 0)
+        #expect(recognizerCount(in: second) == 1)
+        secondWindow.rootViewController = replacement
+        coordinator.attach(to: secondWindow)
+        coordinator.attach(to: secondWindow)
+        #expect(recognizerCount(in: second) == 0)
+        #expect(recognizerCount(in: replacement) == 1)
+        coordinator.detach()
+        #expect(recognizerCount(in: replacement) == 0)
+    }
+
+    @Test("Detached or superseded attachment retries cannot install on an old window")
+    func tabCoordinatorCancelledRetry() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldWindow = UIWindow(windowScene: scene)
+        let newWindow = UIWindow(windowScene: scene)
+        let oldController = UITabBarController()
+        let newController = UITabBarController()
+        let coordinator = TabBarMinimizeCoordinator()
+        coordinator.attach(to: oldWindow)
+        coordinator.detach()
+        oldWindow.rootViewController = oldController
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(recognizerCount(in: oldController) == 0)
+        oldWindow.rootViewController = nil
+        coordinator.attach(to: oldWindow)
+        newWindow.rootViewController = newController
+        coordinator.attach(to: newWindow)
+        oldWindow.rootViewController = oldController
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(recognizerCount(in: oldController) == 0)
+        #expect(recognizerCount(in: newController) == 1)
+    }
+
+    @Test("Removing an installer detaches even while the installer remains alive")
+    func tabInstallerRemoval() throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UITabBarController()
+        window.rootViewController = controller
+        // A hidden UIWindow does not automatically install its root view.
+        window.addSubview(controller.view)
+        let installer = InstallerView()
+        controller.view.addSubview(installer)
+        #expect(installer.window === window)
+        #expect(recognizerCount(in: controller) == 1)
+        installer.removeFromSuperview()
+        #expect(recognizerCount(in: controller) == 0)
+    }
+
+    private func recognizerCount(in controller: UITabBarController) -> Int {
+        controller.view.gestureRecognizers?.filter { $0.name == "Twinskaraoke.TabBarExpandOnScrollUp" }.count ?? 0
+    }
+
     private func waitUntil(_ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(2)
         while !condition(), ContinuousClock.now < deadline {

@@ -1,4 +1,3 @@
-import Observation
 import SwiftUI
 
 #if canImport(UIKit)
@@ -51,7 +50,6 @@ import SwiftUI
     /// distance accumulator, which only means the following scroll down gets a
     /// full threshold before minimizing again.
     @MainActor
-    @Observable
     final class TabBarMinimizeCoordinator {
         /// How far the content must travel back up, in points, to bring the bar
         /// back. Measured on the scroll view rather than the finger, so a short
@@ -152,23 +150,26 @@ import SwiftUI
         /// otherwise, for a few frames.
         private var mode: Mode = .minimizesOnScrollDown
 
-        @ObservationIgnored private weak var tabBarController: UITabBarController?
-        @ObservationIgnored private var gestureTarget: GestureTarget?
-        @ObservationIgnored private var panRecognizer: UIPanGestureRecognizer?
-        @ObservationIgnored private weak var trackedScrollView: UIScrollView?
-        @ObservationIgnored private var offsetObservation: NSKeyValueObservation?
-        @ObservationIgnored private var rearmTask: Task<Void, Never>?
-        @ObservationIgnored private var lastRevealAt: ContinuousClock.Instant?
-        @ObservationIgnored private var lastRevealIntentAt: ContinuousClock.Instant?
-        @ObservationIgnored private var offsetPeak: CGFloat = 0
-        @ObservationIgnored private var offsetTrough: CGFloat = 0
+        private weak var tabBarController: UITabBarController?
+        private var gestureTarget: GestureTarget?
+        private var panRecognizer: UIPanGestureRecognizer?
+        private weak var trackedScrollView: UIScrollView?
+        private var offsetObservation: NSKeyValueObservation?
+        private var rearmTask: Task<Void, Never>?
+        private var attachmentTask: Task<Void, Never>?
+        private var attachmentGeneration = 0
+        private var lastRevealAt: ContinuousClock.Instant?
+        private var lastRevealIntentAt: ContinuousClock.Instant?
+        private var offsetPeak: CGFloat = 0
+        private var offsetTrough: CGFloat = 0
         /// Whether a reveal may fire. Cleared by one, restored only once the
         /// user scrolls back down past `rearmDistance`.
-        @ObservationIgnored private var isRevealArmed = true
+        private var isRevealArmed = true
 
         init() {}
 
         isolated deinit {
+            attachmentTask?.cancel()
             rearmTask?.cancel()
             offsetObservation?.invalidate()
             if let panRecognizer {
@@ -179,15 +180,57 @@ import SwiftUI
         /// Installs the recognizer on the tab bar controller hosting `window`.
         /// Retries on later runloop turns: the SwiftUI view that calls this can
         /// reach its window before `TabView`'s backing controller is in place.
-        func attach(to window: UIWindow, remainingAttempts: Int = 10) {
-            if let tabBarController {
-                Self.keepSearchProminent(in: tabBarController)
+        func attach(to window: UIWindow) {
+            attachmentTask?.cancel()
+            attachmentTask = nil
+            attachmentGeneration &+= 1
+            resolveAttachment(to: window, generation: attachmentGeneration, remainingAttempts: 10)
+        }
+
+        func detach() {
+            attachmentGeneration &+= 1
+            attachmentTask?.cancel()
+            attachmentTask = nil
+            clearController()
+        }
+
+        private func clearController() {
+            rearmTask?.cancel()
+            rearmTask = nil
+            offsetObservation?.invalidate()
+            offsetObservation = nil
+            trackedScrollView = nil
+            if let panRecognizer {
+                panRecognizer.view?.removeGestureRecognizer(panRecognizer)
+                tabBarController?.tabBarMinimizeBehavior = .onScrollDown
+            }
+            panRecognizer = nil
+            gestureTarget = nil
+            tabBarController = nil
+            mode = .minimizesOnScrollDown
+            lastRevealAt = nil
+            lastRevealIntentAt = nil
+            offsetPeak = 0
+            offsetTrough = 0
+            isRevealArmed = true
+        }
+
+        private func resolveAttachment(to window: UIWindow, generation: Int, remainingAttempts: Int) {
+            guard generation == attachmentGeneration else { return }
+            let controller = Self.tabBarController(in: window.rootViewController)
+            if let controller, controller === tabBarController, panRecognizer != nil {
+                Self.keepSearchProminent(in: controller)
                 return
             }
-            guard let controller = Self.tabBarController(in: window.rootViewController) else {
+            clearController()
+            guard let controller else {
                 guard remainingAttempts > 0 else { return }
-                Task { @MainActor [weak self] in
-                    self?.attach(to: window, remainingAttempts: remainingAttempts - 1)
+                attachmentTask = Task { @MainActor [weak self, weak window] in
+                    await Task.yield()
+                    guard !Task.isCancelled, let window else { return }
+                    self?.resolveAttachment(
+                        to: window, generation: generation, remainingAttempts: remainingAttempts - 1
+                    )
                 }
                 return
             }
@@ -381,8 +424,7 @@ import SwiftUI
         }
     }
 
-    /// `UIGestureRecognizer` needs an `NSObject` target and delegate, which
-    /// `@Observable` cannot be.
+    /// Provides the NSObject target and delegate required by UIGestureRecognizer.
     private final class GestureTarget: NSObject, UIGestureRecognizerDelegate {
         private let onPan: (UIPanGestureRecognizer) -> Void
 
@@ -409,10 +451,15 @@ import SwiftUI
         }
 
         func updateUIView(_ view: InstallerView, context _: Context) {
-            guard let window = view.window else { return }
-            Task { @MainActor in
+            if let window = view.window {
                 view.coordinator.attach(to: window)
+            } else {
+                view.coordinator.detach()
             }
+        }
+
+        static func dismantleUIView(_ view: InstallerView, coordinator _: ()) {
+            view.coordinator.detach()
         }
     }
 
@@ -421,8 +468,11 @@ import SwiftUI
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            guard let window else { return }
-            coordinator.attach(to: window)
+            if let window {
+                coordinator.attach(to: window)
+            } else {
+                coordinator.detach()
+            }
         }
     }
 #endif
