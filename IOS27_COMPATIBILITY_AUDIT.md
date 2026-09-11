@@ -4,7 +4,7 @@
 
 **The app cannot yet be described as fully iOS 27 compatible.** The source audit found additional restoration bugs and a missing privacy declaration, now fixed on `fix/ios-27-launch-restoration`. Background vocal separation, UIKit implementation-dependent gestures/volume control, and multiple-window behavior remain release-verification items. An RC SDK build and real-device checks are still required.
 
-This pass inventories all 217 Swift files in the iOS app and shared source directories (about 51,400 lines; 31 imported module names), inspects the corresponding build settings/resources, and reviews the phone/watch session bridge and pinned dependency implementations. The inventory is repository-wide static inspection; it is not a claim that every code path was executed or formally verified. Standalone Mac/TV feature parity is outside this iOS audit; shared code still needs to compile for those targets.
+This pass inventories all 217 Swift files in the iOS app and shared source directories (about 51,400 lines; 31 imported module names), inspects the corresponding build settings/resources, and reviews the phone/watch session bridge and pinned dependency implementations. The inventory is repository-wide static inspection; it is not a claim that every code path was executed or formally verified. Standalone Mac/TV feature parity is outside this iOS audit; Release builds also verify that shared code compiles for those targets.
 
 ## Official baseline
 
@@ -63,7 +63,7 @@ Audio playback, interruptions, media-services reset, AirPlay/Bluetooth, lock-scr
 | Area/modules | Inspection | Assessment |
 | --- | --- | --- |
 | SwiftUI/UIKit lifecycle | `TwinskaraokeApp`, `ContentView`, scene manifest, `LaunchScreen.storyboard`, build-generated plist keys | Required scene and launch setup present. Verify built artifact and RC launch. |
-| SwiftUI state/Observation | All state declarations and six explicit `State(initialValue:)` assignments; observation bridge; main-actor models | Explicit initializers have no competing declaration value. No `@Entry` defaults or document-protocol migration trigger found. RC macro/compiler still needs compilation. |
+| SwiftUI state/Observation | All state declarations and six explicit `State(initialValue:)` assignments; observation bridge; main-actor models | Explicit initializers have no competing declaration value. No `@Entry` defaults or document-protocol migration trigger found. Swift 6.4 preview compilation passed; exact RC compiler validation remains pending. |
 | Tabs/navigation/search | All root enum cases, selection binding, sidebar selection, tab role, mini-player accessory, UIKit coordinator | Selection constrained to visible root cases. Typed API path added; private gesture risk remains. |
 | Text/menus/presentation | Text selection, gestures, menu content, custom presentation and trait APIs | No `.textSelection(.enabled)`, custom `UIPresentationController`, or overridden presentation trait chain found. Menu appearance changes remain a visual check. |
 | Foundation/network | Shared request/data/decoding helpers, direct URLSession call sites, URL/path escaping, account-scoped caches | Credential bypasses fixed. No `canOpenURL` calls or broad ATS exception found. Live endpoints not exercised. |
@@ -91,8 +91,17 @@ The pinned releases match the latest upstream releases returned during this audi
 
 Latest release status is not an iOS 27 compatibility guarantee. The Spleeter source inspection above is more informative than its version number. The deployment target remains iOS 26.5.
 
-A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It requires build **27A266a** for a successful RC verdict. GitHub’s `xcode-27` image README currently lists **27A5252f / beta 6**, so an available preview build must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It requires build **27A266a** for a successful RC verdict. The hosted run confirms **27A5252f / beta 6**, matching GitHub’s `xcode-27` image README. Its preview results must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
 
 ## Validation results
 
-Results are recorded below after the local and hosted runs complete. A green iOS 26.5 test run is backward-compatibility evidence, not iOS 27 runtime evidence.
+- iOS 26.5: **260 unit tests passed**, 277 executions including parameterized cases, zero failures or skips. Result: `/private/tmp/ios27-api-audit-ios-verified.xcresult`.
+- After updating the preview-exposed tab assertions, all **11 modernization regression tests passed** again on iOS 26.5; `/private/tmp/ios27-api-audit-tab-tests.xcresult`.
+- watchOS 26.5: **43 unit tests passed**, zero failures or skips. Result: `/private/tmp/ios27-api-audit-watch.xcresult`.
+- iOS Release build and static analysis passed without diagnostics using Xcode 26.6; `/private/tmp/ios27-api-audit-release.log`.
+- Mac and TV Release builds passed using the installed Xcode 26.6 toolchain; `/private/tmp/ios27-api-audit-mac.log` and `/private/tmp/ios27-api-audit-tv.log`.
+- Built iOS app inspection confirms `UIApplicationSceneManifest`, bundled `LaunchScreen.storyboardc`, camera/Photos purpose strings, and all three required-reason API declarations in `PrivacyInfo.xcprivacy`.
+- Plist syntax, workflow YAML parsing, and `git diff --check` passed.
+- The first full run exposed request tests that read the unsigned host’s Keychain; those now inject credentials, and the final full run above passed. The first compile also identified the video-history caller that needed to handle an unavailable descriptor.
+
+Hosted run: [iOS 27 compatibility — source commit 60b12c3](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34646312864). The runner reports Xcode 27 beta 6 (**27A5252f**), Swift 6.4, and the iOS 27 preview SDK. Release build and static analysis passed, including the typed prominence API path; the only recorded Release warning disables App Intents metadata extraction. All three navigation UI checks passed. The unit run passed 255 of 260 tests; five legacy tab-coordinator tests produced 10 assertion failures because they expected the custom recognizer that is deliberately disabled on iOS 27. Those tests now assert zero custom recognizers on iOS 27 and retain the prior expectations on iOS 26.5. The source implementation did not require a change for these failures. A follow-up workflow run is required to verify the updated assertions on iOS 27. The exact-RC toolchain gate will reject this preview toolchain even if all tests pass; it was skipped in this run after the unit-test failure. A green iOS 26.5 test run is backward-compatibility evidence, not iOS 27 runtime evidence.

@@ -130,12 +130,11 @@ struct ModernizationRegressionTests {
         let second = TabBarMinimizeCoordinator()
         first?.attach(to: firstWindow)
         second.attach(to: secondWindow)
-        let name = "Twinskaraoke.TabBarExpandOnScrollUp"
-        #expect(firstController.view.gestureRecognizers?.contains { $0.name == name } == true)
-        #expect(secondController.view.gestureRecognizers?.contains { $0.name == name } == true)
+        #expect(recognizerCount(in: firstController) == expectedRecognizerCount)
+        #expect(recognizerCount(in: secondController) == expectedRecognizerCount)
         first = nil
-        #expect(firstController.view.gestureRecognizers?.contains { $0.name == name } != true)
-        #expect(secondController.view.gestureRecognizers?.contains { $0.name == name } == true)
+        #expect(recognizerCount(in: firstController) == 0)
+        #expect(recognizerCount(in: secondController) == expectedRecognizerCount)
     }
 
     @Test("Tab coordinator follows window moves and root-controller replacements")
@@ -152,12 +151,12 @@ struct ModernizationRegressionTests {
         coordinator.attach(to: firstWindow)
         coordinator.attach(to: secondWindow)
         #expect(recognizerCount(in: first) == 0)
-        #expect(recognizerCount(in: second) == 1)
+        #expect(recognizerCount(in: second) == expectedRecognizerCount)
         secondWindow.rootViewController = replacement
         coordinator.attach(to: secondWindow)
         coordinator.attach(to: secondWindow)
         #expect(recognizerCount(in: second) == 0)
-        #expect(recognizerCount(in: replacement) == 1)
+        #expect(recognizerCount(in: replacement) == expectedRecognizerCount)
         coordinator.detach()
         #expect(recognizerCount(in: replacement) == 0)
     }
@@ -182,7 +181,7 @@ struct ModernizationRegressionTests {
         oldWindow.rootViewController = oldController
         try await Task.sleep(for: .milliseconds(30))
         #expect(recognizerCount(in: oldController) == 0)
-        #expect(recognizerCount(in: newController) == 1)
+        #expect(recognizerCount(in: newController) == expectedRecognizerCount)
     }
 
     @Test("An overlapping coordinator leaves the installed recognizer and its reveal alone")
@@ -197,7 +196,7 @@ struct ModernizationRegressionTests {
         let overlapping = TabBarMinimizeCoordinator()
         owner.attach(to: window)
         overlapping.attach(to: window)
-        #expect(recognizerCount(in: controller) == 1)
+        #expect(recognizerCount(in: controller) == expectedRecognizerCount)
 
         // Stands in for a reveal the owner is holding. The overlapping
         // coordinator used to fail its fast path on every update, which cleared
@@ -206,11 +205,11 @@ struct ModernizationRegressionTests {
         overlapping.attach(to: window)
         overlapping.attach(to: window)
         #expect(controller.tabBarMinimizeBehavior == .never)
-        #expect(recognizerCount(in: controller) == 1)
+        #expect(recognizerCount(in: controller) == expectedRecognizerCount)
 
         // Teardown removes only what a coordinator installed itself.
         overlapping.detach()
-        #expect(recognizerCount(in: controller) == 1)
+        #expect(recognizerCount(in: controller) == expectedRecognizerCount)
         owner.detach()
         #expect(recognizerCount(in: controller) == 0)
     }
@@ -226,9 +225,15 @@ struct ModernizationRegressionTests {
         let installer = InstallerView()
         controller.view.addSubview(installer)
         #expect(installer.window === window)
-        #expect(recognizerCount(in: controller) == 1)
+        #expect(recognizerCount(in: controller) == expectedRecognizerCount)
         installer.removeFromSuperview()
         #expect(recognizerCount(in: controller) == 0)
+    }
+
+    // iOS 27 uses system minimization; older systems retain the custom reveal.
+    private var expectedRecognizerCount: Int {
+        if #available(iOS 27.0, *) { return 0 }
+        return 1
     }
 
     private func recognizerCount(in controller: UITabBarController) -> Int {
