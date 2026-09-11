@@ -25,7 +25,7 @@ Enable the app's debug logging before reproducing. Export logs covering the cold
 
 ## Limits and follow-up
 
-The local SDK cannot compile the typed iOS 27 prominence property, so this branch retains the availability- and selector-guarded public Objective-C API bridge. Apple also documents SwiftUI `TabRole.prominent`; replacing `.search` with that role changes search semantics, so this branch retains `.search`. Validate the bridge with the RC SDK/device before merging. No iOS 27-specific header/duration behavior has been measured locally.
+Xcode 27 / Swift 6.4 builds now use the typed iOS 27 prominence property. Builds with the local older SDK retain the availability- and selector-guarded public Objective-C API bridge. Apple also documents SwiftUI `TabRole.prominent`; replacing `.search` with that role changes search semantics, so this branch retains `.search`. Validate the bridge with the RC SDK/device before merging. No iOS 27-specific header/duration behavior has been measured locally.
 
 Uncertain audio is preserved. A genuinely damaged file may require explicit removal and re-download; it is no longer automatically deleted after a failed decoder probe. Legacy migration preserves the original copy until explicit download removal.
 
@@ -37,7 +37,7 @@ Sources checked September 11, 2026:
 - [UISearchTab automaticallyActivatesSearch](https://developer.apple.com/documentation/uikit/uisearchtab/automaticallyactivatessearch)
 - [SwiftUI TabRole.prominent](https://developer.apple.com/documentation/swiftui/tabrole/prominent)
 
-The fetched iOS 27 release-notes page still showed beta-era content. The release listing confirms the RC; the older notes are not treated as a complete RC bug list.
+The subsequent full API audit fetched Apple’s current RC Markdown directly; it supersedes the beta-era search snapshot from the initial restoration pass. See [IOS27_COMPATIBILITY_AUDIT.md](IOS27_COMPATIBILITY_AUDIT.md) for the broader findings and remaining release gates.
 
 ## Local validation
 

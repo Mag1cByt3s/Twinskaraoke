@@ -58,7 +58,7 @@ struct ModernizationRegressionTests {
     func playlistOffsets() async throws {
         var offsets: [Int] = []
         var requests = 0
-        let loader = PlaylistListLoader { _ in
+        let loader = PlaylistListLoader(readToken: { nil }) { _ in
             requests += 1
             if requests == 1 {
                 let duplicates = Array(repeating: #"{"id":"b","name":"B"}"#, count: 23)
@@ -84,7 +84,7 @@ struct ModernizationRegressionTests {
     @Test("Malformed playlist responses retry the same offset")
     func playlistRetry() async throws {
         var offsets: [Int] = []
-        let loader = PlaylistListLoader { _ in Data("{}".utf8) }
+        let loader = PlaylistListLoader(readToken: { nil }) { _ in Data("{}".utf8) }
         let initial = Playlist(id: "a", name: "A", songCount: 0, mosaicMedia: nil, songListDTOs: nil)
         loader.bootstrap(initial: [initial]) { offset, _ in
             offsets.append(offset)

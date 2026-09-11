@@ -515,8 +515,8 @@ nonisolated enum KaraokeAPIClient {
     return songs
   }
 
-  static func uploadedSongsRequest() throws -> URLRequest {
-    var request = try request(path: "/api/user/songs")
+  static func uploadedSongsRequest(readToken: () throws -> String? = CredentialStore.requestToken) throws -> URLRequest {
+    var request = try request(path: "/api/user/songs", readToken: readToken)
     request.httpMethod = "GET"
     return request
   }
@@ -570,8 +570,8 @@ nonisolated enum KaraokeAPIClient {
     return songs
   }
 
-  static func songsByIDsRequest(_ ids: [String]) throws -> URLRequest {
-    var request = try request(path: "/api/songs/by-ids")
+  static func songsByIDsRequest(_ ids: [String], readToken: () throws -> String? = CredentialStore.requestToken) throws -> URLRequest {
+    var request = try request(path: "/api/songs/by-ids", readToken: readToken)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONEncoder().encode(ids)

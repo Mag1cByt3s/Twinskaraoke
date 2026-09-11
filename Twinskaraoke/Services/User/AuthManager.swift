@@ -471,7 +471,7 @@ final class AuthManager: NSObject {
     func approveQRSession(sessionId: String) async throws {
         // Trust the Keychain token, not the in-memory flags, so a stale
         // AuthManager state can't approve a session with the wrong identity.
-        guard let token = CredentialStore.token else { throw AuthError.notSignedIn }
+        guard let token = try CredentialStore.requestToken() else { throw AuthError.notSignedIn }
         let (data, resp) = try await postJSON(
             url: "\(StorageHost.api)/api/auth/approve-qr",
             body: ["sessionId": sessionId],
@@ -507,9 +507,16 @@ final class AuthManager: NSObject {
     /// one `AuthManager` — `AccountView` mints a fresh one per visit — and
     /// because the Keychain is the only trustworthy record of being signed in.
     /// `generation` is filled in by the publisher.
-    nonisolated static func persistedDescriptor() -> WatchSessionLink.Descriptor {
+    nonisolated static func persistedDescriptor() -> WatchSessionLink.Descriptor? {
         let defaults = UserDefaults.standard
-        let token = CredentialStore.token
+        let result = CredentialStore.readToken()
+        guard case .unavailable = result else {
+            return persistedDescriptor(token: result.token, defaults: defaults)
+        }
+        return nil
+    }
+
+    private nonisolated static func persistedDescriptor(token: String?, defaults: UserDefaults) -> WatchSessionLink.Descriptor {
         let username = defaults.string(forKey: K.username)
         guard persistedSessionIsComplete(
             token: token,

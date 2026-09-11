@@ -286,19 +286,25 @@ import SwiftUI
             controller.view.gestureRecognizers?.contains { $0.name == recognizerName } ?? false
         }
 
-        /// iOS 27 separates tab prominence from search behavior. Use the public
-        /// ObjC setter dynamically so builds with the iOS 26 SDK can opt in too.
+        /// Xcode 27 ships Swift 6.4 and the typed prominence API. Keep the
+        /// public ObjC bridge only for builds made with the iOS 26 SDK.
         /// https://developer.apple.com/documentation/uikit/uitabbarcontroller/prominenttabidentifier
         private static func keepSearchProminent(in controller: UITabBarController) {
             guard #available(iOS 27.0, *),
                   let search = controller.tabs.first(where: { $0 is UISearchTab }) as? UISearchTab else { return }
             search.automaticallyActivatesSearch = true
+            #if compiler(>=6.4)
+            let current = controller.prominentTabIdentifier
+            guard current != search.identifier else { return }
+            controller.prominentTabIdentifier = search.identifier
+            #else
             let setter = NSSelectorFromString("setProminentTabIdentifier:")
             let getter = NSSelectorFromString("prominentTabIdentifier")
             guard controller.responds(to: setter), controller.responds(to: getter) else { return }
             let current = controller.perform(getter)?.takeUnretainedValue() as? String
             guard current != search.identifier else { return }
             controller.perform(setter, with: search.identifier as NSString)
+            #endif
             DebugLogger.log("Search prominence controller=\(ObjectIdentifier(controller)), tabs=\(controller.tabs.map { String(describing: type(of: $0)) + ":" + $0.identifier }), automatic=\(search.automaticallyActivatesSearch), previous=\(current ?? "nil"), assigned=\(search.identifier)", category: .ui)
         }
 

@@ -87,3 +87,37 @@ private actor FailingPageLoader {
         return []
     }
 }
+
+@Suite("iOS 27 API audit")
+struct IOS27APIAuditTests {
+    @Test func unavailableAccountDoesNotSelectGuestHistory() {
+        #expect(VideoResumeStore.accountIdentity(for: nil) == nil)
+        #expect(VideoResumeStore.accountIdentity(for: .signedOut) == "guest")
+        let signedIn = WatchSessionLink.Descriptor(isSignedIn: true, userID: "user", generation: 1)
+        #expect(VideoResumeStore.accountIdentity(for: signedIn) == "user")
+    }
+
+    @Test func unavailablePhoneCredentialIsNotASignOut() {
+        let reply = WatchSessionLink.tokenReply(for: .unavailable(errSecInteractionNotAllowed))
+        #expect(WatchSessionLink.decodeTokenReply(reply) == .unavailable)
+        #expect(WatchSessionLink.decodeTokenReply([:]) == .unavailable)
+        #expect(WatchSessionLink.decodeTokenReply(WatchSessionLink.tokenReply(for: .missing)) == .signedOut)
+        #expect(WatchSessionLink.decodeTokenReply(WatchSessionLink.tokenReply(for: .available("token"))) == .available("token"))
+    }
+
+    @MainActor @Test func unavailablePaginationCredentialDoesNotSendAnonymousRequest() async {
+        var didFetch = false
+        let loader = PlaylistListLoader(readToken: {
+            throw CredentialStore.StoreError.keychain(errSecInteractionNotAllowed)
+        }, fetchData: { _ in
+            didFetch = true
+            return Data("[]".utf8)
+        })
+        let playlist = Playlist(id: "saved", name: "Saved", songCount: 0, mosaicMedia: nil, songListDTOs: nil)
+        loader.bootstrap(initial: [playlist]) { _, _ in "https://example.com/playlists" }
+        loader.loadMoreIfNeeded(current: playlist)
+        while loader.isLoadingMore { await Task.yield() }
+        #expect(!didFetch)
+        #expect(loader.playlists == [playlist])
+    }
+}
