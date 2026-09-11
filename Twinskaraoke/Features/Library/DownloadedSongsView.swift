@@ -21,7 +21,18 @@ struct DownloadedSongsView: View {
         GeometryReader { geo in
             let viewportSize = sanitizedViewportSize(geo.size)
             ScrollView {
-                if localSongs.isEmpty {
+                if localSongs.isEmpty, downloads.restorationState == .restoring || downloads.restorationState == .notStarted {
+                    ProgressView("Restoring downloads…")
+                        .frame(width: viewportSize.width, height: max(viewportSize.height - 100, 1))
+                } else if localSongs.isEmpty, downloads.restorationState == .failed {
+                    ContentUnavailableView {
+                        Label("Downloads unavailable", systemImage: "arrow.clockwise")
+                    } description: {
+                        Text("Your saved files could not be read. Try again after unlocking your device.")
+                    } actions: {
+                        Button("Retry") { downloads.retryRestoration() }
+                    }
+                } else if localSongs.isEmpty {
                     DownloadedEmptyStateView {
                         refresh()
                     }
@@ -105,9 +116,11 @@ struct DownloadedSongsView: View {
         .scrollIndicators(.hidden)
         .refreshable {
             AppHaptic.selection.play()
+            downloads.retryRestoration()
             refresh()
         }
         .onAppear { refreshImmediately() }
+        .onChange(of: downloads.restorationState) { _, _ in scheduleRefresh() }
         .onChange(of: downloads.downloadedIDs) { _, _ in scheduleRefresh() }
         .onDisappear {
             refreshTask?.cancel()

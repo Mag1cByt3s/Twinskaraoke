@@ -299,7 +299,13 @@ private struct BrowseCategoriesView: View {
             async let playlists: Void = publicPlaylistsVM.refreshPublicPlaylists()
             _ = await (genres, topChart, playlists)
         }
-        .onAppear {
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                publicPlaylistsVM.loadIfNeeded()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+                publicPlaylistsVM.loadIfNeeded()
+            }
+            .onAppear {
             genresVM.loadIfNeeded()
             topChartVM.loadIfNeeded()
             publicPlaylistsVM.loadIfNeeded()
@@ -372,9 +378,9 @@ private struct BrowseCategoriesView: View {
             ) {
                 SearchFeaturedShortcutTile(
                     title: "Public Playlists",
-                    subtitle: publicPlaylistsVM.playlists.isEmpty
-                        ? "Community mixes"
-                        : "\(publicPlaylistsVM.playlists.count) playlists",
+                    subtitle: publicPlaylistsVM.errorMessage ?? (publicPlaylistsVM.isLoadingMore && publicPlaylistsVM.playlists.isEmpty
+                        ? "Loading playlists…"
+                        : publicPlaylistsVM.playlists.isEmpty ? "Community mixes" : "\(publicPlaylistsVM.playlists.count) playlists"),
                     gradient: [
                         Color(red: 0.19, green: 0.55, blue: 0.96),
                         Color(red: 0.12, green: 0.22, blue: 0.58),
@@ -492,6 +498,16 @@ private struct PublicPlaylistsCollectionView: View {
                 viewModel.urlForList(startIndex: startIndex, pageSize: pageSize)
             }
         )
+        .safeAreaInset(edge: .top) {
+            if let message = viewModel.errorMessage {
+                VStack {
+                    Text(message).font(.footnote)
+                    Button("Retry") { viewModel.loadIfNeeded() }
+                }
+                .padding()
+            }
+        }
+        .refreshable { await viewModel.refreshPublicPlaylists() }
         .task {
             viewModel.loadIfNeeded()
         }

@@ -217,29 +217,32 @@ import SwiftUI
 
         private func resolveAttachment(to window: UIWindow, generation: Int, remainingAttempts: Int) {
             guard generation == attachmentGeneration else { return }
+            // The controller can precede its tabs. Retry even after finding it,
+            // then let subsequent layout/window updates discover replacements.
+            defer {
+                if remainingAttempts > 0 {
+                    attachmentTask = Task { @MainActor [weak self, weak window] in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        guard !Task.isCancelled, let window else { return }
+                        self?.resolveAttachment(to: window, generation: generation,
+                            remainingAttempts: remainingAttempts - 1)
+                    }
+                }
+            }
             let controller = Self.tabBarController(in: window.rootViewController)
             if let controller, controller === tabBarController, Self.isInstalled(on: controller) {
                 Self.keepSearchProminent(in: controller)
                 return
             }
             clearController()
-            guard let controller else {
-                guard remainingAttempts > 0 else { return }
-                attachmentTask = Task { @MainActor [weak self, weak window] in
-                    // A frame, not `Task.yield()`: yielding only reschedules
-                    // this task on the main actor and can run again before
-                    // UIKit has installed `TabView`'s controller, which burned
-                    // all ten attempts inside one run-loop turn.
-                    try? await Task.sleep(for: .milliseconds(16))
-                    guard !Task.isCancelled, let window else { return }
-                    self?.resolveAttachment(
-                        to: window, generation: generation, remainingAttempts: remainingAttempts - 1
-                    )
-                }
-                return
-            }
+            guard let controller else { return }
 
             tabBarController = controller
+            // Let iOS 27 manage minimization until its new lifecycle is verified.
+            if #available(iOS 27.0, *) {
+                Self.keepSearchProminent(in: controller)
+                return
+            }
             controller.tabBarMinimizeBehavior = mode.uiKit
             Self.keepSearchProminent(in: controller)
 
@@ -288,10 +291,15 @@ import SwiftUI
         /// https://developer.apple.com/documentation/uikit/uitabbarcontroller/prominenttabidentifier
         private static func keepSearchProminent(in controller: UITabBarController) {
             guard #available(iOS 27.0, *),
-                  let search = controller.tabs.first(where: { $0 is UISearchTab }) else { return }
+                  let search = controller.tabs.first(where: { $0 is UISearchTab }) as? UISearchTab else { return }
+            search.automaticallyActivatesSearch = true
             let setter = NSSelectorFromString("setProminentTabIdentifier:")
-            guard controller.responds(to: setter) else { return }
+            let getter = NSSelectorFromString("prominentTabIdentifier")
+            guard controller.responds(to: setter), controller.responds(to: getter) else { return }
+            let current = controller.perform(getter)?.takeUnretainedValue() as? String
+            guard current != search.identifier else { return }
             controller.perform(setter, with: search.identifier as NSString)
+            DebugLogger.log("Search prominence controller=\(ObjectIdentifier(controller)), tabs=\(controller.tabs.map { String(describing: type(of: $0)) + ":" + $0.identifier }), automatic=\(search.automaticallyActivatesSearch), previous=\(current ?? "nil"), assigned=\(search.identifier)", category: .ui)
         }
 
         /// The pan finds the scroll view under the touch, resets the accumulator
@@ -483,6 +491,11 @@ import SwiftUI
 
     final class InstallerView: UIView {
         let coordinator = TabBarMinimizeCoordinator()
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if let window { coordinator.attach(to: window) }
+        }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()

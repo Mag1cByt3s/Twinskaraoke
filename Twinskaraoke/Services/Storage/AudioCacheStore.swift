@@ -577,7 +577,7 @@ nonisolated enum AudioCacheStore {
         }()
         probeMemoLock.lock()
         if validityMemo.count >= probeMemoLimit { validityMemo.removeAll() }
-        validityMemo[path] = (modified, valid)
+        if valid { validityMemo[path] = (modified, valid) }
         probeMemoLock.unlock()
         return valid
     }
@@ -592,16 +592,19 @@ nonisolated enum AudioCacheStore {
         }
         probeMemoLock.unlock()
         var duration: TimeInterval = 0
-        if let file = try? AVAudioFile(forReading: url) {
+        do {
+            let file = try AVAudioFile(forReading: url)
             let sampleRate = file.fileFormat.sampleRate
             if sampleRate > 0 {
                 let candidate = Double(file.length) / sampleRate
                 if candidate.isFinite, candidate > 0 { duration = candidate }
             }
+        } catch {
+            DebugLogger.log("Audio duration probe \(url.path): \(error)", category: .cache)
         }
         probeMemoLock.lock()
         if durationMemo.count >= probeMemoLimit { durationMemo.removeAll() }
-        durationMemo[path] = (modified, duration)
+        if duration > 0 { durationMemo[path] = (modified, duration) }
         probeMemoLock.unlock()
         return duration
     }

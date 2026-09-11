@@ -52,7 +52,15 @@ private struct PopupHostView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 AudioPlayerManager.shared.sleepTimer.checkExpiry()
+                DownloadManager.shared.retryRestoration()
+                FavoritesManager.shared.loadIfNeeded()
+                UserPlaylistsManager.shared.loadIfNeeded()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            DownloadManager.shared.retryRestoration()
+            FavoritesManager.shared.loadIfNeeded()
+            UserPlaylistsManager.shared.loadIfNeeded()
         }
         .onAppear {
             // Warm the account-scoped state that the shared song context

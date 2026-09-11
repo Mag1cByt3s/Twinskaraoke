@@ -41,20 +41,30 @@ struct GenreDetail: Decodable {
 final class PublicPlaylistsViewModel {
     var playlists: [Playlist] = []
     var isLoadingMore = false
+    private(set) var errorMessage: String?
     private var canLoadMore = true
     private var hasLoaded = false
     private var requestToken = 0
     private let pageSize = 25
     @ObservationIgnored private let refreshTracker = RefreshTracker()
+    @ObservationIgnored private let loadPage: @Sendable (Int, Int) async throws -> [Playlist]
+
+    init(loadPage: @escaping @Sendable (Int, Int) async throws -> [Playlist] = { start, size in
+        try await KaraokeAPIClient.restoringRequest {
+            try await KaraokeAPIClient.publicPlaylists(startIndex: start, pageSize: size)
+        }
+    }) {
+        self.loadPage = loadPage
+    }
+
 
     func loadIfNeeded() {
-        guard !hasLoaded else { return }
+        guard !hasLoaded, !isLoadingMore else { return }
         if AppRuntime.isUITestMode {
             hasLoaded = true
             applyUITestFixture()
             return
         }
-        hasLoaded = true
         fetchPage(startIndex: 0, replace: true)
     }
 
@@ -88,7 +98,10 @@ final class PublicPlaylistsViewModel {
         } else {
             isLoadingMore = true
         }
+        isLoadingMore = true
+        errorMessage = nil
         let token = requestToken
+        let pageSize = pageSize
         let task = Task { [weak self] in
             guard let self else { return }
             // defer, not a trailing statement: the token guards below return
@@ -104,10 +117,7 @@ final class PublicPlaylistsViewModel {
                 if token == requestToken { isLoadingMore = false }
             }
             do {
-                let items = try await KaraokeAPIClient.publicPlaylists(
-                    startIndex: startIndex,
-                    pageSize: pageSize
-                )
+                let items = try await loadPage(startIndex, pageSize)
                 guard token == requestToken else { return }
                 if replace {
                     playlists = items
@@ -115,12 +125,13 @@ final class PublicPlaylistsViewModel {
                     let existing = Set(playlists.map(\.id))
                     playlists += items.filter { !existing.contains($0.id) }
                 }
+                hasLoaded = true
                 canLoadMore = items.count >= pageSize
             } catch {
                 guard token == requestToken else { return }
                 // Keep the current items on a failed replace fetch so the view
                 // can retry instead of landing on a dead-end empty state.
-                canLoadMore = false
+                errorMessage = "Playlists couldn’t be loaded. Pull to refresh to retry."
             }
         }
         // Only the replacing fetch is what pull-to-refresh waits on; tracking a
