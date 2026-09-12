@@ -70,6 +70,7 @@ final class AudioSessionController: AudioSessionManaging {
     private var isActive = false
     private var isActivating = false
     private var activationGeneration = 0
+    private var pendingActivationWasCancelled = false
     private var pendingPlayback: (@MainActor () -> Void)?
     private let configure: @MainActor () throws -> Void
     private let activate: @MainActor (@escaping @Sendable (Bool, (any Error)?) -> Void) -> Void
@@ -79,12 +80,22 @@ final class AudioSessionController: AudioSessionManaging {
     /// Only the latest request survives activation; Pause can cancel it.
     func performWhenReady(_ operation: @escaping @MainActor () -> Void, replacingPending: Bool = true) -> Bool {
         if isActive { return true }
+        if replacingPending {
+            pendingActivationWasCancelled = false
+        } else if pendingActivationWasCancelled {
+            // A late file/stem preparation must not undo Pause while the
+            // activation callback is still in flight. Only a new Play can.
+            return false
+        }
         if replacingPending || pendingPlayback == nil { pendingPlayback = operation }
         prepareForPlayback()
         return false
     }
 
-    func cancelPendingPlayback() { pendingPlayback = nil }
+    func cancelPendingPlayback() {
+        if isActivating { pendingActivationWasCancelled = true }
+        pendingPlayback = nil
+    }
 
     init(
         session: AVAudioSession = .sharedInstance(),

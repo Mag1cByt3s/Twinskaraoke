@@ -52,6 +52,32 @@ struct AudioSessionControllerTests {
         #expect(!probe.controller.hasPendingPlayback)
     }
 
+    @Test func latePreparationCannotUndoPauseDuringActivation() async {
+        let probe = ActivationProbe()
+        var played: [Int] = []
+        #expect(!probe.controller.performWhenReady { played.append(1) })
+        probe.controller.cancelPendingPlayback()
+        let ready = probe.controller.performWhenReady({ played.append(2) }, replacingPending: false)
+        #expect(!ready)
+        #expect(!probe.controller.hasPendingPlayback)
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played.isEmpty)
+        #expect(probe.controller.performWhenReady { played.append(3) })
+    }
+
+    @Test func explicitPlayAfterPauseCanUsePendingActivation() async {
+        let probe = ActivationProbe()
+        var played: [Int] = []
+        #expect(!probe.controller.performWhenReady { played.append(1) })
+        probe.controller.cancelPendingPlayback()
+        #expect(!probe.controller.performWhenReady { played.append(2) })
+        #expect(probe.completions.count == 1)
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played == [2])
+    }
+
     @Test func interruptedActivationCannotCompleteNewRequest() async {
         let probe = ActivationProbe()
         var played: [Int] = []
