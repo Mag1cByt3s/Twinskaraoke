@@ -79,7 +79,8 @@ nonisolated final class BackgroundDownloadTransport: NSObject, URLSessionDownloa
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         lock.lock()
         let url = staged.removeValue(forKey: task.taskIdentifier)
-        let failure = error ?? stagingErrors.removeValue(forKey: task.taskIdentifier)
+        let stagingError = stagingErrors.removeValue(forKey: task.taskIdentifier)
+        let failure = error ?? stagingError
         deliveries[task.taskIdentifier] = task
         pendingDeliveries += 1
         lock.unlock()

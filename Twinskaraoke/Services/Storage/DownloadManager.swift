@@ -182,6 +182,7 @@ final class DownloadManager {
     private var discardPendingOnRestore = false
     private var deferredDownloadRequests: [String: Song] = [:]
     private var pendingRestoration: Task<Void, Never>?
+    private var deferredCompletions: [(URLSessionTask, URL?, Error?)] = []
     private var pendingJournalURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("pending-downloads.json")
@@ -235,6 +236,15 @@ final class DownloadManager {
 
     func retryRestoration() {
         restorePendingDownloadsIfNeeded()
+        if UIApplication.shared.isProtectedDataAvailable, !deferredCompletions.isEmpty {
+            let completions = deferredCompletions
+            deferredCompletions.removeAll()
+            Task { [weak self] in
+                for (task, file, error) in completions {
+                    await self?.receiveBackgroundDownload(task: task, file: file, error: error)
+                }
+            }
+        }
         guard restorationState != .restoring else { return }
         guard UIApplication.shared.isProtectedDataAvailable else {
             restorationState = .failed
@@ -615,11 +625,16 @@ final class DownloadManager {
     }
 
     func receiveBackgroundDownload(task: URLSessionTask, file: URL?, error: Error?) async {
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            deferredCompletions.append((task, file, error))
+            return
+        }
         restorePendingDownloadsIfNeeded()
         await pendingRestoration?.value
         guard restoredPendingDownloads else {
             // Keep the journal authoritative; retry restoration after unlock.
             // This file has not been committed and must not replace a download.
+            deferredCompletions.append((task, file, error))
             return
         }
         guard let description = task.taskDescription,
