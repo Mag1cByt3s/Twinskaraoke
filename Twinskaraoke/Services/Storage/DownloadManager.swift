@@ -1113,8 +1113,13 @@ final class DownloadManager {
                     // Discover committed audio without opening a decoder. A startup probe
                     // cannot establish corruption, and must never remove a user's download.
                     let audioFiles = try fm.contentsOfDirectory(at: entry,
-                        includingPropertiesForKeys: nil).filter {
-                            $0.lastPathComponent.hasPrefix("main.") && $0.pathExtension != "source" && !$0.lastPathComponent.contains(".promoting-") && !$0.lastPathComponent.contains(".partial.")
+                        includingPropertiesForKeys: [.isRegularFileKey]).filter { candidate in
+                            guard candidate.lastPathComponent.hasPrefix("main."),
+                                  !candidate.lastPathComponent.contains(".promoting-"),
+                                  !candidate.lastPathComponent.contains(".partial."),
+                                  AudioCacheStore.supportedMainAudioExtensions.contains(candidate.pathExtension.lowercased())
+                            else { return false }
+                            return try candidate.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
                         }
                     guard !audioFiles.isEmpty else { continue }
                     ids.insert(song.id)
@@ -1236,7 +1241,7 @@ final class DownloadManager {
             return nil
         }
         let expectedSource = song.audioURL?.absoluteString
-        if let cachedSource, let expectedSource, cachedSource != expectedSource {
+        if let cachedSource, let expectedSource, !Self.sameAudioResource(cachedSource, expectedSource) {
             DebugLogger.log(
                 "Discarding downloaded audio for \(song.id) due to source mismatch",
                 category: .cache

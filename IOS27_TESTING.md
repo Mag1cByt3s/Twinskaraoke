@@ -27,7 +27,7 @@ Enable the app's debug logging before reproducing. Export logs covering the cold
 
 Xcode 27 / Swift 6.4 builds now use the typed iOS 27 prominence property. Builds with the local older SDK retain the availability- and selector-guarded public Objective-C API bridge. Apple also documents SwiftUI `TabRole.prominent`; replacing `.search` with that role changes search semantics, so this branch retains `.search`. Validate the bridge with the RC SDK/device before merging. No iOS 27-specific header/duration behavior has been measured locally.
 
-Uncertain audio is preserved. A genuinely damaged file may require explicit removal and re-download; it is no longer automatically deleted after a failed decoder probe. Legacy migration preserves the original copy until explicit download removal.
+Uncertain explicitly downloaded audio is preserved. Disposable playback/stem caches have separate invalidation behavior; see the audit limitations. A genuinely damaged file may require explicit removal and re-download; it is no longer automatically deleted after a failed decoder probe. Legacy migration preserves the original copy until explicit download removal.
 
 Sources checked September 11, 2026:
 
@@ -44,3 +44,12 @@ The subsequent full API audit fetched Apple’s current RC Markdown directly; it
 Xcode 26.6 simulator build passed. The final targeted run passed 45 tests (46 executions including parameterized coverage), with zero failures, on iPhone 17 Pro / iOS 26.5. Suites: LaunchRestorationTests, DownloadManagerTests, SearchLifecycleTests, and SecurityRegressionTests. Coverage includes unavailable credentials, malformed playlist responses, retry after failed initial load, non-destructive audio discovery, signed URL rotation, and reconciliation with concurrent download changes.
 
 The URL-encoding security test now injects an absent credential instead of reading the unsigned simulator app's Keychain; a separate test verifies that unavailable credentials stop request creation.
+
+
+## September 12 recheck additions
+
+- Refresh a signed audio URL while keeping its song/resource identity; playback must preserve the existing download and its source metadata even if an audio probe temporarily fails.
+- Confirm sidecar/backup/staging files and directories alone never appear as downloaded songs.
+- Verify watch account and audio-cache flows with the companion privacy manifest included.
+- Test cache regeneration and downloads after stopping playback, backgrounding/locking, and relaunching. Ordinary downloads do not use a persistent background URLSession.
+- Record both Xcode and simulator/device OS build. The CI RC gate now requires Xcode `27A266a` and simulator `24A435`; beta-6 unit/navigation success is preliminary evidence only.

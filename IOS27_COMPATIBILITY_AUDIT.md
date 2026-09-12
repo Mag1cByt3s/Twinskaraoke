@@ -1,4 +1,4 @@
-# iOS 27 RC compatibility audit — September 11, 2026
+# iOS 27 RC compatibility audit — rechecked September 12, 2026
 
 ## Result
 
@@ -91,7 +91,7 @@ The pinned releases match the latest upstream releases returned during this audi
 
 Latest release status is not an iOS 27 compatibility guarantee. The Spleeter source inspection above is more informative than its version number. The deployment target remains iOS 26.5.
 
-A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It requires build **27A266a** for a successful RC verdict. The hosted run confirms **27A5252f / beta 6**, matching GitHub’s `xcode-27` image README. Its preview results must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It now requires Xcode build **27A266a** and selected simulator runtime build **24A435** for a successful RC verdict, preferring the RC runtime when multiple iOS 27 runtimes are installed. The hosted run confirms **27A5252f / beta 6**, matching GitHub’s `xcode-27` image README. Its preview results must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
 
 ## Validation results
 
@@ -104,4 +104,36 @@ A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/run
 - Plist syntax, workflow YAML parsing, and `git diff --check` passed.
 - The first full run exposed request tests that read the unsigned host’s Keychain; those now inject credentials, and the final full run above passed. The first compile also identified the video-history caller that needed to handle an unavailable descriptor.
 
-Hosted run: [iOS 27 compatibility — source commit 60b12c3](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34646312864). The runner reports Xcode 27 beta 6 (**27A5252f**), Swift 6.4, and the iOS 27 preview SDK. Release build and static analysis passed, including the typed prominence API path; the only recorded Release warning disables App Intents metadata extraction. All three navigation UI checks passed. The unit run passed 255 of 260 tests; five legacy tab-coordinator tests produced 10 assertion failures because they expected the custom recognizer that is deliberately disabled on iOS 27. Those tests now assert zero custom recognizers on iOS 27 and retain the prior expectations on iOS 26.5. The source implementation did not require a change for these failures. A follow-up workflow run is required to verify the updated assertions on iOS 27. The exact-RC toolchain gate will reject this preview toolchain even if all tests pass; it was skipped in this run after the unit-test failure. A green iOS 26.5 test run is backward-compatibility evidence, not iOS 27 runtime evidence.
+Hosted run: [iOS 27 compatibility — source commit 60b12c3](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34646312864). The runner reports Xcode 27 beta 6 (**27A5252f**), Swift 6.4, and the iOS 27 preview SDK. Release build and static analysis passed, including the typed prominence API path; the only recorded Release warning disables App Intents metadata extraction. All three navigation UI checks passed. The unit run passed 255 of 260 tests; five legacy tab-coordinator tests produced 10 assertion failures because they expected the custom recognizer that is deliberately disabled on iOS 27. Those tests now assert zero custom recognizers on iOS 27 and retain the prior expectations on iOS 26.5. The source implementation did not require a change for these failures. The follow-up run below verifies the corrected assertions. The exact-RC toolchain gate will reject this preview toolchain even if all tests pass; it was skipped in this run after the unit-test failure. A green iOS 26.5 test run is backward-compatibility evidence, not iOS 27 runtime evidence.
+
+
+## September 12 recheck
+
+The [follow-up run for 6713e72](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34648734939) passed Release compilation/static analysis, **all 260 unit tests**, and **all three navigation UI tests** on Xcode 27 beta 6. Only the explicit RC-toolchain check failed. This resolves the five test-expectation failures from the initial preview run; it does not establish RC or signed-device compatibility.
+
+### Additional fixes
+
+- **Signed URLs during playback:** `playableURL(for:)` still used literal URL equality, although prewarming already used `sameAudioResource`. Rotating a signature could therefore delete downloaded audio and schedule repair on playback. The playback path now uses the same resource comparison. A regression invokes the real playback lookup with changed signatures and an undecodable file, then verifies both audio and source metadata remain intact.
+- **Download discovery:** any `main.*` entry previously counted, including backup sidecars and directories. Discovery now requires a regular file with a supported audio extension and excludes staging files. It still does not open an audio decoder. A filesystem regression covers sidecars, compressed leftovers, staging files, directories, and an undecodable committed audio file.
+- **Companion privacy:** the watch executable uses app preferences and file timestamps but had no manifest in its own bundle. Added `TwinskaraokeWatchApp/PrivacyInfo.xcprivacy` with `CA92.1` and `C617.1`. Shared uptime haptic code is compiled only for iOS, so it is not declared for watch. Apple requires declarations in each executable's bundle; the phone manifest alone is insufficient. This requirement predates iOS 27. [Required-reason API guidance](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+- **RC validation:** the old workflow gate checked Xcode alone. It now also verifies the selected simulator runtime and retains its inventory, preventing an RC SDK plus preview runtime from being reported as a complete RC run.
+
+### Guidance and call-site cross-check
+
+Apple's freshly fetched iOS RC notes add a Hardware Security section for arm64e.x1/CPA2 since the September 11 snapshot; Xcode RC notes are unchanged. Enhanced Security remains a deliberate capability adoption with separate testing requirements, not a mandatory migration for this app's current configuration. [iOS RC notes](https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-27-release-notes), [Enhanced Security](https://developer.apple.com/documentation/xcode/enabling-enhanced-security-for-your-app)
+
+The stricter TLS note applies to listed system management/install/update processes, not a blanket new URLSession rule. The app has no broad ATS exception; live server/CDN connections still need RC device checks. No active first-party uses were found for the new RemoteMediaSession push-token issue, deprecated on-demand resources, PHAssetResource.originalFilename, external noninteractive display scene roles, renamed navigation minimization APIs, or drag-interaction delegate callbacks. SwiftUI artwork uses the existing image pipeline, with no AsyncImage call sites affected by its new automatic HTTP caching behavior.
+
+The remaining credential convenience reads were traced: phone playlist/favorite loaders defer unavailable credentials and receive foreground/unlock retries; best-effort upload metadata hydration can return unhydrated metadata, and watch credential reads can display awaiting-phone until sync recovers. Neither is proof of completed signed-device restoration. Mutating API requests still use the throwing credential path.
+
+### Additional limitations made explicit
+
+`AudioCacheStore` handles disposable playback/stem caches separately from explicit downloads. It still deletes cache entries after failed header/decompression probes or missing/mismatched source metadata and compares source URLs literally. A transient read or rotated signature can cause cache regeneration and renewed model inference. The explicit-download preservation fixes do not establish that all generated caches survive transient failures. Include cache reuse and locked/background playback in device testing; the background inference finding above also applies to regeneration.
+
+Downloads use a default URLSession with completion handlers, not a persistent background URLSession. Audio background mode does not establish that downloads survive suspension/termination when playback stops. This is an existing lifecycle limitation, not a newly documented iOS 27 removal; test starting a download, stopping audio, locking, and relaunching.
+
+### Recheck validation
+
+- **29 targeted tests passed**, 30 executions including parameterized cases, zero failures/skips on iOS 26.5. Includes both new filesystem/playback regressions. Result: `/private/tmp/ios27-recheck-tests.xcresult`.
+- Workflow YAML parsing and runtime selection checks passed: RC preferred with mixed runtimes; preview fallback records its non-RC build.
+- Watch Release build passed using Xcode 26.6. The built `Twinskaraoke Watch App.app/PrivacyInfo.xcprivacy` matches the source manifest and contains both required-reason categories. Build log: `/private/tmp/ios27-recheck-watch.log`.

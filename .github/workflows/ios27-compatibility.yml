@@ -32,15 +32,24 @@ jobs:
       - name: Resolve iOS 27 simulator
         run: |
           xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
-          python3 - "$RUNNER_TEMP/devices.json" >> "$GITHUB_ENV" <<'PY'
+          xcrun simctl list runtimes -j > "$RUNNER_TEMP/runtimes.json"
+          python3 - "$RUNNER_TEMP/devices.json" "$RUNNER_TEMP/runtimes.json" >> "$GITHUB_ENV" <<'PY'
           import json, sys
           devices = json.load(open(sys.argv[1]))["devices"]
-          for runtime, entries in devices.items():
+          runtimes = {
+              runtime["identifier"]: runtime
+              for runtime in json.load(open(sys.argv[2]))["runtimes"]
+          }
+          # Prefer the audited RC when preview runtimes are also installed.
+          ordered = sorted(devices.items(), key=lambda item:
+              runtimes.get(item[0], {}).get("buildversion") != "24A435")
+          for runtime, entries in ordered:
               if "SimRuntime.iOS-27-" not in runtime:
                   continue
               for device in entries:
                   if device["isAvailable"] and device["name"].startswith("iPhone"):
                       print("IOS27_SIMULATOR=" + device["udid"])
+                      print("IOS27_RUNTIME_BUILD=" + runtimes.get(runtime, {}).get("buildversion", "unknown"))
                       sys.exit(0)
           sys.exit("No iOS 27 iPhone simulator is available")
           PY
@@ -67,10 +76,14 @@ jobs:
             -only-testing:TwinskaraokeUITests/TwinskaraokeUITests/testLibraryAndSearchDrillDownNavigation \
             -resultBundlePath "$RUNNER_TEMP/ios27-tests.xcresult" \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ios27-tests.log"
-      - name: Require the audited RC toolchain
+      - name: Require the audited RC toolchain and runtime
         run: |
           grep -q 'Build version 27A266a' "$RUNNER_TEMP/xcode-version.txt" || {
             echo '::error::The build/test steps used a different toolchain. Rerun when Xcode 27 RC (27A266a) is installed.'
+            exit 1
+          }
+          test "$IOS27_RUNTIME_BUILD" = '24A435' || {
+            echo "::error::Tests used iOS runtime $IOS27_RUNTIME_BUILD, not the audited RC (24A435)."
             exit 1
           }
       - name: Preserve results
@@ -80,6 +93,7 @@ jobs:
           name: ios27-compatibility
           path: |
             ${{ runner.temp }}/xcode-version.txt
+            ${{ runner.temp }}/runtimes.json
             ${{ runner.temp }}/ios27-*.log
             ${{ runner.temp }}/ios27-*.xcresult
           if-no-files-found: warn

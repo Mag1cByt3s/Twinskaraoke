@@ -65,12 +65,54 @@ struct LaunchRestorationTests {
         #expect(try Data(contentsOf: audio) == bytes)
     }
 
+    @MainActor @Test func startupIgnoresSidecarsStagingAndDirectories() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let song = UITestFixtures.song(id: "sidecars", title: "Saved", artist: "Artist")
+        let directory = root.appendingPathComponent(song.id)
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(song).write(to: directory.appendingPathComponent("metadata.json"))
+        for name in ["main.source", "main.source.backup", "main.mp3.nkz", "main.partial.mp3", "main.promoting-test.mp3"] {
+            try Data("sidecar".utf8).write(to: directory.appendingPathComponent(name))
+        }
+        try fm.createDirectory(at: directory.appendingPathComponent("main.mp3"), withIntermediateDirectories: true)
+        let result = DownloadManager.scanExistingDownloads(in: root)
+        #expect(result.validIDs.isEmpty)
+        #expect(!result.hadFailures)
+        #expect(try fm.contentsOfDirectory(atPath: directory.path).count == 7)
+        // Discovery checks file identity, never decoder availability.
+        try Data("temporarily undecodable".utf8).write(to: directory.appendingPathComponent("main.m4a"))
+        #expect(DownloadManager.scanExistingDownloads(in: root).validIDs == [song.id])
+    }
+
     @Test func reconciliationPreservesLiveChangesAndUnavailableFiles() {
         #expect(DownloadManager.restorationMissingIDs(
             starting: ["gone", "completed", "active", "saved"], discovered: ["saved"],
             changed: ["completed"], inProgress: ["active"], hadFailures: false) == ["gone"])
         #expect(DownloadManager.restorationMissingIDs(
             starting: ["unreadable"], discovered: [], changed: [], inProgress: [], hadFailures: true).isEmpty)
+    }
+
+    @MainActor @Test func playbackPreservesDownloadWhenOnlySignatureChanges() throws {
+        let manager = DownloadManager.shared
+        let song = Song(id: "signature-test-\(UUID().uuidString)", title: "Saved", duration: 0,
+            absolutePath: "https://example.com/song.mp3?token=new", cloudflareID: nil,
+            coverArt: nil, originalArtists: nil, coverArtists: nil, userUploaded: false)
+        let audio = manager.localURL(for: song.id)
+        let directory = audio.deletingLastPathComponent()
+        let source = directory.appendingPathComponent("main.source")
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: directory) }
+        let bytes = Data("temporarily unreadable audio".utf8)
+        try bytes.write(to: audio)
+        let originalSource = Data("https://example.com/song.mp3?token=old".utf8)
+        try originalSource.write(to: source)
+        // A failed decoder probe still must not erase the signed-URL download.
+        #expect(manager.playableURL(for: song) == nil)
+        #expect(try Data(contentsOf: audio) == bytes)
+        #expect(try Data(contentsOf: source) == originalSource)
     }
 
     @Test func signedURLRotationPreservesContentIdentity() {
