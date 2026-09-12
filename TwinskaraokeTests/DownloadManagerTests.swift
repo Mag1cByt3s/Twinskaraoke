@@ -454,6 +454,86 @@ struct DownloadManagerTests {
         #expect(compressedDate >= wavDate)
     }
 
+    @Test("Playback cache preserves files after duration and source probe failures")
+    func cacheProbeDoesNotDeleteOriginal() throws {
+        let songID = "probe-preservation-" + UUID().uuidString
+        defer { AudioCacheStore.removeSongCache(for: songID) }
+        let remote = URL(string: "https://example.com/audio.wav?token=old")!
+        let directory = AudioCacheStore.ensureSongDirectory(for: songID)
+        let audio = AudioCacheStore.mainAudioURL(for: songID, sourceURL: remote)
+        let bytes = Self.makeSilentWAVData(seconds: 3)
+        try bytes.write(to: audio)
+        let source = directory.appendingPathComponent("main.source")
+        try Data(remote.absoluteString.utf8).write(to: source)
+        #expect(AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remote, expectedDuration: 180) == nil)
+        #expect(try Data(contentsOf: audio) == bytes)
+        #expect(AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: URL(string: "https://example.com/other.wav")!) == nil)
+        #expect(try Data(contentsOf: audio) == bytes)
+        try FileManager.default.removeItem(at: source)
+        #expect(AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: remote) == nil)
+        #expect(try Data(contentsOf: audio) == bytes)
+    }
+
+    @Test("Playback cache accepts refreshed signatures without losing stems")
+    func playbackCacheAcceptsSignedURLRefresh() throws {
+        let songID = "signed-playback-" + UUID().uuidString
+        defer { AudioCacheStore.removeSongCache(for: songID) }
+        let remote = URL(string: "https://example.com/audio.wav?track=1&token=old")!
+        let directory = AudioCacheStore.ensureSongDirectory(for: songID)
+        let audio = AudioCacheStore.mainAudioURL(for: songID, sourceURL: remote)
+        try Self.makeSilentWAVData(seconds: 3).write(to: audio)
+        try Data(remote.absoluteString.utf8).write(to: directory.appendingPathComponent("main.source"))
+        let refreshed = URL(string: "https://example.com/audio.wav?track=1&token=new")!
+        #expect(AudioCacheStore.playableMainURL(for: songID, expectedRemoteURL: refreshed) == audio)
+        #expect(AudioCacheStore.immediatelyPlayableMainURL(for: songID, expectedRemoteURL: refreshed) == audio)
+    }
+
+    @Test("Unrecognized cache headers remain available for a later probe")
+    func invalidHeaderIsNotDeleted() throws {
+        let songID = "header-preservation-" + UUID().uuidString
+        defer { AudioCacheStore.removeSongCache(for: songID) }
+        _ = AudioCacheStore.ensureSongDirectory(for: songID)
+        let audio = AudioCacheStore.mainAudioURL(for: songID, sourceURL: URL(string: "https://example.com/audio.mp3")!)
+        let bytes = Data(repeating: 7, count: 5000)
+        try bytes.write(to: audio)
+        #expect(AudioCacheStore.playableMainURL(for: songID) == nil)
+        #expect(try Data(contentsOf: audio) == bytes)
+    }
+
+    @Test("Background delegate preserves the temporary file before returning")
+    func backgroundDelegateOwnsCompletedFile() throws {
+        let transport = BackgroundDownloadTransport()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let token = UUID().uuidString
+        let task = session.downloadTask(with: URL(string: "https://example.com/audio.mp3")!)
+        task.taskDescription = token
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let bytes = Data("completed-transfer".utf8)
+        try bytes.write(to: temporary)
+        transport.urlSession(session, downloadTask: task, didFinishDownloadingTo: temporary)
+        let receipt = try #require(BackgroundDownloadTransport.receipts().first { $0.token == token })
+        defer { BackgroundDownloadTransport.discardReceipt(for: receipt.file) }
+        #expect(!FileManager.default.fileExists(atPath: temporary.path))
+        #expect(try Data(contentsOf: receipt.file) == bytes)
+        #expect(FileManager.default.fileExists(atPath: receipt.file.appendingPathExtension("json").path))
+    }
+
+    @Test("Recovered transfers retain HTTP rejection and byte-count information")
+    func backgroundReceiptRetainsResponseValidation() throws {
+        for status in [200, 403] {
+            let receipt = DownloadReceipt(
+                token: UUID().uuidString, filename: UUID().uuidString,
+                responseURL: URL(string: "https://example.com/audio.mp3"), status: status,
+                headers: ["Content-Type": "audio/mpeg", "Content-Length": "123456"]
+            )
+            let restored = try JSONDecoder().decode(DownloadReceipt.self, from: JSONEncoder().encode(receipt))
+            #expect(restored.response?.statusCode == status)
+            #expect(restored.response?.expectedContentLength == 123456)
+            #expect(AudioCacheStore.acceptsAudioResponse(restored.response) == (status == 200))
+        }
+    }
+
     /// Minimal PCM WAV (mono, 16-bit silence) large enough to pass the cache's
     /// size floor and readable by AVAudioFile for duration checks.
     private static func makeSilentWAVData(seconds: Int, sampleRate: Int = 8000) -> Data {

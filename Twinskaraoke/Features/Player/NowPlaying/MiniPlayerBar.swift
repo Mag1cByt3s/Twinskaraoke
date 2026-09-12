@@ -14,6 +14,7 @@ import SwiftUI
 /// and transport bounds: control taps remain local, while upward drags can
 /// start anywhere in the bar.
 struct MiniPlayerBar: View {
+    @Environment(ShimejiEngine.self) private var shimejiEngine
     /// `.inline` once the tab bar has minimized and the accessory has merged
     /// into it, `.expanded` at full size, `nil` outside a `TabView` — which is
     /// the iPad sidebar, where the bar sits in a `safeAreaBar` instead and
@@ -90,11 +91,11 @@ struct MiniPlayerBar: View {
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
-            ShimejiMiniPlayerTracker.shared.report(frame: frame)
+            shimejiEngine.miniPlayerY = frame.height > 0 ? frame.minY : nil
             presentation.reportBarFrame(frame)
         }
         .onDisappear {
-            ShimejiMiniPlayerTracker.shared.report(frame: nil)
+            shimejiEngine.miniPlayerY = nil
             presentation.reportBarFrame(nil)
         }
     }

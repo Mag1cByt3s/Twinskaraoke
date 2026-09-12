@@ -125,7 +125,12 @@ final class InteractiveDismissalSuppressor {
     /// dismissal comes back, and with it the iOS 26 delay — without touching any
     /// call site. Flip it if a future iOS renames the classes, or if the
     /// dependency is ever considered a submission risk.
-    static let isEnabled = true
+    static var isEnabled: Bool {
+        // iOS 27 owns zoom dismissal; legacy gesture-class matching must not
+        // disable or replace recognizers in its rebuilt navigation hierarchy.
+        if #available(iOS 27, *) { return false }
+        return true
+    }
 
     weak var navigationController: UINavigationController?
     /// The navigation controller's own child that hosts this screen. Identity is

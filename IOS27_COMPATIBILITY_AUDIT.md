@@ -1,8 +1,8 @@
-# iOS 27 RC compatibility audit — rechecked September 12, 2026
+# iOS 27 RC compatibility audit — rechecked September 13, 2026
 
 ## Result
 
-**The app cannot yet be described as fully iOS 27 compatible.** The source audit found additional restoration bugs and a missing privacy declaration, now fixed on `fix/ios-27-launch-restoration`. Background vocal separation, UIKit implementation-dependent gestures/volume control, and multiple-window behavior remain release-verification items. An RC SDK build and real-device checks are still required.
+The remaining source findings are addressed on `fix/ios-27-launch-restoration`: separation compute/cancellation, persistent background downloads, nondestructive cache probes, native volume and iOS 27 zoom interaction, and scene-owned orientation/overlays. Full RC compatibility still requires an exact-RC runner and signed-device integration checks; simulator success cannot establish those results.
 
 This pass inventories all 217 Swift files in the iOS app and shared source directories (about 51,400 lines; 31 imported module names), inspects the corresponding build settings/resources, and reviews the phone/watch session bridge and pinned dependency implementations. The inventory is repository-wide static inspection; it is not a claim that every code path was executed or formally verified. Standalone Mac/TV feature parity is outside this iOS audit; Release builds also verify that shared code compiles for those targets.
 
@@ -26,31 +26,29 @@ Xcode 27 RC includes Swift 6.4 and requires macOS 26.6 or later on Apple silicon
 
 The privacy declaration requirement predates iOS 27; it is a distribution gap found during this audit, not a newly introduced RC rule. [Apple required-reason guidance](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 
-## Remaining findings
+## September 13 implementation fixes
 
-### High: background vocal separation is not established as compatible
+### Separation execution and cancellation
 
-`VocalSeparator.runSeparation2` creates `AudioSeparator2(modelURL:)`, with compute selection delegated to swift-spleeter. The pinned dependency loads Core ML without an app-supplied compute configuration. Its `AsyncThrowingStream` producer starts an unstructured `Task` without an `onTermination` cancellation handler. Cancelling the consuming app task therefore does not establish that the model has stopped running.
+The app now vendors the MIT-licensed swift-spleeter 0.2.0 source with a small compatibility patch. `separateFile` runs its chunk loop and file writers in the caller's task, checks cancellation around inference and each write, and returns only after those operations have stopped. App cleanup therefore cannot race an orphaned stream producer. The application no longer uses the dependency's legacy streaming API.
 
-The app starts speculative full-song analysis while playing music and has no scene-background gate or continued-processing inference entitlement. Existing audio background mode does not establish permission to use the Neural Engine. Apple requires the background-inference entitlement for Neural Engine use while backgrounded, including outside continued-processing tasks. [Background Inference entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.background-tasks.continued-processing.inference)
+On iOS 27 both `MLModelConfiguration.computeUnits` and the task-local `MLTensor` compute policy use CPU-only execution. This avoids GPU/Neural Engine use during foreground-to-background transitions without adding a provisioning-dependent entitlement. Separation may take longer; measure foreground/background completion, battery use, and memory on hardware. Ordinary background audio does not grant unlimited CPU execution time, and iOS may suspend the app when playback stops. [Background Inference entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.background-tasks.continued-processing.inference), [MLTensor compute policy](https://developer.apple.com/documentation/coreml/mlcomputepolicy)
 
-Before release: run foreground-to-background karaoke analysis on an Apple Intelligence-capable iPhone. Choose and implement a supported execution policy: continued processing with the appropriate entitlement/provisioning, or a dependency/pipeline change that controls compute resources and reliably stops or defers restricted inference. Merely cancelling the current wrapper task is insufficient. No unverified entitlement or performance-changing CPU-only policy was added in this audit.
+### Persistent downloads and cache preservation
 
-### Medium: navigation and volume depend on UIKit internals
+Offline downloads use an identified background URLSession with delegate callbacks. An atomic Application Support journal records accepted songs and generation tokens before network work starts. Relaunch reattaches existing tasks, recovers completed-transfer receipts, and queues outstanding entries. The app delegate forwards background-session events; its completion waits until delivered files are processed. Cancellation removes journal ownership and stale completions cannot delete replacement downloads. Journal reads wait for protected data rather than replacing unavailable data with an empty queue. A user force-quit remains subject to Apple's background-session restrictions. [Background downloads](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
 
-`ZoomPushDismissal.swift` identifies gesture recognizers by names containing `ParallaxTransition` and `ContentSwipeDismiss`, recursively disables them, and installs its own dismissal gesture. UIKit does not promise those private class names. A renamed/restructured recognizer can restore the old transition bug or let two dismissal mechanisms compete. Test playlist/artwork zoom pushes, cancelled swipes, nested pushes, immediate second taps, and accessibility navigation on the RC.
+Disposable playback/stem-cache probes now preserve files after unreadable headers, unavailable source metadata, decompression errors, or duration mismatch. Playback source identity ignores the same known signing parameters as downloaded audio while retaining content selectors. Explicit eviction and successful cache compression remain separate maintenance operations. Regression tests exercise the actual playback lookup and compare preserved bytes.
 
-UIKit has a documented zoom interaction policy, but applying it to SwiftUI-owned transitions requires a deliberate integration change, not replacing the existing transition and losing SwiftUI’s source mapping. [Zoom interaction policy](https://developer.apple.com/documentation/uikit/uiviewcontroller/transition/zoomoptions/interactivedismissshouldbegin)
+### Public controls and navigation
 
-`SystemVolumeBridge.swift` finds a `UISlider` among `MPVolumeView`’s immediate subviews. That internal hierarchy is not a stable volume-setting API. Verify drag/release, hardware volume buttons, route changes, and AirPlay. Use the system volume view directly if the hierarchy assumption fails. [MPVolumeView](https://developer.apple.com/documentation/mediaplayer/mpvolumeview)
+The player displays MPVolumeView directly. It no longer searches the view's internal UISlider hierarchy or synthesizes slider events. System routing, volume buttons, and accessibility are owned by the native control. [MPVolumeView](https://developer.apple.com/documentation/mediaplayer/mpvolumeview)
 
-`ClearPresentationBackground` also walks ancestor views, but the source search found no active call sites; it is not an active launch blocker.
+On iOS 27 the legacy zoom-dismissal suppressor and replacement pan are disabled; native SwiftUI/UIKit zoom navigation owns interaction. The older iOS 26 workaround remains version-gated. CI now includes the existing swipe-back/no-accidental-playback regression alongside navigation checks. `ClearPresentationBackground` has no active call sites.
 
-### Medium: multiple windows and resizing need targeted checks
+### Scene ownership
 
-`AppOrientationGate` uses a process-wide landscape count and chooses the first foreground scene. Its app-delegate orientation callback ignores the supplied window. `ShimejiSessionModifier` similarly chooses the first active scene for a singleton overlay. With two windows or an external display, a video/overlay action may affect a different window. This is an existing implementation limitation exposed by broader window use, not proof of a new RC regression.
-
-The main app already uses a SwiftUI `WindowGroup`, has a scene manifest and a launch storyboard, supports the declared iPad orientations, and adapts its root shell by available width. Still test two windows, iPad resizing, iPhone Mirroring, video rotation, and dismissal back to the library. [UIKit scene guidance](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle), [UIKit updates](https://developer.apple.com/documentation/updates/uikit)
+Orientation leases are keyed by the actual hosting UIWindowScene, and the application delegate consults the supplied window. The last video opt-out requests portrait only in its own scene. Each SwiftUI root owns a Shimeji overlay and engine; a hosting-window probe attaches it to the correct scene. Sprite dragging and mini-player geometry update that engine, and disappearance/backgrounding stops its timer and display link. Test two windows, resizing, external displays, and video rotation on hardware. [UIKit scene guidance](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle)
 
 ### Device-only integration checks remain
 
@@ -64,12 +62,12 @@ Audio playback, interruptions, media-services reset, AirPlay/Bluetooth, lock-scr
 | --- | --- | --- |
 | SwiftUI/UIKit lifecycle | `TwinskaraokeApp`, `ContentView`, scene manifest, `LaunchScreen.storyboard`, build-generated plist keys | Required scene and launch setup present. Verify built artifact and RC launch. |
 | SwiftUI state/Observation | All state declarations and six explicit `State(initialValue:)` assignments; observation bridge; main-actor models | Explicit initializers have no competing declaration value. No `@Entry` defaults or document-protocol migration trigger found. Swift 6.4 preview compilation passed; exact RC compiler validation remains pending. |
-| Tabs/navigation/search | All root enum cases, selection binding, sidebar selection, tab role, mini-player accessory, UIKit coordinator | Selection constrained to visible root cases. Typed API path added; private gesture risk remains. |
+| Tabs/navigation/search | All root enum cases, selection binding, sidebar selection, tab role, mini-player accessory, UIKit coordinator | Selection constrained to visible root cases. Typed API path added; iOS 27 uses native zoom dismissal. |
 | Text/menus/presentation | Text selection, gestures, menu content, custom presentation and trait APIs | No `.textSelection(.enabled)`, custom `UIPresentationController`, or overridden presentation trait chain found. Menu appearance changes remain a visual check. |
 | Foundation/network | Shared request/data/decoding helpers, direct URLSession call sites, URL/path escaping, account-scoped caches | Credential bypasses fixed. No `canOpenURL` calls or broad ATS exception found. Live endpoints not exercised. |
 | Security/AuthenticationServices/CryptoKit | Keychain status handling, token cache, committed-session marker, browser continuation cancellation, QR approval, watch handoff | Unavailable credentials preserved; signed-device restoration still required. |
-| AVFoundation/AVKit/CoreMedia/MediaPlayer | Engine/session setup, route/interruption/reset notifications, now-playing commands, crossfade, Pillarbox playback, volume/route picker | Session notifications hop to main actor; framework usage remains supported by current SDK. Hardware and UIKit-subview assumptions remain unverified. |
-| CoreML/Accelerate/Spleeter | Model load, separation producer/consumer, trim reader/writer, cancellation and output publication | Background inference is the principal unresolved iOS 27 execution risk. |
+| AVFoundation/AVKit/CoreMedia/MediaPlayer | Engine/session setup, route/interruption/reset notifications, now-playing commands, crossfade, Pillarbox playback, volume/route picker | Session notifications hop to main actor; framework usage remains supported by current SDK. Native volume replaces internal-subview access; hardware routes remain unverified. |
+| CoreML/Accelerate/Spleeter | Model load, separation producer/consumer, trim reader/writer, cancellation and output publication | Structured file separation and CPU model/tensor policy implemented; hardware performance remains unverified. |
 | Foundation/Compression/Darwin storage | Download manifest/scan, caches, file metadata, compression, ZIP reads, deletion and promotion paths | Prior launch-restoration fixes retained. Privacy uptime declaration added. Protected-data/upgrade testing remains required. |
 | Photos | Add-only authorization and async change requests in `ImageSaver`; saved-artwork lifecycle | Purpose string present; injected permission/write tests available. Real Photos check pending. |
 | Camera | `AVCaptureSession`, serial session queue, non-zero preview-bounds gating, permissions, runtime errors | Camera purpose string present; no iOS 27-specific migration requirement identified. |
@@ -158,4 +156,8 @@ Revisited the current Apple iOS/Xcode RC notes and inventoried all 217 iOS/share
 
 Found one further timing defect in the asynchronous activation change: after Pause cleared pending playback, a late background file/stem preparation could enqueue a replacement before activation completed. Cancellation now prevents such preparation from repopulating the queue; an explicit new Play request can still proceed. Added regressions for late preparation after Pause and explicit Play after Pause. All seven activation tests passed locally (`/private/tmp/ios27-cancellation-recheck.xcresult`); the pushed source will receive the complete hosted suite.
 
-The previous [green run for c275f86](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34688359285) passed 267 unit tests and three UI tests, with no main-thread activation warning or 600-second diagnostics timeout. It exercised the preview runtime, not the RC. Outstanding release checks remain those described above, including background inference policy, real signed Keychain/protected-data recovery, physical audio routes, cache regeneration/suspension, private UIKit assumptions, and scene-scoped orientation/overlays. Repeated successful simulator runs do not eliminate these gaps.
+The previous [green run for c275f86](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34688359285) passed 267 unit tests and three UI tests, with no main-thread activation warning or 600-second diagnostics timeout. It exercised the preview runtime, not the RC. Outstanding release checks remain those described above, including real signed Keychain/protected-data recovery, physical audio routes, and suspension/relaunch behavior. The September 13 section supersedes the source issues listed in earlier audit passes. Repeated successful simulator runs do not eliminate these gaps.
+
+## September 13 validation
+
+Local Xcode 26.6 / iOS 26.5: Debug app build passed, then all **272 unit tests** passed (289 parameterized executions, zero failures). These include three new cache preservation/signature regressions. A final rerun and hosted iOS 27 build/analyzer/navigation checks are pending for the complete patch; results will be recorded after completion. Real system-termination/background-session delivery, signing, physical volume routes, and inference performance require the device checklist.

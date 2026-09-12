@@ -27,7 +27,7 @@ Enable the app's debug logging before reproducing. Export logs covering the cold
 
 Xcode 27 / Swift 6.4 builds now use the typed iOS 27 prominence property. Builds with the local older SDK retain the availability- and selector-guarded public Objective-C API bridge. Apple also documents SwiftUI `TabRole.prominent`; replacing `.search` with that role changes search semantics, so this branch retains `.search`. Validate the bridge with the RC SDK/device before merging. No iOS 27-specific header/duration behavior has been measured locally.
 
-Uncertain explicitly downloaded audio is preserved. Disposable playback/stem caches have separate invalidation behavior; see the audit limitations. A genuinely damaged file may require explicit removal and re-download; it is no longer automatically deleted after a failed decoder probe. Legacy migration preserves the original copy until explicit download removal.
+Uncertain explicitly downloaded audio is preserved. Playback/stem cache probes also preserve files when validation or source metadata is unavailable. A genuinely damaged file may require explicit removal and re-download; it is no longer automatically deleted after a failed decoder probe. Legacy migration preserves the original copy until explicit download removal.
 
 Sources checked September 11, 2026:
 
@@ -51,7 +51,14 @@ The URL-encoding security test now injects an absent credential instead of readi
 - Refresh a signed audio URL while keeping its song/resource identity; playback must preserve the existing download and its source metadata even if an audio probe temporarily fails.
 - Confirm sidecar/backup/staging files and directories alone never appear as downloaded songs.
 - Verify watch account and audio-cache flows with the companion privacy manifest included.
-- Test cache regeneration and downloads after stopping playback, backgrounding/locking, and relaunching. Ordinary downloads do not use a persistent background URLSession.
+- Test cache regeneration and downloads after stopping playback, backgrounding/locking, and relaunching. Downloads now use a persistent background URLSession and an atomic pending queue. Start several transfers, background/lock, allow a system termination (not a user force-quit), and relaunch. Verify completion, cancellation, and no duplicate downloads. User force-quit follows system restrictions.
 - Record both Xcode and simulator/device OS build. CI labels Xcode `27A266a` plus simulator `24A435` as the audited RC pair. Other successful builds are explicitly labeled preliminary; their toolchain version alone no longer fails CI.
 
 - With asynchronous activation, test immediate Play/Pause, selecting a second song while activation is pending, phone-call interruption/resume, media-services reset, and AirPlay/Bluetooth route changes. Playback must wait for activation and late callbacks must not undo Pause.
+
+## Additional September 13 checks
+
+- During separation, lock/unlock, stop playback, cancel, and start another song. Old work must not publish stems or write into a deleted job directory. Measure CPU-only separation time and memory on iOS 27.
+- Adjust the visible native volume slider, hardware buttons, Bluetooth and AirPlay routes, and VoiceOver controls.
+- Open two iPad windows. Video rotation, overlay placement, sprite dragging, and mini-player floors must remain in the owning window. Backgrounding a window must stop its overlay animation.
+- Exercise native iOS 27 zoom pushes, completed/cancelled swipe-back, and rapid taps. Navigation must remain responsive and gestures must not start playback.
