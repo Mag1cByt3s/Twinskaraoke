@@ -91,7 +91,7 @@ The pinned releases match the latest upstream releases returned during this audi
 
 Latest release status is not an iOS 27 compatibility guarantee. The Spleeter source inspection above is more informative than its version number. The deployment target remains iOS 26.5.
 
-A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It now requires Xcode build **27A266a** and selected simulator runtime build **24A435** for a successful RC verdict, preferring the RC runtime when multiple iOS 27 runtimes are installed. The hosted run confirms **27A5252f / beta 6**, matching GitHub’s `xcode-27` image README. Its preview results must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+A dedicated `.github/workflows/ios27-compatibility.yml` records compiler/SDK/runtime versions, builds and analyzes Release, runs the complete iOS unit suite and three navigation UI checks, and retains results. It identifies the audited RC as Xcode build **27A266a** plus simulator build **24A435**, preferring that runtime when installed. The workflow now accepts successful preview builds/tests and labels their scope explicitly; a green preview run is not RC validation. The hosted run confirms **27A5252f / beta 6**, matching GitHub’s `xcode-27` image README. Its preview results must not be reported as RC validation. [GitHub runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
 
 ## Validation results
 
@@ -137,3 +137,16 @@ Downloads use a default URLSession with completion handlers, not a persistent ba
 - **29 targeted tests passed**, 30 executions including parameterized cases, zero failures/skips on iOS 26.5. Includes both new filesystem/playback regressions. Result: `/private/tmp/ios27-recheck-tests.xcresult`.
 - Workflow YAML parsing and runtime selection checks passed: RC preferred with mixed runtimes; preview fallback records its non-RC build.
 - Watch Release build passed using Xcode 26.6. The built `Twinskaraoke Watch App.app/PrivacyInfo.xcprivacy` matches the source manifest and contains both required-reason categories. Build log: `/private/tmp/ios27-recheck-watch.log`.
+
+
+## CI failure follow-up
+
+Full logs for [ef5d6f7](https://github.com/Mag1cByt3s/Twinskaraoke/actions/runs/34686439999) confirm Release build/static analysis, **262 unit tests**, and three UI checks passed. The only failing step was the strict RC version gate: the runner used Xcode `27A5252f` and simulator `24A5423a`.
+
+The workflow now reports RC/preview scope in the job summary instead of failing solely for the unavailable RC pair. Compilation, analysis, and test failures still fail the job. `-collect-test-diagnostics never` disables verbose simulator diagnostic collection, which timed out for 600 seconds after the tests passed; ordinary logs and xcresult bundles remain artifacts.
+
+The full logs exposed a main-thread synchronous audio activation warning. iOS 27 SDK builds now use Apple's asynchronous activation API. Playback entry points wait for activation, coalesce repeated requests, and discard callbacks invalidated by interruptions; Pause cancels queued playback. Background preparation cannot replace a newer user playback request. Older SDK builds retain their supported activation API. [Apple asynchronous activation](https://developer.apple.com/documentation/avfaudio/avaudiosession/activate(options:completionhandler:))
+
+App Intents metadata notices, the duplicate accessibility class in Apple's simulator frameworks, and debugger lookup messages were not build/test failures. No framework files or diagnostic output filters were modified to hide them. Hardware routes and interruption recovery still require device verification.
+
+Local validation for the CI/audio follow-up: the full iOS 26.5 run passed 266 unit tests plus three navigation UI checks (269 tests, 286 executions), then all five final activation-coordination regressions passed after adding background-request precedence. The RC/preview job-summary scripts were checked with both toolchain pairs, and workflow YAML/diff validation passed. Hosted verification follows on the testing branch.

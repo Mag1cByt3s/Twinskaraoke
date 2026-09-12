@@ -1,0 +1,85 @@
+import Foundation
+import Testing
+@testable import Twinskaraoke
+
+@MainActor
+@Suite("Audio session activation")
+struct AudioSessionControllerTests {
+    private final class ActivationProbe {
+        var completions: [@Sendable (Bool, (any Error)?) -> Void] = []
+        var configurations = 0
+        lazy var controller = AudioSessionController(configure: { [unowned self] in
+            configurations += 1
+        }, activate: { [unowned self] completion in
+            completions.append(completion)
+        })
+    }
+
+    @Test func waitsForActivationAndCoalescesPlayback() async {
+        let probe = ActivationProbe()
+        var played: [Int] = []
+        #expect(!probe.controller.performWhenReady { played.append(1) })
+        #expect(!probe.controller.performWhenReady { played.append(2) })
+        #expect(played.isEmpty)
+        #expect(probe.completions.count == 1)
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played == [2])
+        #expect(!probe.controller.hasPendingPlayback)
+        #expect(probe.controller.performWhenReady { played.append(3) })
+        #expect(played == [2]) // Active callers execute their operation inline.
+    }
+
+    @Test func backgroundPreparationCannotReplaceUserPlay() async {
+        let probe = ActivationProbe()
+        var played: [Int] = []
+        #expect(!probe.controller.performWhenReady { played.append(1) })
+        let ready = probe.controller.performWhenReady({ played.append(2) }, replacingPending: false)
+        #expect(!ready)
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played == [1])
+    }
+
+    @Test func pausePreventsLateActivationFromPlaying() async {
+        let probe = ActivationProbe()
+        var played = false
+        #expect(!probe.controller.performWhenReady { played = true })
+        probe.controller.cancelPendingPlayback()
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(!played)
+        #expect(!probe.controller.hasPendingPlayback)
+    }
+
+    @Test func interruptedActivationCannotCompleteNewRequest() async {
+        let probe = ActivationProbe()
+        var played: [Int] = []
+        #expect(!probe.controller.performWhenReady { played.append(1) })
+        probe.controller.markInterrupted()
+        #expect(!probe.controller.performWhenReady { played.append(2) })
+        probe.completions[0](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played.isEmpty)
+        #expect(probe.controller.hasPendingPlayback)
+        probe.completions[1](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played == [2])
+    }
+
+    @Test func failedActivationCanRetryAndResetReconfigures() async {
+        let probe = ActivationProbe()
+        var played = false
+        #expect(!probe.controller.performWhenReady { played = true })
+        probe.completions[0](false, NSError(domain: "fixture", code: 1))
+        for _ in 0..<20 { await Task.yield() }
+        #expect(!played)
+        #expect(!probe.controller.hasPendingPlayback)
+        probe.controller.resetAfterMediaServicesLoss()
+        #expect(!probe.controller.performWhenReady { played = true })
+        #expect(probe.configurations == 2)
+        probe.completions[1](true, nil)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(played)
+    }
+}

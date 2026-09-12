@@ -52,4 +52,6 @@ The URL-encoding security test now injects an absent credential instead of readi
 - Confirm sidecar/backup/staging files and directories alone never appear as downloaded songs.
 - Verify watch account and audio-cache flows with the companion privacy manifest included.
 - Test cache regeneration and downloads after stopping playback, backgrounding/locking, and relaunching. Ordinary downloads do not use a persistent background URLSession.
-- Record both Xcode and simulator/device OS build. The CI RC gate now requires Xcode `27A266a` and simulator `24A435`; beta-6 unit/navigation success is preliminary evidence only.
+- Record both Xcode and simulator/device OS build. CI labels Xcode `27A266a` plus simulator `24A435` as the audited RC pair. Other successful builds are explicitly labeled preliminary; their toolchain version alone no longer fails CI.
+
+- With asynchronous activation, test immediate Play/Pause, selecting a second song while activation is pending, phone-call interruption/resume, media-services reset, and AirPlay/Bluetooth route changes. Playback must wait for activation and late callbacks must not undo Pause.

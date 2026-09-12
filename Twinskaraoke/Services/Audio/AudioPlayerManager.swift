@@ -477,6 +477,7 @@ final class AudioPlayerManager {
     }
 
     private var isPlaybackRequested: Bool {
+        if audioSessionController.hasPendingPlayback { return true }
         if isRadioMode { return radioPlaybackRequested }
         if isRemotePlaybackCaching { return streamPlaybackRequested }
         if isStreamMode { return streamPlaybackRequested }
@@ -527,8 +528,7 @@ final class AudioPlayerManager {
     // Private so `shared` stays the only instance: the audio session and the
     // remote-command centre it configures are process-wide singletons.
     private init() {
-        configureAudioSessionCategory()
-        activateAudioSession()
+        audioSessionController.prepareForPlayback()
         let cacheCleanupCutoff = Date()
         Task.detached(priority: .utility) {
             AudioCacheStore.cleanupLegacyArtifacts(createdBefore: cacheCleanupCutoff)
@@ -1102,6 +1102,10 @@ final class AudioPlayerManager {
         for song: Song, stems: CachedStems, sourceURL: URL,
         onReady: (() -> Void)? = nil
     ) {
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.switchActivePlaybackToStems(for: song, stems: stems, sourceURL: sourceURL, onReady: onReady)
+        }, replacingPending: false) else { return }
+
         guard !isRadioMode else { return }
         suppressPlaybackEndedCallbacks()
         let shouldResume = isPlaybackRequested
@@ -1109,8 +1113,6 @@ final class AudioPlayerManager {
         currentPlaybackURL = sourceURL
         aiStemSwitchInFlightSongID = song.id
         aiStemSwitchInFlightShouldResume = shouldResume
-        configureAudioSessionCategory()
-        activateAudioSession()
         if shouldResume {
             NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         }
@@ -1373,6 +1375,11 @@ final class AudioPlayerManager {
         preserveCacheRecoveryState: Bool = false,
         reportsPlayCount: Bool = true
     ) {
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.play(song: song, context: context, resetTransitionVolume: resetTransitionVolume,
+                preserveCacheRecoveryState: preserveCacheRecoveryState, reportsPlayCount: reportsPlayCount)
+        }, replacingPending: true) else { return }
+
         cancelAutoplayRequest()
         if !preserveCacheRecoveryState {
             cacheRecoverySongID = nil
@@ -1439,8 +1446,6 @@ final class AudioPlayerManager {
             VocalSeparator.shared.cancel()
             preparedStemSongID = song.id
             currentPlaybackURL = fileURL
-            configureAudioSessionCategory()
-            activateAudioSession()
             NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
             avEngine.playStems(
                 originalURL: fileURL,
@@ -1509,6 +1514,10 @@ final class AudioPlayerManager {
         startAt: TimeInterval = 0,
         resetSeparation: Bool = true
     ) {
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.startPlayingFile(url, startAt: startAt, resetSeparation: resetSeparation)
+        }, replacingPending: false) else { return }
+
         suppressPlaybackEndedCallbacks()
         stopRadioPlayer()
         stopStreamPlayer()
@@ -1524,8 +1533,6 @@ final class AudioPlayerManager {
         streamStartedAt = nil
         currentPlaybackURL = url
         aiStemSwitchInFlightSongID = nil
-        configureAudioSessionCategory()
-        activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         avEngine.play(url: url, startAt: max(0, startAt)) { [weak self] in
             #if canImport(UIKit)
@@ -1630,6 +1637,7 @@ final class AudioPlayerManager {
     /// Returns true when a pause request matched an active or resumable playback path.
     @discardableResult
     private func pauseCurrentPlayback(source: String = #function) -> Bool {
+        audioSessionController.cancelPendingPlayback()
         cancelAutoplayRequest()
         if !handlingAudioSessionInterruption {
             wasPlayingBeforeInterruption = false
@@ -1724,6 +1732,10 @@ final class AudioPlayerManager {
     /// Returns true when a resume request could be applied to the current playback path.
     @discardableResult
     private func resumeCurrentPlayback(source: String = #function) -> Bool {
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.resumeCurrentPlayback(source: source)
+        }, replacingPending: true) else { return true }
+
         if isRadioMode {
             guard let player = radioPlayer else {
                 radioPlaybackRequested = false
@@ -1739,8 +1751,6 @@ final class AudioPlayerManager {
                 )
                 return true
             }
-            configureAudioSessionCategory()
-            activateAudioSession()
             NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
             radioPlaybackRequested = true
             setPlaybackState(playing: false, buffering: true, reason: "resume.radio.buffering.\(source)")
@@ -1758,8 +1768,6 @@ final class AudioPlayerManager {
                 )
                 return true
             }
-            configureAudioSessionCategory()
-            activateAudioSession()
             NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
             streamPlaybackRequested = true
             setPlaybackState(
@@ -1785,8 +1793,6 @@ final class AudioPlayerManager {
                 )
                 return true
             }
-            configureAudioSessionCategory()
-            activateAudioSession()
             NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
             streamPlaybackRequested = true
             setPlaybackState(playing: false, buffering: true, reason: "resume.stream.buffering.\(source)")
@@ -1833,8 +1839,6 @@ final class AudioPlayerManager {
             )
             return true
         }
-        configureAudioSessionCategory()
-        activateAudioSession()
         NotificationCenter.default.post(name: MediaPlaybackCoordinator.audioWillPlay, object: nil)
         avEngine.resume()
         setPlaybackState(playing: true, buffering: false, reason: "resume.file.\(source)")
@@ -1920,8 +1924,6 @@ final class AudioPlayerManager {
         #if canImport(UIKit)
             beginTrackTransitionBackgroundTask()
         #endif
-        configureAudioSessionCategory()
-        activateAudioSession()
         switch queueState.advance(
             after: currentSong,
             repeatMode: repeatMode,
@@ -2124,6 +2126,10 @@ final class AudioPlayerManager {
     }
 
     func playRadio(streamURL: URL, song: Song, artworkURL: URL?) {
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.playRadio(streamURL: streamURL, song: song, artworkURL: artworkURL)
+        }, replacingPending: true) else { return }
+
         cancelAutoplayRequest()
         AppPerformance.event("Radio Playback Request")
         resetEasterEggWork()
@@ -2158,8 +2164,6 @@ final class AudioPlayerManager {
     private func startRadio(url: URL) {
         stopRadioPlayer()
         currentPlaybackURL = url
-        configureAudioSessionCategory()
-        activateAudioSession()
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
         player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
@@ -2208,8 +2212,6 @@ final class AudioPlayerManager {
             "Starting cached remote playback for \(songID): source=\(playbackSourceDescription(url)), startAt=\(startAt), autoplay=\(autoplay)",
             category: .playback
         )
-        configureAudioSessionCategory()
-        activateAudioSession()
         streamStartedAt = Date()
         streamPlaybackRequested = autoplay
         setPlaybackState(
@@ -2714,16 +2716,6 @@ final class AudioPlayerManager {
         }
     }
 
-    private func configureAudioSessionCategory() {
-        audioSessionController.prepareForPlayback()
-    }
-
-    private func activateAudioSession() {
-        // Kept as a compatibility seam while call sites are migrated from the
-        // former configure/activate pair. The controller makes this idempotent.
-        audioSessionController.prepareForPlayback()
-    }
-
     private func syncSystemVolume(
         _ systemVolume: Float? = nil
     ) {
@@ -2740,13 +2732,14 @@ final class AudioPlayerManager {
 
     private func recoverFromEngineConfigChange() {
         guard isPlaying, !isRadioMode, !isStreamMode else { return }
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.recoverFromEngineConfigChange()
+        }, replacingPending: false) else { return }
         let position = lastKnownPlaybackTime
         DebugLogger.log(
             "Recovering playback after engine config change at \(position)s",
             category: .playback
         )
-        configureAudioSessionCategory()
-        activateAudioSession()
         avEngine.startEngineIfNeeded()
         avEngine.seek(to: position)
     }
@@ -2754,6 +2747,14 @@ final class AudioPlayerManager {
     private func handleMediaServicesReset() {
         DebugLogger.log("Media services were reset — reconfiguring audio", category: .playback)
         audioSessionController.resetAfterMediaServicesLoss()
+        resumeAfterMediaServicesReset()
+    }
+
+    private func resumeAfterMediaServicesReset() {
+        guard isPlaying else { return }
+        guard audioSessionController.performWhenReady({ [weak self] in
+            self?.resumeAfterMediaServicesReset()
+        }, replacingPending: false) else { return }
         if isPlaying, !isRadioMode, !isStreamMode {
             let position = lastKnownPlaybackTime
             avEngine.startEngineIfNeeded()
@@ -2768,8 +2769,8 @@ final class AudioPlayerManager {
         else { return }
         switch type {
         case .began:
-            audioSessionController.markInterrupted()
             wasPlayingBeforeInterruption = isPlaybackRequested
+            audioSessionController.markInterrupted()
             DebugLogger.log(
                 "Audio session interruption began; should resume later=\(wasPlayingBeforeInterruption)",
                 category: .playback
