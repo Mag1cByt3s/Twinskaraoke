@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Synchronization
 @testable import Twinskaraoke
 
 @Suite("Download validation")
@@ -532,6 +533,27 @@ struct DownloadManagerTests {
             #expect(restored.response?.expectedContentLength == 123456)
             #expect(AudioCacheStore.acceptsAudioResponse(restored.response) == (status == 200))
         }
+    }
+
+    @Test("A foreground event batch cannot complete a later background wake")
+    func backgroundCompletionWaitsForCurrentBatch() async throws {
+        let transport = BackgroundDownloadTransport()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let calls = Mutex(0)
+        transport.urlSessionDidFinishEvents(forBackgroundURLSession: session)
+        transport.handleEvents { calls.withLock { $0 += 1 } }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(calls.withLock { $0 } == 0)
+        transport.urlSessionDidFinishEvents(forBackgroundURLSession: session)
+        for _ in 0..<100 {
+            if calls.withLock({ $0 }) == 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(calls.withLock { $0 } == 1)
+        transport.urlSessionDidFinishEvents(forBackgroundURLSession: session)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(calls.withLock { $0 } == 1)
     }
 
     /// Minimal PCM WAV (mono, 16-bit silence) large enough to pass the cache's

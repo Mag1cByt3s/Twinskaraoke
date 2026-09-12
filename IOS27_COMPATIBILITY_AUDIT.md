@@ -160,6 +160,6 @@ The previous [green run for c275f86](https://github.com/Mag1cByt3s/Twinskaraoke/
 
 ## September 13 validation
 
-Local Xcode 26.6 / iOS 26.5: Debug app build passed, then all **272 unit tests** passed (289 parameterized executions, zero failures). A second run passed those 272 tests plus the swipe-back UI regression. After adding two transfer-receipt tests and deferring completions while protected data is unavailable, the full download suite passed **25 tests** (26 executions). An earlier individual-test filter selected zero tests and is not counted as validation.
+Local Xcode 26.6 / iOS 26.5: Debug app build passed, then all **272 unit tests** passed (289 parameterized executions, zero failures). A second run passed those 272 tests plus the swipe-back UI regression. After adding two transfer-receipt tests and deferring completions while protected data is unavailable, the full download suite passed **25 tests** (26 executions). The subsequent stale-event-batch regression also passed with the full download suite (**26 tests**, 27 executions). An earlier individual-test filter selected zero tests and is not counted as validation.
 
 Hosted iOS 27 build/analyzer/navigation validation is pending for the final patch. Real system-termination/background-session delivery, signing, physical volume routes, and inference performance require the device checklist.

@@ -114,7 +114,9 @@ nonisolated final class BackgroundDownloadTransport: NSObject, URLSessionDownloa
     private func finishEventsIfReady() {
         lock.lock()
         let completion = eventsFinished && pendingDeliveries == 0 ? eventCompletion : nil
-        if completion != nil {
+        if eventsFinished && pendingDeliveries == 0 {
+            // A foreground delivery may have no app-delegate completion.
+            // Consume that batch too; it cannot satisfy a later wake event.
             eventCompletion = nil
             eventsFinished = false
         }
